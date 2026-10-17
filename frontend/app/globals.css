@@ -1,0 +1,206 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Light scene: grey "gallery paper" */
+:root,
+[data-theme="light"] {
+  --bg: #c8c8c8;
+  --bg-grad: linear-gradient(180deg, #f4f4f4 0%, #d6d6d6 55%, #c3c3c3 100%);
+  --surface: rgba(255, 255, 255, 0.58);
+  --surface-solid: #f2f2f2;
+  --ink: #111214;
+  --ink-2: #434343;
+  --dim: rgba(17, 18, 20, 0.5);
+  --line: rgba(17, 18, 20, 0.13);
+  --line-strong: rgba(17, 18, 20, 0.34);
+  --ember: #d9432b;
+  --invert-bg: #111214;
+  --invert-ink: #f2f2f2;
+  --paper: #c8c8c8;
+  color-scheme: light;
+}
+
+/* Dark scene: deep space */
+[data-theme="dark"] {
+  --bg: #040508;
+  --bg-grad: radial-gradient(120% 90% at 72% -10%, #11131a 0%, #040508 58%);
+  --surface: rgba(14, 15, 19, 0.62);
+  --surface-solid: #0c0d10;
+  --ink: #e2e2e2;
+  --ink-2: #a8a8aa;
+  --dim: rgba(216, 216, 216, 0.48);
+  --line: rgba(255, 255, 255, 0.11);
+  --line-strong: rgba(255, 255, 255, 0.3);
+  --ember: #e0502f;
+  --invert-bg: #ededed;
+  --invert-ink: #040508;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-solid: var(--surface-solid);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-dim: var(--dim);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ember: var(--ember);
+  --color-invert-bg: var(--invert-bg);
+  --color-invert-ink: var(--invert-ink);
+  --font-display: var(--font-familjen);
+  --font-sans: var(--font-inter-tight);
+  --font-mono: var(--font-martian);
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  background: var(--bg-grad);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.5s var(--ease-soft), color 0.5s var(--ease-soft);
+}
+
+::selection {
+  background: var(--ember);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 1px solid var(--ember);
+  outline-offset: 3px;
+}
+
+@layer components {
+  /* Tight grotesk display type */
+  .display {
+    font-family: var(--font-display), sans-serif;
+    font-weight: 400;
+    letter-spacing: -0.055em;
+    line-height: 0.92;
+  }
+
+  /* Technical micro-label */
+  .label {
+    font-family: var(--font-mono), monospace;
+    font-size: 10.5px;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  .glass {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+/* Letter roll on hover: each character holds two stacked copies */
+.roll-char {
+  display: inline-flex;
+  flex-direction: column;
+  height: 1.15em;
+  line-height: 1.15em;
+  overflow: hidden;
+  vertical-align: top;
+}
+.roll-char > span {
+  white-space: pre;
+  transition: transform 0.5s var(--ease-soft);
+  transition-delay: calc(var(--i) * 16ms);
+}
+.group:hover .roll-char > span,
+.group:focus-visible .roll-char > span {
+  transform: translateY(-100%);
+}
+
+/* Blur-to-sharp word reveal */
+@keyframes blur-in {
+  from {
+    opacity: 0.08;
+    filter: blur(10px);
+    transform: translateY(0.18em);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+.blur-word {
+  display: inline-block;
+  animation: blur-in 0.9s var(--ease-soft) both;
+  animation-delay: calc(var(--i) * 32ms);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes draw-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes draw-stroke {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* Preloader is skipped once it has run this session (set by an inline script before paint) */
+html[data-preloaded] .preloader {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+  .preloader {
+    display: none;
+  }
+}
