@@ -1,0 +1,745 @@
+# Pack facts for the Tidewell sample: figures the monthly income-statement CSV cannot provide.
+# Every value is transcribed from the Catalyst Team 18 supporting pack
+# (docs/challenge/ai-pitch-coach-supporting-resources-pages-1-37-1-1-d957a537.pdf).
+# Refs use absolute PDF page numbers (Appendix A = pp.3-5, B = 6-10, C = 11-15, D = 16-20,
+# E = 21-24, F = 25-27, G = 28-30, H = 31-33, I = 34-37), matching profile.yaml.
+#
+# Conventions
+#   - Money in CAD (pack p.2). Percentages as fractions (0.016 = 1.6%).
+#   - Values from the pack's "$000s" tables are multiplied out (47 -> 47000) and carry
+#     a note that they are rounded to the nearest $1,000.
+#   - kind: historical = closed months (Oct 2024..Sep 2026); forecast = founders' plan
+#     (Appendix C) or a projection; founder_claim = the founders' own unverified words.
+#   - Forecast facts use a `plan.` prefix so they never collide with a historical metric
+#     (facts_by_metric keeps the latest period per name, and a 2028 plan cash balance
+#     must not replace the Sep 2026 actual).
+#   - target_metric: true marks facts whose value IS a pack-stated result for a metric
+#     the engine reports (nrr, grr, cac, ...). They fill gaps the CSV cannot (no cohort,
+#     customer or cash tables) and double as calibration targets.
+#   - Where the pack gives a range ("about 9 to 10 months") the midpoint is recorded
+#     with value_low/value_high and a note. The loader ignores extra keys.
+#   - Data files 02-10 named in the pack (pp.10, 15) are NOT in this repo, and
+#     Appendix J (test scenarios, listed on p.2) is not in the 37-page PDF.
+
+facts:
+  # ------------------------------------------------------------------ snapshot, Sep 30 2026
+  - name: cash_balance
+    label: Cash in the bank
+    value: 483270
+    unit: cad
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix B, p.6"}
+    target_metric: false
+  - name: cash_balance
+    label: Cash in the bank, Sep 30 2025
+    value: 497000
+    unit: cad
+    period: "2025-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix B, p.7 (balance sheet); p.8 (cash flow ending cash Q3 2025)"}
+    target_metric: false
+    note: "Rounded to $000s in the pack."
+  - name: deferred_revenue
+    label: Deferred revenue (annual plans paid in advance, not yet earned)
+    value: 181327
+    unit: cad
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix B, p.6"}
+    target_metric: false
+  - name: deferred_revenue
+    label: Deferred revenue, Sep 30 2025
+    value: 42000
+    unit: cad
+    period: "2025-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix B, p.7"}
+    target_metric: false
+    note: "Rounded to $000s."
+  - name: customers.count
+    label: Active customers
+    value: 211
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.4; Appendix B, p.6"}
+    target_metric: false
+  - name: seats.count
+    label: Active seats (one seat = one field technician)
+    value: 2493
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.4; Appendix B, p.6"}
+    target_metric: false
+  - name: customers.ever_signed
+    label: Customers ever signed (rows in 05_customers.csv)
+    value: 262
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix B, p.10"}
+    target_metric: false
+  - name: headcount.total
+    label: Headcount
+    value: 14
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.4; Appendix B, p.6"}
+    target_metric: false
+    note: "2 founders, 6 software engineers, 2 account executives, 1 marketing manager, 3 customer success. Bookkeeping is an outsourced part-time contractor; no finance person."
+  - name: headcount.founders
+    label: Founders
+    value: 2
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.4"}
+    target_metric: false
+  - name: headcount.software_engineers
+    label: Software engineers (excluding the CTO)
+    value: 6
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.4"}
+    target_metric: false
+  - name: headcount.account_executives
+    label: Account executives
+    value: 2
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.4"}
+    target_metric: false
+  - name: headcount.marketing
+    label: Marketing staff
+    value: 1
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.4"}
+    target_metric: false
+  - name: headcount.customer_success
+    label: Customer success staff
+    value: 3
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.4"}
+    target_metric: false
+  - name: headcount.r_and_d
+    label: R&D department headcount (includes the CTO)
+    value: 7
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix C, p.14"}
+    target_metric: false
+  - name: headcount.g_and_a
+    label: G&A department headcount (the CEO)
+    value: 1
+    unit: count
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix C, p.14"}
+    target_metric: false
+
+  # ------------------------------------------------------------------ balance sheet (rounded $000s)
+  - {name: accounts_receivable, label: "Accounts receivable", value: 19000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.7"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: accounts_receivable, label: "Accounts receivable", value: 8000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.7"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: equipment_net, label: "Equipment, net", value: 13000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.7"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: equipment_net, label: "Equipment, net", value: 21000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.7"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: total_assets, label: "Total assets", value: 515000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.7"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: total_assets, label: "Total assets", value: 527000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.7"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: accounts_payable, label: "Accounts payable and accrued", value: 18000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.7"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: accounts_payable, label: "Accounts payable and accrued", value: 13000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.7"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: total_liabilities, label: "Total liabilities", value: 199000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: total_liabilities, label: "Total liabilities", value: 54000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: safe_notes, label: "SAFE notes on the balance sheet", value: 2000000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false}
+  - {name: safe_notes, label: "SAFE notes on the balance sheet", value: 1500000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false}
+  - {name: accumulated_deficit, label: "Accumulated deficit", value: -1684000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: accumulated_deficit, label: "Accumulated deficit", value: -1028000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: total_equity, label: "Total equity", value: 316000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: total_equity, label: "Total equity", value: 472000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+
+  # ------------------------------------------------------------------ quarter-end cash (cash flow statement)
+  - {name: cash_balance, label: "Ending cash, Q4 2024", value: 1076000, unit: cad, period: "2024-12", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_balance, label: "Ending cash, Q1 2025", value: 862000, unit: cad, period: "2025-03", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_balance, label: "Ending cash, Q2 2025", value: 742000, unit: cad, period: "2025-06", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_balance, label: "Ending cash, Q4 2025", value: 258000, unit: cad, period: "2025-12", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_balance, label: "Ending cash, Q1 2026", value: 651000, unit: cad, period: "2026-03", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s. Includes the $500,000 SAFE extension received in Q1 2026."}
+  - {name: cash_balance, label: "Ending cash, Q2 2026", value: 467000, unit: cad, period: "2026-06", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+
+  # ------------------------------------------------------------------ cash flow by quarter (rounded $000s)
+  - {name: cash_from_operations, label: "Cash from operations", value: -179000, unit: cad, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_from_operations, label: "Cash from operations", value: -209000, unit: cad, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_from_operations, label: "Cash from operations", value: -118000, unit: cad, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s. Includes the $96,400 SR&ED refund (June 2025)."}
+  - {name: cash_from_operations, label: "Cash from operations", value: -237000, unit: cad, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_from_operations, label: "Cash from operations", value: -239000, unit: cad, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_from_operations, label: "Cash from operations", value: -102000, unit: cad, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s. Flattered by +$129K change in deferred revenue, mostly the top customer's $124,800 annual prepayment (March 2026)."}
+  - {name: cash_from_operations, label: "Cash from operations", value: -184000, unit: cad, period: "2026-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: cash_from_operations, label: "Cash from operations", value: 17000, unit: cad, period: "2026-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s. Positive only because of the $182,300 SR&ED refund (July 2026)."}
+  - {name: equipment_purchases, label: "Equipment purchases", value: 0, unit: cad, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false}
+  - {name: equipment_purchases, label: "Equipment purchases", value: -5000, unit: cad, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: equipment_purchases, label: "Equipment purchases", value: -2000, unit: cad, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: equipment_purchases, label: "Equipment purchases", value: -7000, unit: cad, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: equipment_purchases, label: "Equipment purchases", value: 0, unit: cad, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false}
+  - {name: equipment_purchases, label: "Equipment purchases", value: -5000, unit: cad, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: equipment_purchases, label: "Equipment purchases", value: 0, unit: cad, period: "2026-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false}
+  - {name: equipment_purchases, label: "Equipment purchases", value: 0, unit: cad, period: "2026-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false}
+  - {name: safe_financing_received, label: "SAFE financing received", value: 500000, unit: cad, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8; Appendix A, p.4"}, target_metric: false}
+  - name: net_burn_l12m
+    label: Net burn, last 12 months (cash basis, Oct 2025 to Sep 2026)
+    value: 514000
+    unit: cad
+    period: L12M
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix H, p.31"}
+    target_metric: true
+    note: >-
+      Cash-basis: the fall in cash excluding SAFE financing (497K - 483K + 500K SAFE = 514K;
+      equivalently cash from operations + equipment purchases, Q4 2025..Q3 2026, ~513K from the
+      rounded quarterly table). It INCLUDES the $182,300 SR&ED refund and the deferred-revenue inflow
+      from annual prepayments. It is not the P&L net loss ($656,262, Appendix B p.6). Used for the
+      pack's burn multiple of ~0.6 (0.8 without SR&ED).
+
+  # ------------------------------------------------------------------ recurring revenue bridge by quarter (rounded $000s)
+  # MRR = monthly subscription revenue at month end; onboarding fees excluded (Appendix B p.8).
+  - {name: mrr_bridge.new, label: "New MRR", value: 3000, unit: cad, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.new, label: "New MRR", value: 5000, unit: cad, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.new, label: "New MRR", value: 10000, unit: cad, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.new, label: "New MRR", value: 10000, unit: cad, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.new, label: "New MRR", value: 16000, unit: cad, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.new, label: "New MRR", value: 27000, unit: cad, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s. Includes the top customer (260 seats at $40, signed March 2026)."}
+  - {name: mrr_bridge.new, label: "New MRR", value: 20000, unit: cad, period: "2026-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.new, label: "New MRR", value: 17000, unit: cad, period: "2026-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.expansion, label: "Expansion MRR", value: 0, unit: cad, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.expansion, label: "Expansion MRR", value: 0, unit: cad, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.expansion, label: "Expansion MRR", value: 0, unit: cad, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.expansion, label: "Expansion MRR", value: 1000, unit: cad, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.expansion, label: "Expansion MRR", value: 1000, unit: cad, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.expansion, label: "Expansion MRR", value: 1000, unit: cad, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.expansion, label: "Expansion MRR", value: 1000, unit: cad, period: "2026-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.expansion, label: "Expansion MRR", value: 2000, unit: cad, period: "2026-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.contraction, label: "Contraction MRR", value: 0, unit: cad, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.contraction, label: "Contraction MRR", value: 0, unit: cad, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.contraction, label: "Contraction MRR", value: 0, unit: cad, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.contraction, label: "Contraction MRR", value: 0, unit: cad, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.contraction, label: "Contraction MRR", value: -1000, unit: cad, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.contraction, label: "Contraction MRR", value: 0, unit: cad, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.contraction, label: "Contraction MRR", value: 0, unit: cad, period: "2026-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s (0 means under $500)."}
+  - {name: mrr_bridge.contraction, label: "Contraction MRR", value: -1000, unit: cad, period: "2026-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.churned, label: "Churned MRR", value: -1000, unit: cad, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.churned, label: "Churned MRR", value: -1000, unit: cad, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.churned, label: "Churned MRR", value: -1000, unit: cad, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.churned, label: "Churned MRR", value: -3000, unit: cad, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.churned, label: "Churned MRR", value: -4000, unit: cad, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.churned, label: "Churned MRR", value: -4000, unit: cad, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.churned, label: "Churned MRR", value: -2000, unit: cad, period: "2026-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: mrr_bridge.churned, label: "Churned MRR", value: -4000, unit: cad, period: "2026-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "Rounded to $000s."}
+
+  # ------------------------------------------------------------------ customers and seats by quarter
+  - {name: customers.new, label: "New customers", value: 10, unit: count, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.new, label: "New customers", value: 13, unit: count, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.new, label: "New customers", value: 28, unit: count, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.new, label: "New customers", value: 20, unit: count, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.new, label: "New customers", value: 33, unit: count, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.new, label: "New customers", value: 38, unit: count, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.new, label: "New customers", value: 42, unit: count, period: "2026-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.new, label: "New customers", value: 40, unit: count, period: "2026-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - name: customers.new
+    label: New customers, last 12 months (Oct 2025 to Sep 2026)
+    value: 153
+    unit: count
+    period: L12M
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q6, p.17 (= 33+38+42+40, Appendix B p.9)"}
+    target_metric: false
+    note: "The CAC denominator. facts_by_metric keeps this L12M entry over the quarterly ones ('L12M' sorts after '2026-Q3')."
+  - {name: customers.churned, label: "Churned customers", value: 2, unit: count, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.churned, label: "Churned customers", value: 4, unit: count, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.churned, label: "Churned customers", value: 3, unit: count, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.churned, label: "Churned customers", value: 7, unit: count, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.churned, label: "Churned customers", value: 10, unit: count, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.churned, label: "Churned customers", value: 8, unit: count, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.churned, label: "Churned customers", value: 8, unit: count, period: "2026-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.churned, label: "Churned customers", value: 9, unit: count, period: "2026-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.count, label: "Customers at quarter end", value: 46, unit: count, period: "2024-12", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.count, label: "Customers at quarter end", value: 55, unit: count, period: "2025-03", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.count, label: "Customers at quarter end", value: 80, unit: count, period: "2025-06", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.count, label: "Customers at quarter end", value: 93, unit: count, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.count, label: "Customers at quarter end", value: 116, unit: count, period: "2025-12", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.count, label: "Customers at quarter end", value: 146, unit: count, period: "2026-03", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: customers.count, label: "Customers at quarter end", value: 180, unit: count, period: "2026-06", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: seats.count, label: "Seats at quarter end", value: 418, unit: count, period: "2024-12", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: seats.count, label: "Seats at quarter end", value: 538, unit: count, period: "2025-03", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: seats.count, label: "Seats at quarter end", value: 782, unit: count, period: "2025-06", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: seats.count, label: "Seats at quarter end", value: 940, unit: count, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: seats.count, label: "Seats at quarter end", value: 1201, unit: count, period: "2025-12", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: seats.count, label: "Seats at quarter end", value: 1769, unit: count, period: "2026-03", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - {name: seats.count, label: "Seats at quarter end", value: 2179, unit: count, period: "2026-06", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+
+  # ------------------------------------------------------------------ pricing and billing
+  - {name: price_per_seat_list, label: "List price per technician seat per month (since July 2025)", value: 45, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.3"}, target_metric: false}
+  - {name: price_per_seat_legacy, label: "Legacy price per seat per month", value: 39, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.3"}, target_metric: false}
+  - {name: customers.legacy_price, label: "Early customers still on the legacy $39 price", value: 59, unit: count, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.3; Appendix D q7, p.18"}, target_metric: false}
+  - {name: customers.annual_prepay, label: "Customers who prepay annually (cancel only at renewal)", value: 45, unit: count, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.3"}, target_metric: false}
+  - {name: onboarding_fee, label: "One-time onboarding fee for customers with 10 or more seats", value: 1200, unit: cad, period: null, kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.3; Appendix I, p.36"}, target_metric: false, note: "Larger accounts are quoted. Recognized in the month the customer signs (Appendix B p.9)."}
+
+  # ------------------------------------------------------------------ largest customer and concentration
+  - {name: top_customer.seats, label: "Largest customer's seats", value: 260, unit: count, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4"}, target_metric: false, note: "Northern Comfort Group, a 31-location HVAC franchise network. Signed March 2026, renews March 2027."}
+  - {name: top_customer.price_per_seat, label: "Largest customer's discounted price per seat per month", value: 40, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4"}, target_metric: false, note: "Prepaid annually."}
+  - {name: top_customer.locations, label: "Largest customer's locations", value: 31, unit: count, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4"}, target_metric: false}
+  - {name: top_customer.prepayment, label: "Largest customer's annual prepayment (March 2026)", value: 124800, unit: cad, period: "2026-03", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false, note: "The largest deferred-revenue item."}
+  - {name: top_customer.unearned, label: "Largest customer's prepayment still unearned at Sep 30 2026", value: 52000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.9"}, target_metric: false}
+  - name: top_customer_share
+    label: Largest customer's share of MRR
+    value: 0.10
+    unit: pct
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q9, p.18; Appendix H, p.32"}
+    target_metric: true
+    note: "Pack says 'about 10% of MRR'. 260 seats x $40 = $10,400 of $107,189 Sep MRR = 9.7%. Appendix D q2 calls it 'about $10K' of MRR."
+  - {name: top_customer.mrr_approx, label: "Largest customer's MRR (approximate)", value: 10000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix D q2, p.16"}, target_metric: false, note: "Pack: 'About $10K of that is one customer'. Exact seats x price = $10,400 (Appendix A p.4)."}
+
+  # ------------------------------------------------------------------ retention and churn (needs 04/05/06 CSVs, not in repo)
+  - name: logo_churn_rate
+    label: Monthly logo churn, last 12 months (Oct 2025 to Sep 2026)
+    value: 0.020
+    unit: pct
+    period: L12M
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q3, p.17; Appendix H, p.31; Appendix I, p.34"}
+    target_metric: true
+    note: "'About a fifth of the base a year.' 35 customers churned in the window (10+8+8+9, Appendix B p.9); the monthly denominator is not given."
+  - name: logo_churn_rate_6m
+    label: Monthly logo churn, last 6 months (Apr to Sep 2026)
+    value: 0.016
+    unit: pct
+    period: null
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q3, p.17; Appendix H, p.32"}
+    target_metric: true
+    note: "Window Apr-Sep 2026 (17 churned, 8+9). Named separately so it does not replace the 12-month figure. The audit note (p.33) says six months is too short to call churn 'improving'; give both numbers."
+  - {name: churn.monthly_plan_first_6m, label: "Monthly churn of monthly-plan customers in their first six months", value: 0.033, unit: pct, period: null, kind: historical, source: {kind: pack_summary, ref: "Appendix D q3, p.17; Appendix H, p.31"}, target_metric: false, note: "Cohort analysis from 05_customers.csv / 06_seats (not in repo)."}
+  - {name: churn.monthly_plan_after_6m, label: "Monthly churn of monthly-plan customers after six months", value: 0.014, unit: pct, period: null, kind: historical, source: {kind: pack_summary, ref: "Appendix D q3, p.17; Appendix H, p.31"}, target_metric: false}
+  - name: nrr
+    label: Net revenue retention, cohort of customers active in Sep 2025
+    value: 0.88
+    unit: pct
+    period: L12M
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q4, p.17; Appendix H, p.32; Appendix I, p.36"}
+    target_metric: true
+    note: "$33.3K Sep 2026 MRR from customers paying $38.0K in Sep 2025 = 87.6%, 'about 88%'."
+  - name: grr
+    label: Gross revenue retention, cohort of customers active in Sep 2025
+    value: 0.81
+    unit: pct
+    period: L12M
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q4, p.17; Appendix H, p.32; Appendix I, p.35"}
+    target_metric: true
+    note: "'About 81%'. Ignores expansion; can't exceed 100%. The cohort's GRR-basis MRR is not given."
+  - {name: nrr_cohort.mrr_start, label: "Sep 2025 MRR of the retention cohort", value: 38000, unit: cad, period: "2025-09", kind: historical, source: {kind: pack_summary, ref: "Appendix D q4, p.17"}, target_metric: false, note: "Pack: '$38.0K'. All customers active in Sep 2025 (total Sep 2025 MRR in the CSV is $38,016)."}
+  - {name: nrr_cohort.mrr_end, label: "Sep 2026 MRR of the retention cohort", value: 33300, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix D q4, p.17"}, target_metric: false, note: "Pack: '$33.3K'."}
+  - {name: expansion_rate_monthly, label: "Expansion MRR as a share of starting MRR, per month", value: 0.004, unit: pct, period: null, kind: historical, source: {kind: pack_summary, ref: "Appendix I, p.35"}, target_metric: false, note: "'About 0.4% of starting MRR a month.' Window not stated."}
+
+  # ------------------------------------------------------------------ unit economics
+  - name: cac
+    label: Fully loaded CAC, last 12 months
+    value: 3200
+    unit: cad
+    period: L12M
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q6, p.17; Appendix H, p.32; Appendix I, p.34"}
+    target_metric: true
+    note: "$491,000 of sales and marketing salaries, commissions and programs / 153 new customers = $3,209, 'about $3,200'."
+  - {name: s_and_m_spend_l12m, label: "Sales and marketing spend, last 12 months (salaries, commissions, programs)", value: 491000, unit: cad, period: L12M, kind: historical, source: {kind: pack_summary, ref: "Appendix D q6, p.17"}, target_metric: false, note: "CSV sum Oct 2025..Sep 2026 of sales_salaries + sales_commissions + marketing_salaries + marketing_programs = $490,982."}
+  - name: new_customer_mrr_avg
+    label: Average MRR a new customer brings
+    value: 458
+    unit: cad
+    period: L12M
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q6, p.17"}
+    target_metric: false
+    note: >-
+      Pack: 'A new customer brings about $458 of MRR'. Derivation not stated; it is consistent with
+      L12M new MRR (~$80K, Appendix B p.9) excluding the top customer's ~$10.4K over the other 152 new
+      customers, and likely comes from 05_customers.csv (not in repo). It is NOT average MRR per active
+      customer ($107,189 / 211 = $508).
+  - name: cac_payback_months
+    label: CAC payback on a gross margin that includes support
+    value: 9.5
+    value_low: 9
+    value_high: 10
+    unit: months
+    period: L12M
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix D q6, p.17; Appendix H, p.32; Appendix I, p.34"}
+    target_metric: true
+    note: "Pack says 'about 9 to 10 months'; midpoint recorded. CAC $3,200 / ($458 new-customer MRR x margin incl. support)."
+  - {name: ae_ramp_months_historical, label: "Months for an account executive to reach 4-5 new customers a month (historical)", value: 3, unit: months, period: null, kind: historical, source: {kind: pack_summary, ref: "Appendix D q8, p.18; Appendix H, p.31; Appendix I, p.36"}, target_metric: false, note: "'About three months' for both current AEs (sales_owner in 05_customers.csv)."}
+  - {name: ae_new_customers_per_month_historical, label: "New customers per ramped account executive per month (historical)", value: 4.5, value_low: 4, value_high: 5, unit: count, period: null, kind: historical, source: {kind: pack_summary, ref: "Appendix D q8, p.18; Appendix H, p.31"}, target_metric: false, note: "Pack says '4 or 5' / '4 to 5'; midpoint recorded."}
+  - {name: cogs_pct_revenue_founder_stated, label: "Cost of revenue as a share of revenue today (founders' figure)", value: 0.08, unit: pct, period: null, kind: founder_claim, source: {kind: founder_stated, ref: "Appendix C, p.13 ('A cushion over today's 8%')"}, target_metric: false, note: "CSV: 7.6% in Sep 2026, 8.3% over the last 12 months."}
+
+  # ------------------------------------------------------------------ burn and runway (pack-stated results)
+  - name: runway_months
+    label: Runway at Sep 30 2026 at the current burn (excluding SR&ED)
+    value: 8
+    unit: months
+    period: "2026-09"
+    kind: historical
+    source: {kind: pack_summary, ref: "Appendix A, p.3; Appendix D q11, p.19; Appendix I, p.36"}
+    target_metric: true
+    note: "$483K cash / ~$58K a month average burn Apr-Sep 2026 excluding the SR&ED refund = 8.3, 'about 8 months'."
+
+  # ------------------------------------------------------------------ non-dilutive funding
+  - {name: srred.received_fy2024_claim, label: "SR&ED refundable tax credit received (fiscal 2024 claim)", value: 96400, unit: cad, period: "2025-06", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4"}, target_metric: false, note: "Booked as other income in the month the cash arrived (Appendix B p.9)."}
+  - {name: srred.received_fy2025_claim, label: "SR&ED refundable tax credit received (fiscal 2025 claim)", value: 182300, unit: cad, period: "2026-07", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4; Appendix B, p.6"}, target_metric: false}
+  - {name: srred.received_total, label: "SR&ED refunds received to date", value: 278700, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix H, p.31; Appendix I, p.36"}, target_metric: false}
+
+  # ------------------------------------------------------------------ financing, SAFEs and cap table
+  - {name: safe.preseed_amount, label: "Pre-seed SAFE (angels and a pre-seed fund)", value: 1500000, unit: cad, period: "2024-06", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4"}, target_metric: false, note: "Post-money SAFE."}
+  - {name: safe.preseed_cap, label: "Pre-seed SAFE post-money valuation cap", value: 10000000, unit: cad, period: "2024-06", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4"}, target_metric: false}
+  - {name: safe.extension_amount, label: "SAFE extension (existing angels)", value: 500000, unit: cad, period: "2026-02", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4"}, target_metric: false, note: "Post-money SAFE."}
+  - {name: safe.extension_cap, label: "SAFE extension post-money valuation cap", value: 15000000, unit: cad, period: "2026-02", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.4"}, target_metric: false}
+  - {name: safe.total, label: "Total raised on SAFEs", value: 2000000, unit: cad, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix I, p.36; Appendix B, p.8"}, target_metric: false, note: "Both SAFEs convert into shares at the seed round (Appendix A p.5)."}
+  - {name: cap_table.ceo_common, label: "CEO's share of common before the SAFEs convert", value: 0.45, unit: pct, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.5; Appendix I, p.34"}, target_metric: false}
+  - {name: cap_table.cto_common, label: "CTO's share of common before the SAFEs convert", value: 0.45, unit: pct, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.5; Appendix I, p.34"}, target_metric: false}
+  - {name: cap_table.option_pool, label: "Option pool reserved before the SAFEs convert", value: 0.10, unit: pct, period: "2026-09", kind: historical, source: {kind: pack_summary, ref: "Appendix A, p.5; Appendix I, p.36"}, target_metric: false}
+
+  # ------------------------------------------------------------------ the raise (planned, not closed)
+  - name: round_size
+    label: Seed round sought (priced equity)
+    value: 4000000
+    unit: cad
+    period: "2027-01"
+    kind: forecast
+    source: {kind: pack_summary, ref: "Appendix A, p.5"}
+    target_metric: false
+    note: "Target close January 2027; investor meetings start November 2026. Not closed: kind is forecast."
+  - {name: plan.use_of_funds.product_engineering, label: "Use of funds: product and engineering (45%)", value: 1800000, unit: cad, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.14"}, target_metric: false}
+  - {name: plan.use_of_funds.sales_marketing, label: "Use of funds: sales and marketing (40%)", value: 1600000, unit: cad, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.14"}, target_metric: false}
+  - {name: plan.use_of_funds.g_and_a, label: "Use of funds: G&A and operations (10%)", value: 400000, unit: cad, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.14"}, target_metric: false}
+  - {name: plan.use_of_funds.reserve, label: "Use of funds: reserve (5%)", value: 200000, unit: cad, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.14"}, target_metric: false}
+
+  # ------------------------------------------------------------------ founders' 18-month plan, Oct 2026 to Mar 2028 (Appendix C)
+  # Quarterly outputs (rounded $000s in the pack)
+  - {name: plan.mrr, label: "Plan ending MRR", value: 129000, unit: cad, period: "2026-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.mrr, label: "Plan ending MRR", value: 200000, unit: cad, period: "2027-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.mrr, label: "Plan ending MRR", value: 251000, unit: cad, period: "2027-Q2", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.mrr, label: "Plan ending MRR", value: 308000, unit: cad, period: "2027-Q3", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.mrr, label: "Plan ending MRR", value: 367000, unit: cad, period: "2027-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.mrr, label: "Plan ending MRR", value: 426000, unit: cad, period: "2028-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, pp.11-12"}, target_metric: false, note: "Rounded to $000s. x12 = about $5.1M ARR by March 2028 (Appendix D q14)."}
+  - {name: plan.arr, label: "Plan ARR by March 2028", value: 5100000, unit: cad, period: "2028-03", kind: forecast, source: {kind: pack_summary, ref: "Appendix D q14, p.20"}, target_metric: false, note: "'About $5.1M ARR by March 2028.'"}
+  - {name: plan.cash_balance, label: "Plan ending cash", value: 301000, unit: cad, period: "2026-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s. Plan cash = net income + raise - equipment; receivables, payables and deferred revenue are not modelled (p.13)."}
+  - {name: plan.cash_balance, label: "Plan ending cash", value: 3898000, unit: cad, period: "2027-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s. Includes the $4M raise."}
+  - {name: plan.cash_balance, label: "Plan ending cash", value: 3317000, unit: cad, period: "2027-Q2", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.cash_balance, label: "Plan ending cash", value: 2897000, unit: cad, period: "2027-Q3", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s. Includes the planned $240K SR&ED refund."}
+  - {name: plan.cash_balance, label: "Plan ending cash", value: 2219000, unit: cad, period: "2027-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.cash_balance, label: "Plan ending cash", value: 1592000, unit: cad, period: "2028-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, pp.11-12"}, target_metric: false, note: "Pack text: '$1.59M of cash after the $4M raise'."}
+  - {name: plan.revenue.total, label: "Plan total revenue", value: 404000, unit: cad, period: "2026-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.11"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.revenue.total, label: "Plan total revenue", value: 613000, unit: cad, period: "2027-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.11"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.revenue.total, label: "Plan total revenue", value: 785000, unit: cad, period: "2027-Q2", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.11"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.revenue.total, label: "Plan total revenue", value: 963000, unit: cad, period: "2027-Q3", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.11"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.revenue.total, label: "Plan total revenue", value: 1139000, unit: cad, period: "2027-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.11"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.revenue.total, label: "Plan total revenue", value: 1316000, unit: cad, period: "2028-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.11"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.net_income, label: "Plan net income (loss)", value: -179000, unit: cad, period: "2026-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.net_income, label: "Plan net income (loss)", value: -376000, unit: cad, period: "2027-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.net_income, label: "Plan net income (loss)", value: -556000, unit: cad, period: "2027-Q2", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.net_income, label: "Plan net income (loss)", value: -405000, unit: cad, period: "2027-Q3", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s. After the planned $240K SR&ED refund."}
+  - {name: plan.net_income, label: "Plan net income (loss)", value: -668000, unit: cad, period: "2027-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.net_income, label: "Plan net income (loss)", value: -627000, unit: cad, period: "2028-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Rounded to $000s."}
+  - {name: plan.customers.count, label: "Plan customers at quarter end", value: 251, unit: count, period: "2026-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.customers.count, label: "Plan customers at quarter end", value: 306, unit: count, period: "2027-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.customers.count, label: "Plan customers at quarter end", value: 391, unit: count, period: "2027-Q2", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.customers.count, label: "Plan customers at quarter end", value: 484, unit: count, period: "2027-Q3", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.customers.count, label: "Plan customers at quarter end", value: 577, unit: count, period: "2027-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.customers.count, label: "Plan customers at quarter end", value: 668, unit: count, period: "2028-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.account_executives, label: "Plan account executives", value: 3, unit: count, period: "2026-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.account_executives, label: "Plan account executives", value: 5, unit: count, period: "2027-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.account_executives, label: "Plan account executives", value: 6, unit: count, period: "2027-Q2", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Flat at 6 through 2028-Q1."}
+  - {name: plan.headcount.total, label: "Plan headcount at quarter end", value: 15, unit: count, period: "2026-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.headcount.total, label: "Plan headcount at quarter end", value: 26, unit: count, period: "2027-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.headcount.total, label: "Plan headcount at quarter end", value: 36, unit: count, period: "2027-Q2", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.headcount.total, label: "Plan headcount at quarter end", value: 42, unit: count, period: "2027-Q3", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.headcount.total, label: "Plan headcount at quarter end", value: 46, unit: count, period: "2027-Q4", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.headcount.total, label: "Plan headcount at quarter end", value: 46, unit: count, period: "2028-Q1", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, pp.11-12, 14"}, target_metric: false, note: "32 hires: R&D 7->21, Sales 2->11, Marketing 1->4, Customer success 3->7, G&A 1->3 (p.14)."}
+  - {name: plan.hires, label: "Planned hires", value: 32, unit: count, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.14"}, target_metric: false}
+
+  # Founders' assumptions (p.12-13). "The reasoning column is the founders' own explanation. It has not been checked."
+  - {name: plan.new_customers_per_ae_month, label: "New customers per ramped AE per month (plan)", value: 5, unit: count, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Founders: 'Priya closes 4 to 5 a month. New AEs will have a head of sales and better tools.'"}
+  - {name: plan.ae_ramp_months, label: "Months for a new AE to reach full productivity (plan)", value: 1, unit: months, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Founders: 'Our product is easy to demo.' History is about 3 months (Appendix D q8)."}
+  - {name: plan.inbound_new_customers_month, label: "Inbound new customers per month (plan start)", value: 4, unit: count, period: "2026-10", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Growing 3% a month. Founders: 'Our content is starting to compound.'"}
+  - {name: plan.inbound_growth_monthly, label: "Monthly growth in inbound new customers (plan)", value: 0.03, unit: pct, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false}
+  - {name: plan.seats_per_new_customer, label: "Seats per new customer (plan)", value: 10, unit: count, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Founders: 'That's our average.'"}
+  - {name: plan.logo_churn_monthly, label: "Monthly logo churn (plan)", value: 0.010, unit: pct, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.12"}, target_metric: false, note: "Founders: 'Most of our churn came from early customers on the old product.' History: 2.0% L12M, 1.6% last 6 months."}
+  - {name: plan.net_seat_expansion_monthly, label: "Net seat expansion in the existing base per month (plan)", value: 0.010, unit: pct, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false, note: "Founders: 'Customers add technicians as they grow.' History: expansion about 0.4% of starting MRR a month (Appendix I p.35)."}
+  - {name: plan.list_price_new, label: "List price per seat for new customers from January 2027 (plan)", value: 54, unit: cad, period: "2027-01", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false, note: "$45 today, rising to $54. Founders: 'We are cheaper than the competitors we lose to.'"}
+  - {name: plan.price_increase_existing, label: "Price increase for every existing customer in January 2027 (plan)", value: 0.20, unit: pct, period: "2027-01", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false, note: "Includes legacy $39 and annual plans; no extra churn assumed. Annual plans cannot be repriced until renewal (Appendix D q7)."}
+  - {name: plan.top_customer.seats, label: "Largest customer's seats at the March 2027 renewal (plan)", value: 600, unit: count, period: "2027-03", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false, note: "At $40, plus a $20,000 onboarding fee. 'Their COO told us they want every location on Tidewell.' Nothing is signed."}
+  - {name: plan.top_customer.onboarding_fee, label: "Largest customer's onboarding fee at renewal (plan)", value: 20000, unit: cad, period: "2027-03", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false}
+  - {name: plan.cogs_pct_revenue, label: "Cost of revenue as a share of revenue (plan)", value: 0.12, unit: pct, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, pp.11, 13"}, target_metric: false, note: "Founders: 'A cushion over today's 8%.' Customer success stays in opex in the plan."}
+  - {name: plan.commission_pct_first_year_acv, label: "Sales commissions as a share of first-year contract value (plan)", value: 0.10, unit: pct, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false, note: "Founders: 'Same as today'."}
+  - {name: plan.onboarding_fee_avg, label: "Average onboarding fee per new customer (plan)", value: 900, unit: cad, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false}
+  - {name: plan.marketing_programs_month, label: "Marketing programs spend in October 2026 (plan)", value: 32000, unit: cad, period: "2026-10", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false, note: "Growing 8% a month. Founders: 'Pour fuel on what works.' Sep 2026 actual was $14,660 (CSV). Starts before the round closes."}
+  - {name: plan.marketing_programs_growth_monthly, label: "Monthly growth in marketing programs spend (plan)", value: 0.08, unit: pct, period: null, kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false}
+  - {name: plan.founder_pay_month_each, label: "Founder pay per founder per month, loaded, from January 2027 (plan)", value: 14000, unit: cad, period: "2027-01", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false, note: "Founders: 'Market rate after the raise.'"}
+  - {name: plan.ga_other_month, label: "G&A other costs per month from January 2027 (plan)", value: 28800, unit: cad, period: "2027-01", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, p.13"}, target_metric: false, note: "Up from $12,800 a month: new office lease and a first audit. ($12,800 matches Sep 2026 rent + software + professional fees + other = $12,775; bookkeeping excluded.)"}
+  - {name: plan.seed_round, label: "Seed round received (plan)", value: 4000000, unit: cad, period: "2027-01", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, pp.12-13"}, target_metric: false}
+  - {name: plan.srred_refund, label: "SR&ED refund received July 2027 (plan)", value: 240000, unit: cad, period: "2027-07", kind: forecast, source: {kind: pack_summary, ref: "Appendix C, pp.12-13"}, target_metric: false, note: "Founders: 'R&D spend is up, so the claim will be bigger.'"}
+
+  # Runway outcomes stated by the pack (forecast-model results, not CSV metrics)
+  - {name: plan.runway_after_close_months, label: "Runway after a January 2027 close on the founders' plan", value: 22, unit: months, period: "2027-01", kind: forecast, source: {kind: pack_summary, ref: "Appendix D q10, p.19; Appendix H, p.32"}, target_metric: false, note: "'Cash lasts to about November 2028, so roughly 22 months after a January close.'"}
+  - {name: plan.runway_after_close_historical_drivers_months, label: "Runway after a January 2027 close if growth stays at historical rates", value: 17, unit: months, period: "2027-01", kind: forecast, source: {kind: pack_summary, ref: "Appendix D q10, p.19; Appendix H, p.32"}, target_metric: false, note: "'Closer to 17 months, which means we'd start raising again in late 2027.'"}
+
+# Known gaps (no figures): things investors will ask about that the pack does not contain.
+gaps:
+  - {item: pipeline, note: "No CRM and no record of deals in progress (Appendix B, p.9)."}
+  - {item: win_loss, note: "No win/loss or competitor data (Appendix D q13, p.19; Appendix H, p.32)."}
+  - {item: tam, note: "The $2B TAM has no source; no bottom-up build (Appendix D q12, p.19)."}
+  - {item: finance_function, note: "No finance person; bookkeeping outsourced to a part-time contractor (Appendix A, p.4)."}
+  - {item: data_files_02_10, note: "Balance sheet, cash flow, MRR bridge, customers, seats, headcount, forecast, assumptions and hiring CSVs (pp.10, 15) are not in this repo; their summaries are transcribed above."}
+  - {item: appendix_j, note: "Appendix J (30 test scenarios) is listed on p.2 but is not in the 37-page PDF."}
+  - {item: top_customer_contract, note: "The 600-seat expansion is verbal only; nothing is signed (Appendix C, p.13; Appendix D q9, p.18)."}
+
+# Calibration targets: every metric result Appendix H (with D and I) states for this case.
+# value null = the pack gives no number. csv_check = the same formula run by hand on
+# income_statement_monthly.csv (or on the pack inputs named), for the metrics engine tests.
+targets:
+  - metric: mrr
+    value: 107189
+    unit: cad
+    tolerance: 0
+    period: "2026-09"
+    stated: "$107,189 in September 2026"
+    definition: "Subscription revenue in the month, excluding one-time onboarding fees. Latest closed month (Sep 2026)."
+    csv_check: {value: 107189, arithmetic: "subscription_revenue[2026-09]"}
+    ref: "Appendix B, p.6; Appendix H, p.31; Appendix I, p.35"
+  - metric: arr
+    value: 1286268
+    unit: cad
+    tolerance: 5000
+    period: "2026-09"
+    stated: "$1.29M. That's September MRR of $107,189 times 12. We leave out onboarding fees"
+    definition: "MRR x 12, latest month: Sep 2026 subscription revenue x 12. Onboarding fees excluded (they were $108,600 over the last 12 months)."
+    csv_check: {value: 1286268, arithmetic: "107189 x 12"}
+    note: "Pack rounds to $1.29M. The deck's $1.37M is Sep total revenue x 12 (114,389 x 12 = 1,372,668), which includes $7,200 of onboarding fees."
+    ref: "Appendix D q1, p.16; Appendix H, p.32; Appendix I, p.34"
+  - metric: net_new_arr_l12m
+    value: 830076
+    unit: cad
+    tolerance: 5000
+    period: L12M
+    stated: "$830K over the last 12 months"
+    definition: "ARR at the end of the period minus ARR at the start: (MRR Sep 2026 - MRR Sep 2025) x 12."
+    csv_check: {value: 830076, arithmetic: "(107189 - 38016) x 12"}
+    ref: "Appendix H, p.31; Appendix I, p.36"
+  - metric: cmgr_12m
+    value: 0.09
+    unit: pct
+    tolerance: 0.005
+    period: "2025-09..2026-09"
+    stated: "MRR went from $38K to $107K in the 12 months to September, about 9% a month compounded"
+    definition: "Compound monthly growth of MRR over 12 monthly steps: (MRR Sep 2026 / MRR Sep 2025)^(1/12) - 1. Start = Sep 2025 month-end MRR, end = Sep 2026."
+    csv_check: {value: 0.0902, arithmetic: "(107189 / 38016)^(1/12) - 1"}
+    ref: "Appendix D q2, p.16; Appendix H, pp.31-32; Appendix I, p.34"
+  - metric: cmgr_12m_ex_top_customer
+    value: 0.08
+    unit: pct
+    tolerance: 0.005
+    period: "2025-09..2026-09"
+    stated: "About $10K of that is one customer ... Without them it's about 8%"
+    definition: "Same as cmgr_12m with the largest customer's MRR (signed March 2026, so absent at the start) removed from the end value."
+    csv_check: {value: 0.0810, arithmetic: "((107189 - 10400) / 38016)^(1/12) - 1, using 260 seats x $40 (Appendix A p.4)"}
+    ref: "Appendix D q2, p.16"
+  - metric: cmgr_recent
+    value: 0.05
+    unit: pct
+    tolerance: 0.005
+    period: "2026-06..2026-09"
+    stated: "Growth slowed to about 5% a month from July to September (D q2). MRR $92,813 in June to $107,189 in September (H p.31)."
+    definition: "Compound monthly growth over the last 3 monthly steps (July, August, September 2026): (MRR Sep 2026 / MRR Jun 2026)^(1/3) - 1. Start = June month-end MRR."
+    csv_check: {value: 0.0492, arithmetic: "(107189 / 92813)^(1/3) - 1"}
+    ref: "Appendix D q2, p.16; Appendix H, pp.31-32"
+  - metric: gross_margin
+    value: 0.92
+    unit: pct
+    tolerance: 0.005
+    period: "2026-09"
+    stated: "92% if you only count hosting, SMS and card fees (D q5). 92% as booked (I p.35)."
+    definition: "As booked: (total revenue - cost of revenue) / total revenue, where cost of revenue = hosting + SMS and telephony + card processing, and total revenue includes onboarding fees. Customer success is excluded (it sits in opex)."
+    csv_check: {value: 0.9239, arithmetic: "gross_profit / total_revenue, Sep 2026 = 105685 / 114389"}
+    note: "The pack does not state the window for the 92%. Latest month = 92.4%, L12M pooled = 91.7%; both round to 92%."
+    ref: "Appendix D q5, p.17; Appendix H, p.32; Appendix I, p.35"
+  - metric: gross_margin_incl_cs
+    value: null
+    unit: pct
+    tolerance: 0.005
+    period: "2026-09"
+    stated: "Our three customer success staff cost $17,000 a month against $114,000 of September revenue."
+    definition: "(gross profit - customer success salaries) / total revenue, latest month (Sep 2026)."
+    csv_check: {value: 0.7753, arithmetic: "(105685 - 17000) / 114389"}
+    note: "The pack states the inputs for September but no latest-month percentage; its only incl-support figure is the L12M 74%."
+    ref: "Appendix D q5, p.17"
+  - metric: gross_margin_incl_cs_l12m
+    value: 0.74
+    unit: pct
+    tolerance: 0.005
+    period: "2025-10..2026-09"
+    stated: "on that basis it's 74% over the last 12 months (D q5). Including them, the last 12 months were 74% (H p.32)."
+    definition: "Pooled over Oct 2025..Sep 2026: (sum gross profit - sum customer success salaries) / sum total revenue (incl. onboarding)."
+    csv_check: {value: 0.7430, arithmetic: "(sum gross_profit - sum customer_success_salaries) / sum total_revenue, last 12 rows = (918,373 - 174,000) / 1,001,816"}
+    note: "Average of monthly ratios gives 0.734, also 74%. A subscription-only denominator gives 0.712 and does NOT match, so the denominator is total revenue."
+    ref: "Appendix D q5, p.17; Appendix H, p.32; Appendix I, p.35"
+  - metric: burn
+    value: 58000
+    unit: cad
+    tolerance: 1000
+    period: "2026-04..2026-09"
+    stated: "About $58K a month, April to September 2026, excluding the SR&ED refund"
+    definition: "Average monthly net loss excluding SR&ED other income over the last 6 closed months (Apr..Sep 2026) = average of -operating_income."
+    csv_check: {value: 58421, arithmetic: "-(sum operating_income Apr..Sep 2026) / 6 = 350,526 / 6"}
+    note: "Including the July $182,300 credit the 6-month average would be $28,038; the audit (p.33) says runway must exclude it. Cash basis for Q2+Q3 2026 ex SR&ED is also ~$58K."
+    ref: "Appendix I, p.34; Appendix D q11, p.19; Appendix H, p.33"
+  - metric: runway_months
+    value: 8
+    unit: months
+    tolerance: 0.5
+    period: "2026-09"
+    stated: "We have $483K and have been burning about $58K a month, so about 8 months"
+    definition: "Cash at Sep 30 2026 ($483,270) / burn (average monthly burn ex SR&ED, Apr..Sep 2026)."
+    csv_check: {value: 8.27, arithmetic: "483270 / 58421"}
+    ref: "Appendix A, p.3; Appendix D q11, p.19; Appendix I, p.36"
+  - metric: burn_multiple
+    value: 0.6
+    unit: x
+    tolerance: 0.05
+    period: L12M
+    stated: "Net new ARR of $830K in the last 12 months against net burn of $514K, a burn multiple of about 0.6"
+    definition: "Net burn / net new ARR over Oct 2025..Sep 2026. Net burn is CASH-BASED: fall in cash excluding SAFE financing ($514K = 497K - 483K + 500K), so it includes the $182,300 SR&ED refund and annual-prepayment cash. Net new ARR = (Sep 2026 MRR - Sep 2025 MRR) x 12."
+    csv_check: {value: 0.619, arithmetic: "514000 / 830076 (net burn from fact net_burn_l12m)"}
+    note: "Not computable from the income statement alone. Using the P&L net loss instead gives 656,262 / 830,076 = 0.79, which does NOT match."
+    ref: "Appendix H, p.31; Appendix I, p.34; Appendix F, p.26 (Sacks)"
+  - metric: burn_multiple_ex_credits
+    value: 0.8
+    unit: x
+    tolerance: 0.05
+    period: L12M
+    stated: "Without the SR&ED refund it is about 0.8"
+    definition: "(Cash-based net burn L12M + SR&ED refund received in the window) / net new ARR = (514K + 182.3K) / 830K."
+    csv_check: {value: 0.839, arithmetic: "(514000 + 182300) / 830076"}
+    note: "Using P&L operating loss L12M instead gives 838,562 / 830,076 = 1.01, which does NOT match."
+    ref: "Appendix H, p.31; Appendix I, p.34"
+  - metric: cac
+    value: 3200
+    unit: cad
+    tolerance: 50
+    period: L12M
+    stated: "Fully loaded, about $3,200 per customer. That's $491,000 of sales and marketing salaries, commissions and programs over 153 new customers in the last 12 months."
+    definition: "Fully loaded, last 12 months (Oct 2025..Sep 2026): (sales salaries + sales commissions + marketing salaries + marketing programs) / new customers won in the same 12 months."
+    csv_check: {value: 3209, arithmetic: "490,982 / 153 (168,000 + 84,782 + 90,000 + 148,200; 153 = 33+38+42+40)"}
+    note: "Window is 12 months, not 6. The deck's $970 is marketing programs only: 148,200 / 153 = $969."
+    ref: "Appendix D q6, p.17; Appendix H, p.32; Appendix I, p.34"
+  - metric: cac_payback_months
+    value: 9.5
+    unit: months
+    tolerance: 0.5
+    period: L12M
+    stated: "A new customer brings about $458 of MRR, so payback is about 9 to 10 months on a margin that includes support."
+    definition: "CAC / (MRR per NEW customer x gross margin including customer success). Pack inputs: CAC $3,200 (or $3,209), new-customer MRR $458, margin incl. support (74% L12M)."
+    csv_check: {value: 9.47, arithmetic: "3209 / (458 x 0.743); with the Sep-only margin 0.775 it is 9.04"}
+    note: "Target range 9-10. Average MRR per ACTIVE customer ($508) gives 8.5 and falls outside the range, so the engine needs new-customer MRR (fact new_customer_mrr_avg)."
+    ref: "Appendix D q6, p.17; Appendix H, p.32; Appendix I, p.34"
+  - metric: logo_churn_rate
+    value: 0.020
+    unit: pct
+    tolerance: 0.002
+    period: L12M
+    stated: "We lost 2.0% of customers a month over the last 12 months, about a fifth of the base a year."
+    definition: "Monthly logo churn averaged over Oct 2025..Sep 2026: customers who cancelled / customers at the start of each month."
+    csv_check: {value: null, arithmetic: "Not in the CSV. Quarterly counts give 35 churned / 12 months over an average opening base of ~144-146 = ~2.0%."}
+    note: "The exact monthly denominators live in 04_mrr_bridge (not in repo). The engine's latest-period-only formula would not reproduce this."
+    ref: "Appendix D q3, p.17; Appendix H, p.31; Appendix I, p.34"
+  - metric: logo_churn_rate_6m
+    value: 0.016
+    unit: pct
+    tolerance: 0.002
+    period: "2026-04..2026-09"
+    stated: "The last six months were better, at 1.6%."
+    definition: "Same as logo_churn_rate over the last 6 months (Apr..Sep 2026)."
+    csv_check: {value: null, arithmetic: "Quarterly counts: 17 churned / 6 months over an average opening base of ~174 = ~1.6%."}
+    ref: "Appendix D q3, p.17; Appendix H, p.32"
+  - metric: revenue_churn_rate
+    value: null
+    unit: pct
+    tolerance: null
+    period: null
+    stated: "Share of MRR lost to cancellations in a period ... Shown in the MRR bridge"
+    definition: "Churned MRR in the period / MRR at the start of the period (Appendix I does not say whether contraction is included)."
+    csv_check: {value: null, arithmetic: "Not in the CSV. Quarterly churned MRR is in the facts (mrr_bridge.churned, rounded $000s)."}
+    note: "The pack gives no percentage for revenue churn."
+    ref: "Appendix I, p.34; Appendix B, pp.8-9"
+  - metric: nrr
+    value: 0.88
+    unit: pct
+    tolerance: 0.01
+    period: L12M
+    stated: "Customers who were paying us $38.0K a month in September 2025 pay $33.3K today, so NRR is about 88%"
+    definition: "Cohort = customers active in Sep 2025. NRR = cohort MRR in Sep 2026 / cohort MRR in Sep 2025, including expansion, contraction and churn."
+    csv_check: {value: 0.876, arithmetic: "33300 / 38000 (pack inputs; needs per-customer MRR, not in the CSV)"}
+    ref: "Appendix D q4, p.17; Appendix H, p.32; Appendix I, p.36"
+  - metric: grr
+    value: 0.81
+    unit: pct
+    tolerance: 0.01
+    period: L12M
+    stated: "gross retention about 81%"
+    definition: "Same Sep 2025 cohort; revenue kept after churn and contraction, ignoring expansion (each customer capped at its Sep 2025 MRR). Can't exceed 100%."
+    csv_check: {value: null, arithmetic: "Needs per-customer MRR (06_seats_by_customer_by_month.csv, not in repo)."}
+    ref: "Appendix D q4, p.17; Appendix H, p.32; Appendix I, p.35"
+  - metric: top_customer_share
+    value: 0.10
+    unit: pct
+    tolerance: 0.005
+    period: "2026-09"
+    stated: "They're about 10% of MRR."
+    definition: "Largest customer's MRR / total MRR, latest month."
+    csv_check: {value: 0.097, arithmetic: "(260 seats x $40) / 107189 = 10400 / 107189"}
+    ref: "Appendix D q9, p.18; Appendix H, p.32"
+  - metric: runway_after_close_plan
+    value: 22
+    unit: months
+    tolerance: 1
+    period: "2027-01"
+    kind: forecast
+    stated: "On our plan, cash lasts to about November 2028, so roughly 22 months after a January close."
+    definition: "Founders' plan (Appendix C) extended until cash runs out, counted from a January 2027 close."
+    note: "Forecast-engine target, not a CSV metric. The plan file (08) is not in repo; the quarterly plan ends at $1.592M cash in March 2028."
+    ref: "Appendix D q10, p.19; Appendix H, p.32"
+  - metric: runway_after_close_historical
+    value: 17
+    unit: months
+    tolerance: 1
+    period: "2027-01"
+    kind: forecast
+    stated: "If growth stays at the rates we've actually achieved, it's closer to 17 months"
+    definition: "Plan costs with historical drivers (actual growth, churn, ramp), from a January 2027 close."
+    note: "Forecast-engine target. The pack does not list the exact driver set."
+    ref: "Appendix D q10, p.19; Appendix H, p.32"
+  - metric: plan_cash_out_if_round_slips
+    value: null
+    unit: null
+    tolerance: null
+    period: "2027-03"
+    kind: forecast
+    stated: "If the round slipped to April, that plan runs out of cash in March."
+    definition: "Founders' plan with the $4M arriving April 2027 instead of January: cash runs out in March 2027."
+    note: "A date, not a number. Forecast-engine target."
+    ref: "Appendix D q11, p.19; Appendix H, p.33"
