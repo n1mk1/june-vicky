@@ -13,7 +13,7 @@ from vicky.areopagus.schema import LENS_LABELS, VCPersona
 from vicky.audit import audit_text
 from vicky.model.context import TruthContext
 from vicky.model.figures import Figure
-from vicky.model.truth import AttackItem
+from vicky.model.truth import AttackItem, _lc
 from vicky.playbooks import BankQuestion, fill, question_bank
 
 MAX_HYPS = 4
@@ -176,13 +176,13 @@ def follow_up_for(p: VCPersona, hyp: dict, ctx: TruthContext, checks: list[dict]
         f = contra["figure"]
         quote = _sentence_with(answer, contra.get("text") or "")
         said = f'You said "{quote}". ' if quote else ""
-        text = f"{said}The data says {f['label'].lower()} is {f['display']}. Which one is right, and which months are you using?"
+        text = f"{said}The data says {_lc(f['label'])} is {f['display']}. Which one is right, and which months are you using?"
         if passes(text, ctx, [answer]):
             return text
     if not checks:
         ev = next((ctx.figure(e) for e in hyp["evidence"] if ctx.figure(e)), None)
         if ev is not None:
-            return f"You haven't given me a number. What is {ev.label.lower()}, how is it calculated, and over which months?"
+            return f"You haven't given me a number. What is {_lc(ev.label)}, how is it calculated, and over which months?"
         return "That's a story, not evidence. What would you show me to prove it?"
     for _, q in _bank_match(p, hyp, asked):
         if "so what" in q.text.lower() or not q.placeholders:
@@ -262,7 +262,7 @@ def judge(answer: str, hyp: dict | None, checks: list[dict], ctx: TruthContext, 
         missing.append(f"a number that matches your data: {f.get('label', c['metric']).lower()} is {f.get('display', 'different')}"
                        if f else "a number your data supports")
     elif not checks and correct is not None:
-        missing.append(f"the figure itself: {correct.label.lower()}")
+        missing.append(f"the figure itself: {_lc(correct.label)}")
     if not any(o in t for o in OWNING):
         missing.append("the weak spot, said plainly")
     if not any(w in t for w in PLAN):

@@ -133,3 +133,10 @@ type Session = { id: string; status: "live"|"ended"; mode: "prepare"; panel: Per
 | Method | Path | Returns |
 |---|---|---|
 | POST | `/pitch/start` | 409 `{detail}` without a confirmed TruthPack; otherwise 501 until the voice pipeline lands |
+
+## Notes on shapes (as the frontend uses them)
+
+- **Score scales:** a turn's `accuracy` (session `scores[]`, report `questions[].scores.accuracy`) is the share of the answer's claims that match the data, 0–1. Report `verdict.dims.accuracy` is the same thing averaged and put on the 0–5 scale of the other dimensions so the verdict can average them.
+- **Extra fields** returned beyond the tables above: citation `start`, `end`, `kind`; dataset `transposed`, `notes`; mapping `proposer` (`heuristic` | `sample` | `reused`); report list `dims`, `delta`; session `started_at`, `settings.focus`; attack item `quotes` (founder words the item quotes); report question `seq`, `lens`, `vc_name`; report source `label`, `formula`, `as_of`.
+- **Profile casing:** `currency` is stored upper-case (`CAD`); figure units are lower-case (`cad`).
+- **Uploads:** a file uploaded without an `engagement_id` creates a draft engagement whose profile `granularity` is prefilled from the file (`inferred.granularity`).

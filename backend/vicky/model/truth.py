@@ -252,14 +252,14 @@ def attack_list(figures: dict[str, Figure | MissingFigure], facts: list[Fact], p
         if c.status in ("contradicts", "forecast_as_fact"):
             fig = F.get(c.figure_id or "")
             label = fig.label if fig else c.metric.replace("_", " ")
-            said = f'The deck says "{c.text}"' if c.text else f"The deck's {label.lower()} figure"
+            said = f'The deck says "{c.text}"' if c.text else f"The deck's {_lc(label)} figure"
             if c.status == "contradicts" and fig:
-                detail = f"{said}; the data says {label.lower()} is {fig.display}."
+                detail = f"{said}; the data says {_lc(label)} is {fig.display}."
             elif c.status == "forecast_as_fact":
                 detail = f"{said}, but that number is the plan, not an actual."
             else:
                 detail = c.explanation
-            add(f"deck_{i + 1}", "claims", f"The deck's {label.lower()}", detail, 0.85 if c.status == "contradicts" else 0.7,
+            add(f"deck_{i + 1}", "claims", f"The deck's {_lc(label)}", detail, 0.85 if c.status == "contradicts" else 0.7,
                 [c.figure_id] if c.figure_id else [])
             if c.text:
                 items[-1].quotes = [c.text]
@@ -291,6 +291,20 @@ def attack_list(figures: dict[str, Figure | MissingFigure], facts: list[Fact], p
 
 
 _NUM = r"(\d[\d,]*(?:\.\d+)?)"
+
+
+def _clause(text: str, start: int, end: int) -> str:
+    """The founder's own words around a claim: its clause, cut at sentence/clause breaks, never mid-word."""
+    breaks = [m.end() for m in re.finditer(r"[.!?;](?=\s)|,\s+(?:and|but|so)\s|\n", text[:start])]
+    lo = breaks[-1] if breaks else 0
+    nxt = re.search(r"[.!?;](?=\s|$)|,\s+(?:and|but|so)\s|\n", text[end:])
+    hi = end + nxt.start() if nxt else len(text)
+    clause = text[lo:hi].strip(" ,;")
+    if len(clause) > 160:  # very long sentence: keep whole words around the claim
+        a = text.rfind(" ", 0, max(0, start - 40)) + 1
+        b = text.find(" ", min(len(text), end + 40))
+        clause = text[a: b if b != -1 else len(text)].strip(" ,;")
+    return clause
 
 
 def quick_claims(text: str) -> list[dict]:
@@ -342,6 +356,14 @@ def quick_claims(text: str) -> list[dict]:
                 continue
             seen.add(key)
             is_forecast = bool(re.search(r"\b(will|plan|projected|forecast|expect|by 20\d\d|next year|target)\b", t))
-            out.append({"text": text[max(0, m.start() - 30): m.end() + 20].strip(), "metric": metric, "value": value,
+            out.append({"text": _clause(text, m.start(), m.end()), "metric": metric, "value": value,
                         "unit": unit, "period": period, "is_forecast": is_forecast})
     return out
+
+
+def _lc(label: str) -> str:
+    """Lower-case a label for mid-sentence use, keeping acronyms (ARR, NRR, CAC) intact."""
+    first, _, rest = label.partition(" ")
+    if first.isupper() and len(first) > 1:
+        return label
+    return label[:1].lower() + label[1:]

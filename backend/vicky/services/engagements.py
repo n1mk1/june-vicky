@@ -183,10 +183,6 @@ async def _store_datasets(conn, engagement_id: str, upload_id: str, kind: str, p
 
 async def add_upload(engagement_id: str | None, filename: str, data: bytes, mime: str = "") -> str:
     kind = _upload_kind(filename)
-    if engagement_id is None:
-        engagement_id = await create_engagement({})
-    else:
-        await _require(engagement_id)
     parsed: list[ParsedDataset] = []
     if kind in ("csv", "xlsx"):
         try:
@@ -195,6 +191,16 @@ async def add_upload(engagement_id: str | None, filename: str, data: bytes, mime
             raise Invalid(f"Could not read {filename}: {e}") from e
         if not parsed:
             raise Invalid(f"{filename} has no table with a header row")
+    if engagement_id is None:
+        # Prefill what the file itself shows; the founder confirms the rest in the profile step.
+        grans = [d.granularity for d in parsed if d.table_kind == "series" and d.granularity in ("month", "quarter")]
+        inferred = {"granularity": grans[0]} if grans else {}
+        engagement_id = await create_engagement(inferred)
+        if inferred:
+            await db.execute("update company_profiles set inferred = $2 where engagement_id = $1", engagement_id,
+                             {"granularity": "from the uploaded file"})
+    else:
+        await _require(engagement_id)
     async with db.pool().acquire() as conn, conn.transaction():
         prof = await conn.fetchrow("select currency from company_profiles where engagement_id = $1", engagement_id)
         uid = await conn.fetchval(
