@@ -12,7 +12,7 @@ const LOGO_URL = "/brand/Vicky_Logo.svg";
 const DEPTH = 34;
 
 function buildMark(svg: SVGResult) {
-  const shapes = svg.paths.flatMap((p) => SVGLoader.createShapes(p));
+  const shapes = svg.paths.flatMap((p) => p.toShapes());
   const solid = new THREE.ExtrudeGeometry(shapes, { depth: DEPTH, bevelEnabled: false, curveSegments: 16 });
   solid.center();
   solid.rotateX(Math.PI); // SVG y points down; a rotation (not a mirror) keeps the face winding intact
@@ -41,7 +41,7 @@ function Mark({ ink, ember, light }: { ink: string; ember: string; light: boolea
   const { solid, edges, points, size } = useMemo(() => buildMark(svg), [svg]);
   const viewport = useThree((s) => s.viewport);
   // Fit the wordmark to the canvas, leaving room for the sway to swing the near end forward.
-  const scale = Math.min((viewport.width * 0.74) / size.x, (viewport.height * 0.42) / size.y);
+  const scale = Math.min((viewport.width * 0.6) / size.x, (viewport.height * 0.4) / size.y);
 
   useFrame((state) => {
     const g = group.current;
