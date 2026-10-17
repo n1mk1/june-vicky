@@ -1,0 +1,197 @@
+# The nine claims in the Tidewell founders' draft deck (Appendix A, p.5), with the status
+# the pack's worked example assigns (Appendix H, p.32) and the data behind it.
+# Sample/test fixture only.
+#
+# Fields
+#   slide: the pack lists the claims but gives no slide numbers, so slide is null;
+#          claim_no is the order in Appendix A.
+#   value/unit/period: the figure as the founders state it (fractions for percentages).
+#   comparator: how the claim is phrased: eq | approx | gt | lt.
+#   expected_status: matches | contradicts | unsupported | forecast_as_fact.
+#   compare_metric: the metric the pack actually judges the claim against, when it differs
+#          from `metric` (e.g. margin including support).
+#   pack_status: the action word Appendix H gives (Fix | Reword | Remove or source | Show as upside).
+#   secondary: a second figure inside the same sentence, judged separately.
+#   Pack inconsistency: Appendix H p.31 says "four of the nine claims would not survive a first
+#   meeting", but its table (p.32) marks five as Fix, two as Reword, one as Remove or source and
+#   one as Show as upside.
+
+claims:
+  - claim_no: 1
+    slide: null
+    text: "$1.37M ARR"
+    metric: arr
+    value: 1370000
+    unit: cad
+    period: "2026-09"
+    comparator: approx
+    is_forecast: false
+    expected_status: contradicts
+    pack_status: Fix
+    why: >-
+      ARR is MRR x 12 with one-time fees left out: September MRR $107,189 x 12 = $1.29M. The
+      $1.37M is September total revenue x 12, which includes $7,200 of one-time onboarding fees
+      (114,389 x 12 = 1,372,668).
+    ref: "Appendix A, p.5; Appendix D q1, p.16; Appendix H, p.32"
+
+  - claim_no: 2
+    slide: null
+    text: "Growing 10% month over month"
+    metric: cmgr_12m
+    value: 0.10
+    unit: pct
+    period: L12M
+    comparator: approx
+    is_forecast: false
+    expected_status: contradicts
+    compare_metric: cmgr_recent
+    pack_status: Reword
+    why: >-
+      MRR compounded about 9% a month over the 12 months to September 2026 ($38,016 to $107,189),
+      about 8% without the largest customer, and only about 5% a month from July to September
+      ($92,813 in June to $107,189). The pack's action is "Reword", not "Fix": the 12-month rate is
+      close but the claim hides the recent slowdown.
+    ref: "Appendix A, p.5; Appendix D q2, p.16; Appendix H, pp.31-32"
+
+  - claim_no: 3
+    slide: null
+    text: "92% gross margin"
+    metric: gross_margin
+    value: 0.92
+    unit: pct
+    period: null
+    comparator: approx
+    is_forecast: false
+    expected_status: contradicts
+    compare_metric: gross_margin_incl_cs_l12m
+    pack_status: Fix
+    why: >-
+      92% is right as booked (hosting, SMS and card fees only), but it leaves out $17,000 a month of
+      customer success salaries. On the basis most SaaS investors use (support in cost of revenue)
+      the last 12 months were 74%. Checked against the as-booked metric alone the figure would match;
+      the pack still marks it Fix.
+    ref: "Appendix A, p.5; Appendix D q5, p.17; Appendix H, p.32; Appendix B, p.9"
+
+  - claim_no: 4
+    slide: null
+    text: "Monthly logo churn around 1%"
+    metric: logo_churn_rate
+    value: 0.01
+    unit: pct
+    period: null
+    comparator: approx
+    is_forecast: false
+    expected_status: contradicts
+    pack_status: Fix
+    why: >-
+      Logo churn was 2.0% a month over the last 12 months (about a fifth of the base a year) and
+      1.6% over the last six. Monthly-plan customers churn about 3.3% a month in their first six
+      months. 1% is the forecast assumption, not the history.
+    ref: "Appendix A, p.5; Appendix D q3, p.17; Appendix H, pp.31-32; Appendix C, p.12"
+
+  - claim_no: 5
+    slide: null
+    text: "Net revenue retention above 110%"
+    metric: nrr
+    value: 1.10
+    unit: pct
+    period: L12M
+    comparator: gt
+    is_forecast: false
+    expected_status: contradicts
+    pack_status: Fix
+    why: >-
+      Customers paying $38.0K a month in September 2025 pay $33.3K in September 2026: NRR about 88%,
+      gross retention about 81%. Seat expansion is small (about 0.4% of starting MRR a month).
+    ref: "Appendix A, p.5; Appendix D q4, p.17; Appendix H, p.32; Appendix I, p.35"
+
+  - claim_no: 6
+    slide: null
+    text: "$970 customer acquisition cost, paid back in under 3 months"
+    metric: cac
+    value: 970
+    unit: cad
+    period: L12M
+    comparator: approx
+    is_forecast: false
+    expected_status: contradicts
+    pack_status: Fix
+    why: >-
+      $970 is marketing programs only divided by new customers ($148,200 / 153). Fully loaded with
+      sales and marketing salaries and commissions it is about $3,200 ($491,000 / 153 new customers,
+      last 12 months).
+    secondary:
+      metric: cac_payback_months
+      value: 3
+      unit: months
+      comparator: lt
+      is_forecast: false
+      expected_status: contradicts
+      why: >-
+        A new customer brings about $458 of MRR, so on a margin that includes support the fully
+        loaded CAC pays back in about 9 to 10 months, not under 3.
+    ref: "Appendix A, p.5; Appendix D q6, p.17; Appendix H, p.32"
+
+  - claim_no: 7
+    slide: null
+    text: "$2B total addressable market in North America"
+    metric: tam
+    value: 2000000000
+    unit: cad
+    period: null
+    comparator: approx
+    is_forecast: false
+    expected_status: unsupported
+    pack_status: Remove or source
+    why: >-
+      No source is given and there is no bottom-up build. The pack's strong answer takes it off the
+      slide until it is rebuilt from sourced counts of trades businesses with 3 to 30 technicians x
+      average seats x price.
+    note: "Currency of the $2B is not stated; all pack amounts are CAD (p.2)."
+    ref: "Appendix A, p.5; Appendix D q12, p.19; Appendix H, p.32; Appendix I, p.37"
+
+  - claim_no: 8
+    slide: null
+    text: "Northern Comfort Group is expanding to 600 seats next year"
+    metric: top_customer.seats
+    value: 600
+    unit: count
+    period: "2027-03"
+    comparator: eq
+    is_forecast: true
+    expected_status: forecast_as_fact
+    pack_status: Show as upside
+    why: >-
+      Verbal only: the customer's COO said they want every location on the product, but nothing is
+      signed. Today it has 260 seats at $40 (about 10% of MRR) and renews in March 2027. The base plan
+      should keep it at 260 seats and show 600 as upside.
+    ref: "Appendix A, pp.4-5; Appendix C, p.13; Appendix D q9, p.18; Appendix H, p.32"
+
+  - claim_no: 9
+    slide: null
+    text: "$4M gives us 24 months of runway and gets us to $5M ARR"
+    metric: runway_months
+    value: 24
+    unit: months
+    period: "2027-01"
+    comparator: eq
+    is_forecast: true
+    expected_status: contradicts
+    compare_metric: runway_after_close_plan
+    pack_status: Reword
+    why: >-
+      On the founders' own plan cash lasts to about November 2028, roughly 22 months after a January
+      2027 close; on historical growth rates it is closer to 17 months. If the round slips to April,
+      the plan runs out of cash in March 2027 because marketing spend rises from October.
+    secondary:
+      metric: arr
+      value: 5000000
+      unit: cad
+      period: "2028-03"
+      comparator: approx
+      is_forecast: true
+      expected_status: forecast_as_fact
+      why: >-
+        The plan reaches about $5.1M ARR by March 2028 ($426K MRR x 12), but that is the founders'
+        forecast (churn 1%, 1-month rep ramp, 20% price rise, 600-seat renewal), stated as a certainty.
+    ref: "Appendix A, p.5; Appendix C, pp.11-14; Appendix D q10, p.19; Appendix D q14, p.20; Appendix H, pp.32-33"
