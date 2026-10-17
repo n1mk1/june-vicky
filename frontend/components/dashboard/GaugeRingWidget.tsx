@@ -15,9 +15,9 @@ export function GaugeRingWidget({ widget, currency }: { widget: Widget; currency
   const lead = items[0];
 
   return (
-    <Panel title={widget.spec.title} marks bodyClassName="flex flex-col items-center justify-center gap-4 p-4">
+    <Panel title={widget.spec.title} marks bodyClassName="flex flex-col items-center justify-center gap-3 p-4">
       <div className="relative">
-        <svg viewBox="0 0 160 160" className="size-[clamp(120px,15vw,168px)] -rotate-90" aria-hidden>
+        <svg viewBox="0 0 160 160" className="size-[clamp(96px,min(15vw,17vh),168px)] -rotate-90" aria-hidden>
           {items.map((k, i) => {
             const r = RADII[i];
             const frac = k.unit === "pct" ? Math.max(0, Math.min(1, k.value ?? 0)) : 0;
@@ -40,7 +40,7 @@ export function GaugeRingWidget({ widget, currency }: { widget: Widget; currency
         </svg>
         {lead && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <Explainable x={kpiExplain(lead, currency)} triggerClassName="display text-[clamp(32px,3.6vw,48px)] tabular-nums">
+            <Explainable x={kpiExplain(lead, currency)} triggerClassName="display text-[clamp(28px,min(3.6vw,5vh),48px)] tabular-nums">
               {lead.display}
             </Explainable>
             <span className="text-[11px] text-ink-2">{lead.label.toLowerCase()}</span>

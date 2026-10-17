@@ -64,7 +64,8 @@ export default function ReadinessOrb({ score }: { score: number }) {
   const { theme } = useTheme();
   const c = palette[theme];
   return (
-    <Canvas dpr={[1, 1.5]} camera={{ position: [0, 0, 7.6], fov: 38 }} gl={{ antialias: true, alpha: true }} aria-hidden>
+    // Camera distance sets how much of the canvas the score ring fills (about 60% of its height here).
+    <Canvas dpr={[1, 1.5]} camera={{ position: [0, 0, 9.8], fov: 38 }} gl={{ antialias: true, alpha: true }} aria-hidden>
       <Orb score={score} ink={c.ink} ember={c.ember} />
     </Canvas>
   );

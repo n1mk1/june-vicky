@@ -27,6 +27,9 @@ const LENS_LABEL: Record<string, string> = {
   impact: "Impact",
 };
 
+/** Height of an opened card (bio, five lens weights, style, actions), used to pick its direction. */
+const OPEN_HEIGHT = 470;
+
 function Bar({ value, max = 1, strong }: { value: number; max?: number; strong?: boolean }) {
   const frac = Math.max(0, Math.min(1, value / max));
   return (
@@ -36,6 +39,12 @@ function Bar({ value, max = 1, strong }: { value: number; max?: number; strong?:
   );
 }
 
+/**
+ * A compact tile (name, firm, signature move, lens) that opens on hover or keyboard focus into the
+ * full card: bio, lens weights, style and actions. The open card floats over its neighbours instead
+ * of pushing the grid, so the whole Areopagus stays on one screen. Near the bottom of the viewport it
+ * opens upwards.
+ */
 function PersonaCard({
   p,
   fresh,
@@ -49,106 +58,138 @@ function PersonaCard({
   onFork: () => void;
   onDelete: () => void;
 }) {
+  const [up, setUp] = useState(false);
+  const [room, setRoom] = useState<number | null>(null);
   const lenses = Object.entries(p.priorities ?? {}).sort((a, b) => b[1] - a[1]);
   const top = new Set(lenses.slice(0, 2).map(([k]) => k));
   const interrupt = typeof p.style?.interrupt_tendency === "number" ? p.style.interrupt_tendency : null;
   const depth = typeof p.style?.follow_up_depth === "number" ? p.style.follow_up_depth : null;
+  const lensLine = p.lens || lenses.slice(0, 2).map(([k]) => LENS_LABEL[k] ?? humanize(k)).join(" → ");
+
+  // Open towards whichever side has room for the full card; cap it to that room (it scrolls inside).
+  const place = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    // Stay inside the page's scroll area so an open card never slides under the app header.
+    const area = el.closest("[data-scroll-area]")?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+    const down = area.bottom - r.top - 8;
+    const upward = r.bottom - area.top - 8;
+    const openUp = down < OPEN_HEIGHT && upward > down;
+    setUp(openUp);
+    setRoom(Math.max(r.height, openUp ? upward : down));
+    el.querySelector("article")?.scrollTo({ top: 0 }); // always open on the header
+  };
 
   return (
-    <article
-      className={cn(
-        "glass relative flex flex-col gap-4 rounded-[20px] p-4",
-        fresh && "animate-[rise_0.7s_var(--ease-soft)_both] border-line-strong",
-      )}
+    <li
+      className="group/card relative h-[156px] focus-within:z-30 hover:z-30"
+      onMouseEnter={(e) => place(e.currentTarget)}
+      onFocus={(e) => place(e.currentTarget)}
     >
-      <CornerMarks />
-      <header className="flex items-start gap-3">
-        <VcGlyph glyph={p.glyph} className="size-9" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 className="truncate font-display text-[22px] tracking-[-0.045em]">{p.name}</h2>
-            <span className={cn("label shrink-0", !p.builtin && "text-ember")}>{p.builtin ? "Built-in" : "Custom"}</span>
-          </div>
-          <p className="truncate text-[12px] text-ink-2">
-            {p.firm} · {humanize(p.archetype)}
-          </p>
-        </div>
-      </header>
-
-      <p className="line-clamp-3 text-[12.5px] leading-snug text-ink-2">{p.bio}</p>
-
-      <div className="flex flex-col gap-1">
-        <span className="label">Lens</span>
-        <p className="text-[13px] leading-snug">{p.lens || lenses.slice(0, 2).map(([k]) => LENS_LABEL[k] ?? humanize(k)).join(" → ")}</p>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <span className="label">Signature move</span>
-        <p className="font-display text-[16px] leading-tight tracking-[-0.03em]">{p.signature_move}</p>
-      </div>
-
-      {lenses.length > 0 && (
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5" aria-label="Lens weights">
-          {lenses.map(([k, v]) => (
-            <div key={k} className="flex items-center gap-2">
-              <dt className={cn("w-[92px] shrink-0 truncate text-[10.5px]", top.has(k) ? "text-ink" : "text-ink-2")}>{LENS_LABEL[k] ?? humanize(k)}</dt>
-              <dd className="flex flex-1 items-center" title={`${Math.round(v * 100)} of 100`}>
-                <Bar value={v} strong={top.has(k)} />
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-
-      {(interrupt !== null || depth !== null) && (
-        <dl className="grid grid-cols-2 gap-4 border-t border-line pt-3">
-          {interrupt !== null && (
-            <div className="flex flex-col gap-1">
-              <dt className="text-[10.5px] text-ink-2">Interrupts</dt>
-              <dd className="flex items-center">
-                <Bar value={interrupt} strong />
-              </dd>
-            </div>
-          )}
-          {depth !== null && (
-            <div className="flex flex-col gap-1">
-              <dt className="text-[10.5px] text-ink-2">Follow-up depth · {depth}</dt>
-              <dd className="flex items-center">
-                <Bar value={depth} max={3} strong />
-              </dd>
-            </div>
-          )}
-        </dl>
-      )}
-
-      <footer className="mt-auto flex flex-wrap items-center justify-between gap-2">
-        <ul className="flex flex-wrap gap-1">
-          {(p.kits ?? []).map((k) => (
-            <li key={k} className="rounded-full border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2">
-              {k}
-            </li>
-          ))}
-        </ul>
-        {p.builtin ? (
-          <PillButton
-            label={busy ? "Forking" : "Fork"}
-            variant="outline"
-            disabled={busy}
-            onClick={onFork}
-            icon={<GitFork className="size-3.5" strokeWidth={1.5} />}
-            title="Make an editable copy that keeps this investor's method"
-          />
-        ) : (
-          <PillButton
-            label={busy ? "Deleting" : "Delete"}
-            variant="ghost"
-            disabled={busy}
-            onClick={onDelete}
-            icon={<Trash2 className="size-3.5" strokeWidth={1.5} />}
-          />
+      <article
+        tabIndex={0}
+        style={room ? { maxHeight: room } : undefined}
+        aria-label={`${p.name}, ${p.firm}. ${p.signature_move}`}
+        className={cn(
+          "glass scroll-thin absolute inset-x-0 flex min-h-full flex-col overflow-hidden rounded-[20px] p-4 outline-none [&>*]:shrink-0 group-focus-within/card:overflow-y-auto group-hover/card:overflow-y-auto transition-[box-shadow,background-color,border-color] duration-300",
+          "group-hover/card:border-line-strong group-hover/card:bg-surface-solid group-hover/card:shadow-[0_24px_60px_-20px_rgba(0,0,0,0.55)]",
+          "group-focus-within/card:border-line-strong group-focus-within/card:bg-surface-solid group-focus-within/card:shadow-[0_24px_60px_-20px_rgba(0,0,0,0.55)]",
+          "focus-visible:ring-1 focus-visible:ring-ink-2",
+          up ? "bottom-0" : "top-0",
+          fresh && "animate-[rise_0.7s_var(--ease-soft)_both] border-line-strong",
         )}
-      </footer>
-    </article>
+      >
+        <CornerMarks />
+        <header className="flex items-start gap-3">
+          <VcGlyph glyph={p.glyph} className="size-8" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="truncate font-display text-[20px] leading-tight tracking-[-0.045em]">{p.name}</h2>
+              <span className={cn("label shrink-0", !p.builtin && "text-ember")}>{p.builtin ? "Built-in" : "Custom"}</span>
+            </div>
+            <p className="truncate text-[11.5px] text-ink-2">
+              {p.firm} · {humanize(p.archetype)}
+            </p>
+          </div>
+        </header>
+
+        <p className="mt-3 line-clamp-2 font-display text-[15px] leading-tight tracking-[-0.03em]">{p.signature_move}</p>
+        <p className="mt-auto truncate pt-2 text-[11.5px] text-ink-2" title={lensLine}>
+          <span className="label mr-1.5">Lens</span>
+          {lensLine}
+        </p>
+
+        {/* Details: collapsed to zero height until the card is hovered or focused. */}
+        <div className="grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-300 ease-[var(--ease-soft)] group-focus-within/card:grid-rows-[1fr] group-focus-within/card:opacity-100 group-hover/card:grid-rows-[1fr] group-hover/card:opacity-100">
+          <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
+            <p className="mt-3 border-t border-line pt-3 line-clamp-5 text-[12.5px] leading-snug text-ink-2" title={p.bio}>{p.bio}</p>
+
+            {lenses.length > 0 && (
+              <dl className="flex flex-col gap-1.5" aria-label="Lens weights">
+                {lenses.slice(0, 5).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-2">
+                    <dt className={cn("w-[104px] shrink-0 truncate text-[10.5px]", top.has(k) ? "text-ink" : "text-ink-2")}>
+                      {LENS_LABEL[k] ?? humanize(k)}
+                    </dt>
+                    <dd className="flex flex-1 items-center" title={`${Math.round(v * 100)} of 100`}>
+                      <Bar value={v} strong={top.has(k)} />
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+
+            {(interrupt !== null || depth !== null) && (
+              <dl className="grid grid-cols-2 gap-4 border-t border-line pt-3">
+                {interrupt !== null && (
+                  <div className="flex flex-col gap-1">
+                    <dt className="text-[10.5px] text-ink-2">Interrupts</dt>
+                    <dd className="flex items-center">
+                      <Bar value={interrupt} strong />
+                    </dd>
+                  </div>
+                )}
+                {depth !== null && (
+                  <div className="flex flex-col gap-1">
+                    <dt className="text-[10.5px] text-ink-2">Follow-up depth · {depth}</dt>
+                    <dd className="flex items-center">
+                      <Bar value={depth} max={3} strong />
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
+
+            <footer className="flex flex-wrap items-center justify-between gap-2 pb-0.5">
+              <ul className="flex flex-wrap gap-1">
+                {(p.kits ?? []).map((k) => (
+                  <li key={k} className="rounded-full border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2">
+                    {k}
+                  </li>
+                ))}
+              </ul>
+              {p.builtin ? (
+                <PillButton
+                  label={busy ? "Forking" : "Fork"}
+                  variant="outline"
+                  disabled={busy}
+                  onClick={onFork}
+                  icon={<GitFork className="size-3.5" strokeWidth={1.5} />}
+                  title="Make an editable copy that keeps this investor's method"
+                />
+              ) : (
+                <PillButton
+                  label={busy ? "Deleting" : "Delete"}
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={onDelete}
+                  icon={<Trash2 className="size-3.5" strokeWidth={1.5} />}
+                />
+              )}
+            </footer>
+          </div>
+        </div>
+      </article>
+    </li>
   );
 }
 
@@ -192,20 +233,19 @@ export function AreopagusView() {
   const builtins = items.filter((p) => p.builtin).length;
 
   return (
-    <div className="scroll-thin -mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-6">
-      <div className="mx-auto flex w-full max-w-[1320px] flex-col gap-6">
-        <header className="flex flex-col gap-3 pt-2">
-          <span className="label">Investor personas</span>
-          <h1 className="display text-[clamp(40px,5.4vw,84px)]">The Areopagus</h1>
-          <p className="max-w-[62ch] text-[14px] leading-snug text-ink-2">
-            Every investor who can sit on your panel. Each reads your numbers through their own lenses, writes a private memo, and
-            asks in their own style. Fork a built-in to make a copy you can tune; it keeps the original&apos;s method.
+    <div data-scroll-area className="scroll-thin -mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-4">
+      <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-5">
+        <header className="flex flex-col gap-x-8 gap-y-2 pt-1 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-1">
+            <span className="label">
+              Investor personas{items.length > 0 && ` · ${builtins} built-in · ${items.length - builtins} custom`}
+            </span>
+            <h1 className="display text-[clamp(34px,3.8vw,60px)]">The Areopagus</h1>
+          </div>
+          <p className="max-w-[58ch] text-[13px] leading-snug text-ink-2 lg:pb-1.5">
+            Every investor who can sit on your panel reads your numbers through their own lenses. Hover or tap a card for their method;
+            fork a built-in to make a copy you can tune.
           </p>
-          {items.length > 0 && (
-            <p className="label">
-              {builtins} built-in · {items.length - builtins} custom
-            </p>
-          )}
         </header>
         {error && <ErrorNote message={error} />}
         {list.loading && !list.data ? (
@@ -213,11 +253,11 @@ export function AreopagusView() {
         ) : list.error && !list.data ? (
           <ErrorNote message={errorText(list.error)} onRetry={list.reload} />
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" aria-label="Investors">
             {items.map((p) => (
               <PersonaCard key={p.id} p={p} fresh={p.id === fresh} busy={busy === p.id} onFork={() => void fork(p)} onDelete={() => void remove(p)} />
             ))}
-          </div>
+          </ul>
         )}
       </div>
     </div>

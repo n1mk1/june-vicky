@@ -109,14 +109,15 @@ function Readiness({ reports, company }: { reports: ReportSummary[] | undefined;
   return (
     <section
       aria-label="Pitch readiness"
-      className="relative order-first flex min-h-[380px] items-center justify-center md:col-span-2 lg:order-none lg:col-span-5 lg:col-start-4 lg:row-span-2 lg:row-start-1 lg:min-h-0"
+      className="relative order-first flex min-h-[300px] items-center justify-center md:col-span-2 lg:order-none lg:col-span-5 lg:col-start-4 lg:row-span-2 lg:row-start-1 lg:min-h-0"
     >
-      <div className="absolute inset-0">
+      {/* A centred square no larger than the slot, so the orb stays an accent rather than the whole view. */}
+      <div className="absolute top-1/2 left-1/2 aspect-square h-[min(100%,34rem)] max-w-full -translate-x-1/2 -translate-y-1/2">
         <OrbScene score={score ?? 0} />
       </div>
       <div className="relative flex flex-col items-center text-center">
         <span className="label">Pitch readiness</span>
-        <span className="display mt-2 text-[clamp(72px,9vw,140px)] tabular-nums">{score ?? "—"}</span>
+        <span className="display mt-1 text-[clamp(52px,min(5.6vw,9vh),104px)] tabular-nums">{score ?? "—"}</span>
         <span className="mt-1 max-w-[26ch] text-[12px] text-ink-2">
           {latest ? (
             <>
@@ -368,7 +369,10 @@ export function DashboardView() {
 
   return (
     <div className="scroll-thin -mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 pb-2">
-      <div className="flex min-h-7 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+      {/* The fold: status, headline stats, readiness, trend, attack list and chat fill exactly the
+          visible height on desktop, so the key numbers never need a scroll. Extra widgets follow below. */}
+      <div className="flex shrink-0 flex-col gap-3 lg:h-full lg:min-h-[560px]">
+      <div className="flex min-h-6 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
         <div className="flex min-w-0 items-center gap-3">
           <LiveDot />
           {note && (
@@ -380,7 +384,7 @@ export function DashboardView() {
         {d.time_range && <RangeChip range={d.time_range} onReset={() => setRange(null)} />}
       </div>
 
-      <div className="grid shrink-0 grid-cols-1 gap-4 md:grid-cols-2 lg:h-full lg:min-h-[720px] lg:grid-cols-12 lg:grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,0.94fr)_minmax(0,1.06fr)_auto]">
         <Slot widget={byRole.get("margin_ring")} fallback={empty("Gross margin")} className="min-h-[300px] lg:col-span-3 lg:row-start-1 lg:min-h-0" {...common} />
         <Slot widget={byRole.get("headline_kpi")} fallback={empty("Headline")} className="lg:col-span-3 lg:row-start-2" {...common} />
 
@@ -406,6 +410,7 @@ export function DashboardView() {
             attachError={uploadError}
           />
         </div>
+      </div>
       </div>
 
       <section aria-label="More widgets" className="flex flex-col gap-3 pt-2">

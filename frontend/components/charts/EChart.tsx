@@ -150,5 +150,5 @@ export function EChart({ option, onPointClick, onZoom, className, ariaLabel }: E
     chart.current?.setOption(option, { notMerge: true });
   }, [option, theme]);
 
-  return <div ref={el} role="img" aria-label={ariaLabel} className={cn("h-full min-h-[180px] w-full", className)} />;
+  return <div ref={el} role="img" aria-label={ariaLabel} className={cn("h-full min-h-[140px] w-full", className)} />;
 }

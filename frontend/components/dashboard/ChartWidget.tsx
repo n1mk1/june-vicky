@@ -35,11 +35,13 @@ function prepare(raw: EChartsOptionJson, range: TimeRange | null): Record<string
 
   const yUnits = meta.y_units ?? [];
   if (Array.isArray(opt.yAxis)) {
-    opt.yAxis = (opt.yAxis as Record<string, unknown>[]).map((ax, i) =>
-      yUnits[i] !== undefined
-        ? { ...ax, axisLabel: { ...((ax.axisLabel as object) ?? {}), formatter: (v: number) => fmtAxis(v, yUnits[i], currency) } }
-        : ax,
-    );
+    // Three ticks read cleanly even in the short panels of the dashboard's first screen.
+    opt.yAxis = (opt.yAxis as Record<string, unknown>[]).map((ax, i) => {
+      const base = { ...ax, splitNumber: 3 };
+      return yUnits[i] !== undefined
+        ? { ...base, axisLabel: { ...((ax.axisLabel as object) ?? {}), formatter: (v: number) => fmtAxis(v, yUnits[i], currency) } }
+        : base;
+    });
   }
 
   const template = meta.template;
@@ -170,7 +172,7 @@ export function ChartWidget({
       bodyClassName="relative flex min-h-0 flex-col p-3 pt-3"
     >
       {table ? (
-        <div className="scroll-thin min-h-[180px] flex-1 overflow-auto">
+        <div className="scroll-thin min-h-[140px] flex-1 overflow-auto">
           <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr className="border-b border-line">
@@ -220,7 +222,7 @@ export function ChartWidget({
           </table>
         </div>
       ) : option ? (
-        <div className="min-h-[200px] flex-1">
+        <div className="min-h-[140px] flex-1">
           <EChart
             option={option}
             ariaLabel={`${widget.spec.title} chart. Use the Table view for values.`}
