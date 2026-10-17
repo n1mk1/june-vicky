@@ -1,59 +1,35 @@
 "use client";
 
 import { Check, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
+import { ErrorNote, Loading } from "@/components/ui/States";
 import { VcGlyph } from "@/components/ui/VcGlyph";
-import { PANEL, type Persona, type Temperature } from "@/lib/panel";
+import type { PersonaSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const TEMP: Record<Temperature, string> = { warming: "Warming", steady: "Steady", cooling: "Cooling" };
-
-function TempBars({ t }: { t: Temperature }) {
-  const lit = t === "warming" ? 3 : t === "steady" ? 2 : 1;
-  return (
-    <span className="flex items-end gap-[2px]" aria-label={`Interest ${TEMP[t].toLowerCase()}`} role="img">
-      {[0, 1, 2].map((i) => (
-        <span key={i} className={cn("w-[3px] rounded-full", i < lit ? "bg-ink" : "bg-line-strong")} style={{ height: 4 + i * 3 }} />
-      ))}
-    </span>
-  );
-}
+export const MAX_PANEL = 5;
 
 interface VcRosterProps {
+  personas: PersonaSummary[] | undefined;
   selected: string[];
   onToggle: (id: string) => void;
-  speaking?: string;
+  speaking?: string | null;
+  /** Seats can't change during a live session. */
+  locked?: boolean;
+  /** Questions asked per VC id in this session. */
+  counts?: Record<string, number>;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
-/** Investor panel from the wireframe's left column: pick who sits in, add your own. */
-export function VcRoster({ selected, onToggle, speaking }: VcRosterProps) {
+/** Investor panel from the wireframe's left column: the chair, then who sits in (up to five). */
+export function VcRoster({ personas, selected, onToggle, speaking, locked, counts, loading, error, onRetry }: VcRosterProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [custom, setCustom] = useState<Persona[]>([]);
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState("");
-  const people = [...PANEL, ...custom];
-
-  const add = () => {
-    const text = draft.trim();
-    if (!text) return;
-    const id = `custom-${custom.length + 1}`;
-    setCustom((c) => [
-      ...c,
-      {
-        id,
-        name: `Investor ${PANEL.length + c.length + 1}`,
-        firm: "Custom",
-        lens: text,
-        move: "Generated from your description",
-        glyph: "custom",
-        temperature: "steady",
-        builtin: false,
-      },
-    ]);
-    onToggle(id);
-    setDraft("");
-    setAdding(false);
-  };
+  const full = selected.length >= MAX_PANEL;
+  // During a session only the seated investors are shown; otherwise the whole Areopagus in its order.
+  const people = locked ? (personas ?? []).filter((p) => selected.includes(p.id)) : (personas ?? []);
 
   return (
     <aside className={cn("glass flex min-h-0 flex-col rounded-[20px] p-3", collapsed && "lg:w-[64px]")}>
@@ -67,22 +43,61 @@ export function VcRoster({ selected, onToggle, speaking }: VcRosterProps) {
         >
           {collapsed ? <PanelLeftOpen className="size-4" strokeWidth={1.5} /> : <PanelLeftClose className="size-4" strokeWidth={1.5} />}
         </button>
-        {!collapsed && <span className="label">Panel · {selected.length}</span>}
+        {!collapsed && (
+          <span className="label">
+            Panel · {selected.length}/{MAX_PANEL}
+          </span>
+        )}
       </div>
 
-      <ul className="scroll-thin flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <ul className="scroll-thin flex min-h-0 flex-1 gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0">
+        {/* The chair is always seated. */}
+        <li className="w-[200px] shrink-0 lg:w-auto">
+          <div
+            title={collapsed ? "Vicky, chair" : undefined}
+            className="flex w-full items-center gap-3 rounded-[14px] border border-dashed border-line-strong p-2.5"
+          >
+            <VcGlyph glyph="vicky" className="text-ember" />
+            {!collapsed && (
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="font-display text-[17px] tracking-[-0.04em]">Vicky</span>
+                  {speaking === "vicky" && (
+                    <span className="size-1.5 rounded-full bg-ember animate-[pulse-dot_1.2s_ease-in-out_infinite]" aria-label="Speaking" />
+                  )}
+                </span>
+                <span className="block truncate text-[11.5px] text-ink-2">Chair</span>
+              </span>
+            )}
+          </div>
+        </li>
+        {loading && !personas && (
+          <li className="px-1 py-2">
+            <Loading label="Seating the panel" />
+          </li>
+        )}
+        {error && !personas && (
+          <li className="px-1 py-2">
+            <ErrorNote message={error} onRetry={onRetry} />
+          </li>
+        )}
         {people.map((p) => {
           const on = selected.includes(p.id);
+          const blocked = locked || (!on && full);
+          const n = counts?.[p.id];
           return (
-            <li key={p.id}>
+            <li key={p.id} className="w-[200px] shrink-0 lg:w-auto">
               <button
                 type="button"
                 aria-pressed={on}
+                disabled={blocked}
                 onClick={() => onToggle(p.id)}
-                title={collapsed ? `${p.name}, ${p.firm}` : undefined}
+                title={collapsed ? `${p.name}, ${p.firm}` : !on && full ? `The panel holds ${MAX_PANEL} investors` : undefined}
                 className={cn(
                   "group relative flex w-full items-center gap-3 rounded-[14px] border p-2.5 text-left transition-colors duration-300",
                   on ? "border-line-strong bg-surface-solid/70" : "border-line opacity-60 hover:opacity-100",
+                  blocked && !on && "hover:opacity-60",
+                  locked && "cursor-default",
                 )}
               >
                 <VcGlyph glyph={p.glyph} />
@@ -102,7 +117,11 @@ export function VcRoster({ selected, onToggle, speaking }: VcRosterProps) {
                     <span className={cn("flex size-4 items-center justify-center rounded-[5px] border", on ? "border-ink bg-ink text-bg" : "border-line-strong")}>
                       {on && <Check className="size-3" strokeWidth={2.5} />}
                     </span>
-                    <TempBars t={p.temperature} />
+                    {n !== undefined && n > 0 && (
+                      <span className="font-mono text-[9.5px] tabular-nums text-dim" aria-label={`${n} questions asked`}>
+                        {n}Q
+                      </span>
+                    )}
                   </span>
                 )}
               </button>
@@ -111,42 +130,15 @@ export function VcRoster({ selected, onToggle, speaking }: VcRosterProps) {
         })}
       </ul>
 
-      {!collapsed && adding && (
-        <div className="mt-3 flex flex-col gap-2 rounded-[14px] border border-line p-2.5">
-          <label htmlFor="new-vc" className="text-[11.5px] text-ink-2">
-            Describe the investor
-          </label>
-          <textarea
-            id="new-vc"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={3}
-            placeholder="A SaaS fund partner who cares most about net revenue retention"
-            className="resize-none rounded-[8px] border border-line bg-transparent p-2 text-[12.5px] placeholder:text-dim focus:border-line-strong focus:outline-none"
-          />
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setAdding(false)} className="text-[12px] text-ink-2 hover:text-ink">
-              Cancel
-            </button>
-            <button type="button" onClick={add} className="rounded-full bg-invert-bg px-3 py-1 text-[12px] text-invert-ink">
-              Add to panel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!adding && (
-        <button
-          type="button"
-          onClick={() => {
-            setCollapsed(false);
-            setAdding(true);
-          }}
-          className="mx-auto mt-3 flex size-10 items-center justify-center rounded-full border border-line-strong text-ink-2 transition-colors hover:border-ink hover:text-ink"
-          aria-label="Add an investor"
+      {!collapsed && (
+        <Link
+          href="/areopagus"
+          className="mx-auto mt-3 hidden size-10 items-center justify-center rounded-full border border-line-strong text-ink-2 transition-colors hover:border-ink hover:text-ink lg:flex"
+          aria-label="Add or build an investor in the Areopagus"
+          title="Build an investor in the Areopagus"
         >
           <Plus className="size-4" strokeWidth={1.5} />
-        </button>
+        </Link>
       )}
     </aside>
   );

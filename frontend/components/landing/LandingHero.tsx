@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Lockup } from "@/components/app/Lockup";
 import { PromptBar } from "@/components/app/PromptBar";
 import { ThemeToggle } from "@/components/app/ThemeToggle";
 import { LightStreaks } from "@/components/fx/LightStreaks";
 import { VMarkScene } from "@/components/fx/scenes";
 import { RollLabel } from "@/components/ui/RollLabel";
-import { FIGURES } from "@/lib/tidewell";
+import { apiPost } from "@/lib/api";
+import type { AnyFigure, Engagement } from "@/lib/types";
+import { isMissing } from "@/lib/types";
+import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 
 const MODES = [
   { href: "/dashboard", label: "Insights" },
@@ -16,8 +20,61 @@ const MODES = [
   { href: "/simulation", label: "Sim" },
 ];
 
+/** Engagement-aware hint under the prompt bar (UI doc §3.2). */
+function LandingHint({ uploadError }: { uploadError: string | null }) {
+  const active = useApi<Engagement>("engagements/active");
+  const engagement = active.status === 404 ? null : active.data;
+  const arr = useApi<AnyFigure>(engagement ? "metrics/arr" : null);
+
+  if (uploadError) return <span className="text-ember">{uploadError}</span>;
+  if (engagement) {
+    const company = engagement.profile?.name || engagement.name;
+    const figure = arr.data && !isMissing(arr.data) ? arr.data : null;
+    return (
+      <>
+        {company} loaded{figure ? ` · ARR ${figure.display}` : ""}.{" "}
+        <Link href="/intake" className="text-ink-2 underline underline-offset-2 hover:text-ink">
+          Load different data
+        </Link>
+      </>
+    );
+  }
+  if (active.loading) return <>Checking your source of truth…</>;
+  return (
+    <>
+      Attach a CSV, XLSX, PDF, DOCX or MD file, or{" "}
+      <Link href="/intake" className="text-ink underline underline-offset-2 hover:text-ember">
+        try a sample
+      </Link>
+      . Hold anywhere on the background to scatter the lines.
+    </>
+  );
+}
+
 export function LandingHero() {
   const router = useRouter();
+  const guard = useAccessGuard();
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Warm a sleeping free-tier API while the hero animates in.
+  useEffect(() => {
+    void fetch("/api/health", { cache: "no-store" }).catch(() => {});
+  }, []);
+
+  const attach = async (file: File) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const engagement = await apiPost<Engagement>("uploads", form);
+      router.push(`/intake?e=${encodeURIComponent(engagement.id)}`);
+    } catch (err) {
+      setUploading(false);
+      if (!guard(err)) setUploadError(errorText(err));
+    }
+  };
 
   return (
     <main className="relative isolate flex min-h-dvh flex-col overflow-hidden">
@@ -69,12 +126,9 @@ export function LandingHero() {
               } catch {}
               router.push("/preparation");
             }}
-            hint={
-              <>
-                Sample data loaded: Tidewell Systems, ARR {FIGURES.arr.display}. Hold anywhere on the background to
-                scatter the lines.
-              </>
-            }
+            onAttach={attach}
+            busy={uploading}
+            hint={<LandingHint uploadError={uploadError} />}
           />
           <p className="text-center text-[11.5px] text-dim">Synthetic data. No investment advice.</p>
         </div>

@@ -4,11 +4,12 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import { CornerMarks } from "@/components/ui/Panel";
 import { ClaimChip } from "@/components/prep/ClaimChip";
-import { DECK } from "@/lib/panel";
+import { PREVIEW_DECK } from "@/lib/preview";
 
-/** A rendered stand-in for the uploaded PDF deck, with the claim on each slide checked against the data. */
+/** Stand-in for the uploaded PDF deck, with the claim on each slide checked against the data. */
 export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: number) => void }) {
-  const slide = DECK[index];
+  const deck = PREVIEW_DECK;
+  const slide = deck[index];
   return (
     <div className="flex h-full flex-col gap-4 p-4 md:p-5">
       <div className="relative mx-auto aspect-video w-full max-w-[880px] overflow-hidden rounded-[14px] border border-line bg-[#f2f2f2] text-[#111214]">
@@ -17,7 +18,7 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
           <div className="flex items-center justify-between text-[clamp(9px,1vw,12px)] text-[#434343]">
             <span>{slide.title}</span>
             <span className="tabular-nums">
-              {slide.n} / {DECK.length}
+              {slide.n} / {deck.length}
             </span>
           </div>
           <div>
@@ -26,7 +27,7 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
           </div>
           <div className="flex items-end justify-between">
             <Image src="/brand/Vicky_Logo.svg" alt="" width={769} height={248} unoptimized className="-ml-[1.5%] h-[clamp(14px,2.2vw,28px)] w-auto opacity-30" />
-            <span className="text-[clamp(8px,0.9vw,11px)] text-[#434343]/70">Sample deck · Tidewell Systems</span>
+            <span className="text-[clamp(8px,0.9vw,11px)] text-[#434343]/70">Preview deck · illustrative</span>
           </div>
         </div>
       </div>
@@ -44,8 +45,8 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
           </button>
           <button
             type="button"
-            onClick={() => onIndex(Math.min(DECK.length - 1, index + 1))}
-            disabled={index === DECK.length - 1}
+            onClick={() => onIndex(Math.min(deck.length - 1, index + 1))}
+            disabled={index === deck.length - 1}
             className="flex size-9 items-center justify-center rounded-[10px] border border-line-strong text-ink disabled:opacity-30"
             aria-label="Next slide"
           >
@@ -64,7 +65,7 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
       </div>
 
       <ol className="mx-auto grid w-full max-w-[880px] grid-cols-5 gap-2" aria-label="Slides">
-        {DECK.map((s, i) => (
+        {deck.map((s, i) => (
           <li key={s.n}>
             <button
               type="button"

@@ -1,31 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import type { Figure } from "@/lib/tidewell";
+import { sourceLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Explainable, type Explanation } from "./Explain";
 
 /** Every figure shows where it came from; clicking reveals the calculation. */
-export function SourceChip({ figure, className }: { figure: Figure; className?: string }) {
-  const [open, setOpen] = useState(false);
+export function SourceChip({ x, className, align }: { x: Explanation; className?: string; align?: "left" | "right" }) {
+  const summary = x.source?.kind === "pack_summary" || (x.kind && x.kind !== "historical");
   return (
-    <span className={cn("relative inline-flex", className)}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className={cn(
-          "rounded-full border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] transition-colors",
-          figure.kind === "pack_summary" ? "border-dashed border-line-strong text-ink-2" : "border-line text-ink-2 hover:border-line-strong",
-        )}
-      >
-        {figure.source}
-      </button>
-      {open && (
-        <span className="glass absolute top-full left-0 z-30 mt-2 w-60 rounded-[12px] p-3 text-[12px] leading-snug text-ink-2 shadow-none">
-          <span className="block text-ink">{figure.label}</span>
-          {figure.formula}
-        </span>
+    <Explainable
+      x={x}
+      align={align}
+      className={className}
+      triggerClassName={cn(
+        "max-w-full truncate rounded-full border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2 transition-colors hover:text-ink",
+        summary ? "border-dashed border-line-strong" : "border-line hover:border-line-strong",
       )}
-    </span>
+    >
+      {sourceLabel(x.source)}
+    </Explainable>
   );
 }

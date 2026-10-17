@@ -204,3 +204,29 @@ html[data-preloaded] .preloader {
     display: none;
   }
 }
+
+/* Access gate: a wrong code shakes the panel */
+@keyframes shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  20%,
+  60% {
+    transform: translateX(-7px);
+  }
+  40%,
+  80% {
+    transform: translateX(7px);
+  }
+}
+
+/* Thin indeterminate progress line (uploads, waiting for the panel) */
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
