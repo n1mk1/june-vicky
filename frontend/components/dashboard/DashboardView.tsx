@@ -323,6 +323,7 @@ export function DashboardView() {
                   "flex min-h-[240px] min-w-0 lg:min-h-0 [&>*]:min-w-0 [&>*]:flex-1",
                   slot.grow === 0 ? "shrink-0 lg:min-h-fit" : "flex-1",
                 )}
+                style={slot.grow ? { flexGrow: slot.grow } : undefined}
               >
                 <Module id={slot.module} ctx={ctx} fallbackTitle={slot.title} />
               </div>

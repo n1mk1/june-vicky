@@ -1,8 +1,9 @@
 /**
  * The dashboard's top row, declared as data. Each column spans part of the 12-column grid and
  * stacks modules (see `modules.tsx`): `role:<role>` is a stored widget with that role, anything
- * else is a panel. `grow` shares the column's height (0 = natural height). Every widget not
- * placed here flows into the row below, so all of them stay on one screen above the chat.
+ * else is a panel. `grow` is the slot's share of the column's height (default 1; 0 = natural
+ * height). Every widget not placed here flows into the row below, so all of them stay on one
+ * screen above the chat.
  */
 export interface HeroSlot {
   module: string;
@@ -19,7 +20,7 @@ export const HERO: HeroColumn[] = [
   {
     span: 3,
     slots: [
-      { module: "readiness", title: "Pitch readiness", grow: 0 },
+      { module: "readiness", title: "Pitch readiness", grow: 1.25 },
       { module: "role:margin_ring", title: "Gross margin", grow: 1 },
     ],
   },

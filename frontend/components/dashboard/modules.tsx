@@ -5,8 +5,8 @@ import type { ReactNode } from "react";
 import { OrbScene } from "@/components/fx/scenes";
 import { Panel } from "@/components/ui/Panel";
 import { ErrorNote, Loading } from "@/components/ui/States";
-import { fmtDate, humanize } from "@/lib/format";
-import type { AttackItem, ReportSummary, TimeRange, Widget } from "@/lib/types";
+import { fmtDate, fmtScore, humanize } from "@/lib/format";
+import type { AttackItem, ReportDims, ReportSummary, TimeRange, Widget } from "@/lib/types";
 import { errorText } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { WidgetView } from "./WidgetView";
@@ -66,41 +66,88 @@ export function AttackList({ items, loading, error }: { items: AttackItem[]; loa
   );
 }
 
-/** Pitch readiness as a small widget: the orb with the score in it, and where the score came from. */
+const DIMS: [keyof ReportDims, string][] = [
+  ["accuracy", "Accuracy"],
+  ["evidence", "Evidence"],
+  ["clarity", "Clarity"],
+  ["composure", "Composure"],
+  ["investor_fit", "Investor fit"],
+];
+
+/**
+ * Pitch readiness: the orb with the latest score (0–100) in it, the five scores behind it (0–5,
+ * the weakest in ember), and the change since the session before.
+ */
 export function Readiness({ reports, company }: { reports: ReportSummary[] | undefined; company: string }) {
   const mine = (reports ?? []).filter((r) => r.company === company && r.overall !== null);
   const latest = [...mine].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   const score = latest?.overall != null ? Math.round(latest.overall * 20) : null;
+  const delta = latest?.delta != null ? Math.round(latest.delta * 20) : null;
+  const dims = DIMS.map(([k, label]) => ({ k, label, value: latest?.dims?.[k] ?? null })).filter((d) => d.value !== null);
+  const weakest = dims.length ? dims.reduce((a, b) => (b.value! < a.value! ? b : a)).k : null;
   return (
-    <Panel title="Pitch readiness" marks bodyClassName="flex items-center gap-3 px-3 py-2" className="min-h-[120px]">
+    <Panel
+      title="Pitch readiness"
+      marks
+      aside={
+        <Link href="/preparation" className="shrink-0 text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
+          {latest ? "Practise again" : "Face the panel"}
+        </Link>
+      }
+      bodyClassName="flex items-center gap-4 px-4 py-3"
+      className="min-h-[150px]"
+    >
       <div
         aria-label={score === null ? "No score yet" : `Readiness ${score} of 100`}
         role="img"
-        className="relative aspect-square h-full max-h-[104px] min-h-[64px] shrink-0"
+        className="relative aspect-square h-full max-h-[min(200px,42vw)] min-h-[96px] shrink-0"
       >
         <div className="absolute inset-0">
           <OrbScene score={score ?? 0} />
         </div>
-        <span className="display absolute inset-0 flex items-center justify-center text-[clamp(22px,3.4vh,34px)] tabular-nums">
-          {score ?? "—"}
+        <span className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="display text-[clamp(28px,4.2vh,44px)] leading-none tabular-nums">{score ?? "—"}</span>
+          <span className="mt-1 font-mono text-[9px] uppercase tracking-[-0.04em] text-dim">of 100</span>
         </span>
       </div>
-      <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
         {latest ? (
           <>
-            <span className="font-display text-[15px] leading-tight tracking-[-0.03em]">{humanize(latest.readiness ?? "scored")}</span>
-            <span className="text-[11.5px] leading-snug text-ink-2">Last session {fmtDate(latest.created_at)}</span>
-            <Link href="/preparation" className="text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
-              Practise again
-            </Link>
+            <div className="flex flex-col">
+              <span className="font-display text-[16px] leading-tight tracking-[-0.03em]">{humanize(latest.readiness ?? "scored")}</span>
+              <span className="text-[11px] leading-snug text-ink-2">
+                {fmtDate(latest.created_at)}
+                {delta !== null && (
+                  <>
+                    {" · "}
+                    <span className={delta < 0 ? "text-ember" : "text-ink"}>
+                      {`${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta)} since last`}
+                    </span>
+                  </>
+                )}
+              </span>
+            </div>
+            {dims.length > 0 && (
+              <dl className="flex flex-col gap-[3px]">
+                {dims.map((d) => (
+                  <div key={d.k} className="flex items-center gap-2">
+                    <dt className={cn("w-[68px] shrink-0 truncate text-[10.5px]", d.k === weakest ? "text-ember" : "text-ink-2")}>{d.label}</dt>
+                    <dd className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <span className="relative h-[3px] flex-1 overflow-hidden rounded-full bg-line">
+                        <span
+                          className={cn("absolute inset-y-0 left-0 rounded-full", d.k === weakest ? "bg-ember" : "bg-ink")}
+                          style={{ width: `${(Math.max(0, Math.min(5, d.value!)) / 5) * 100}%` }}
+                        />
+                      </span>
+                      <span className="w-6 text-right font-mono text-[10px] tabular-nums text-ink-2">{fmtScore(d.value)}</span>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </>
         ) : (
-          <>
-            <span className="text-[11.5px] leading-snug text-ink-2">No session yet.</span>
-            <Link href="/preparation" className="text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
-              Face the panel
-            </Link>
-          </>
+          <span className="text-[11.5px] leading-snug text-ink-2">No session yet. Face the panel to get a score.</span>
         )}
       </div>
     </Panel>

@@ -40,22 +40,29 @@ function Orb({ score, ink, ember }: { score: number; ink: string; ember: string 
     <>
       <group ref={shell}>
         <lineSegments geometry={edges}>
-          <lineBasicMaterial color={ink} transparent opacity={0.35} />
+          <lineBasicMaterial color={ink} transparent opacity={0.2} />
         </lineSegments>
         <points geometry={dots}>
-          <pointsMaterial color={ink} size={0.022} sizeAttenuation transparent opacity={0.55} />
+          <pointsMaterial color={ink} size={0.03} sizeAttenuation transparent opacity={0.3} />
         </points>
       </group>
       {/* Score arc: the share of a full circle the founder has earned. */}
       <mesh rotation={[0, 0, Math.PI / 2]}>
-        <torusGeometry args={[2.02, 0.004, 6, 200]} />
-        <meshBasicMaterial color={ink} transparent opacity={0.18} />
+        <torusGeometry args={[2.02, 0.014, 6, 200]} />
+        <meshBasicMaterial color={ink} transparent opacity={0.16} />
       </mesh>
       {/* Torus arcs run counter-clockwise from 3 o'clock; rotating by (90° − arc) makes it read clockwise from 12. */}
       <mesh rotation={[0, 0, Math.PI / 2 - arc]}>
-        <torusGeometry args={[2.02, 0.012, 8, 200, arc]} />
+        <torusGeometry args={[2.02, 0.05, 12, 200, arc]} />
         <meshBasicMaterial color={ember} />
       </mesh>
+      {/* Where the arc stops, so the score reads at a glance. */}
+      {score > 0 && (
+        <mesh position={[2.02 * Math.cos(Math.PI / 2 - arc), 2.02 * Math.sin(Math.PI / 2 - arc), 0]}>
+          <sphereGeometry args={[0.11, 20, 20]} />
+          <meshBasicMaterial color={ember} />
+        </mesh>
+      )}
     </>
   );
 }
@@ -64,8 +71,8 @@ export default function ReadinessOrb({ score }: { score: number }) {
   const { theme } = useTheme();
   const c = palette[theme];
   return (
-    // Camera distance sets how much of the canvas the score ring fills (about 60% of its height here).
-    <Canvas dpr={[1, 1.5]} camera={{ position: [0, 0, 9.8], fov: 38 }} gl={{ antialias: true, alpha: true }} aria-hidden>
+    // Camera distance sets how much of the canvas the score ring fills (about 90% of its height here).
+    <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 6.9], fov: 38 }} gl={{ antialias: true, alpha: true }} aria-hidden>
       <Orb score={score} ink={c.ink} ember={c.ember} />
     </Canvas>
   );
