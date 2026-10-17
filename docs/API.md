@@ -69,7 +69,11 @@ type Widget = { id: string; role: string; spec: WidgetSpec; status: "ok"|"missin
   evaluated: EvaluatedWidget; option: object|null; created_by: "system"|"vicky"|"founder" };
 type Dashboard = { id: string; engagement_id: string; version: number; company: string;
   layout: {widget_id: string; x: number; y: number; w: number; h: number}[];
-  reserved: {id: string; x: number; y: number; w: number; h: number}[]; widgets: Widget[] };
+  reserved: {id: string; x: number; y: number; w: number; h: number}[];
+  time_range: {last_months?: number; from: string; to: string; label: string} | null; widgets: Widget[] };
+type ChatResult = { kind: "widget_added"|"exists"|"missing"|"error"|"time_range"|"question"|"none"; reply: string;
+  spec: WidgetSpec|null; widget_id: string|null; missing: MissingFigure|null; time_range: Dashboard["time_range"];
+  dashboard: Dashboard|null };
 ```
 `EvaluatedWidget` is `backend/vicky/viz/evaluate.py` (`series[].points[]` each with `{period, label, value, formula, inputs, source}`; `kpi.primary/secondary` with `display`, `formula`, `source`, `missing`). `option` is a complete ECharts option built by code (`viz/echarts.py`); dataset values never come from an LLM.
 
@@ -81,6 +85,12 @@ type Dashboard = { id: string; engagement_id: string; version: number; company: 
 | POST | `/dashboards/{id}/widgets` | `{spec, version}` | `Dashboard`; 409 stale version |
 | DELETE | `/dashboards/{id}/widgets/{widget_id}` | — | `Dashboard` |
 | PATCH | `/dashboards/{id}/layout` | `{layout, version}` | `Dashboard`; 409 stale version |
+| PATCH | `/dashboards/{id}/time-range` | `{time_range: {last_months} \| {from, to} (YYYY-MM) \| null, version?}` | `Dashboard` (range resolved against the latest period); 409 stale version; 422 invalid range |
+| POST | `/dashboards/{id}/chat` | `{text}` (1–500 chars) | `ChatResult`: the offline phrase mapper (`viz/phrases.py`) turns the text into a widget (evaluated by code, then added as `created_by: vicky`) or a time range; missing data returns `kind: missing` with the `MissingFigure` reason and adds nothing; questions return `kind: question` |
+| GET | `/realtime/token` | — | `{token}` signed for one hour, for the WebSocket |
+| WS | `/ws?token=…&channels=dashboard:{id},session:{id}` | client sends `{type: subscribe\|unsubscribe, channel}`, `{type: ping}` | `{type: hello, versions}` then envelopes `{type, channel, version, ts, payload}`; `widget.diff` (`{version, op, widget_id?, title?, by?}`), `layout.diff`, `time_range.diff` carry the dashboard `version` |
+
+The browser connects to the API's public URL (`API_PUBLIC_WS_URL`, served by the web app at `/api/realtime`), because the web proxy does not carry sockets. Clients drop envelopes at or below the last `version` seen per channel and re-fetch REST state after every reconnect.
 
 ## The Areopagus (investor personas)
 

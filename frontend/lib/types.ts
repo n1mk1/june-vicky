@@ -310,6 +310,14 @@ export interface LayoutItem {
   h: number;
 }
 
+/** Dashboard-wide zoom: months (YYYY-MM) resolved by the backend against the data's latest period. */
+export interface TimeRange {
+  last_months?: number;
+  from: string;
+  to: string;
+  label: string;
+}
+
 export interface Dashboard {
   id: string;
   engagement_id: string;
@@ -317,7 +325,24 @@ export interface Dashboard {
   company: string;
   layout: LayoutItem[];
   reserved: { id: string; x: number; y: number; w: number; h: number }[];
+  time_range: TimeRange | null;
   widgets: Widget[];
+}
+
+export interface WidgetPreview {
+  evaluated: EvaluatedWidget;
+  option: EChartsOptionJson | null;
+}
+
+/** POST /dashboards/{id}/chat. `reply` never carries a figure; `dashboard` is set when something changed. */
+export interface ChatResult {
+  kind: "widget_added" | "exists" | "missing" | "error" | "time_range" | "question" | "none";
+  reply: string;
+  spec: WidgetSpec | null;
+  widget_id: string | null;
+  missing: MissingFigure | null;
+  time_range: TimeRange | null;
+  dashboard: Dashboard | null;
 }
 
 // ---------------------------------------------------------------- the Areopagus

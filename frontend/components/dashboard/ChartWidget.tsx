@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { EChart, type ChartClick } from "@/components/charts/EChart";
 import { Panel } from "@/components/ui/Panel";
 import { fmtAxis, fmtValue } from "@/lib/format";
-import type { EChartsOptionJson, Provenance, Widget } from "@/lib/types";
+import { zoomWindow } from "@/lib/dashboard-layout";
+import type { EChartsOptionJson, Provenance, TimeRange, Widget } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ExplainCard, type Explanation } from "./Explain";
 
@@ -22,9 +23,9 @@ interface TipParam {
 
 /**
  * The backend's option, minus Vicky's underscore metadata, plus display formatters for the units
- * it declares. No values are added or changed here.
+ * it declares and the dashboard-wide time range on its dataZoom. No values are added or changed here.
  */
-function prepare(raw: EChartsOptionJson): Record<string, unknown> {
+function prepare(raw: EChartsOptionJson, range: TimeRange | null): Record<string, unknown> {
   const meta = raw._meta ?? {};
   const units = meta.units ?? {};
   const currency = meta.currency ?? null;
@@ -71,6 +72,15 @@ function prepare(raw: EChartsOptionJson): Record<string, unknown> {
   if (opt.grid && opt.legend) opt.grid = { ...(opt.grid as object), top: 52 };
   // The brush toolbox competes with the legend in small panels; keep zoom, drop the toolbox chrome.
   if (opt.toolbox) opt.toolbox = { ...(opt.toolbox as object), show: false };
+  // Every chart follows the dashboard's time range ("zoom to the last 6 months").
+  const zoom = template === "heatmap" ? null : zoomWindow(meta.periods, range);
+  if (zoom && Array.isArray(opt.dataZoom)) {
+    opt.dataZoom = (opt.dataZoom as Record<string, unknown>[]).map((dz) => ({
+      ...dz,
+      startValue: zoom[0],
+      endValue: zoom[1],
+    }));
+  }
   return opt;
 }
 
@@ -110,11 +120,11 @@ function explainFrom(raw: EChartsOptionJson, widget: Widget, click: ChartClick):
 }
 
 /** Line / area / bar / stacked / combo / heatmap from the backend's option, with click-to-explain and a table view. */
-export function ChartWidget({ widget, className }: { widget: Widget; className?: string }) {
+export function ChartWidget({ widget, timeRange = null, className }: { widget: Widget; timeRange?: TimeRange | null; className?: string }) {
   const raw = widget.option;
   const [explain, setExplain] = useState<Explanation | null>(null);
   const [table, setTable] = useState(false);
-  const option = useMemo(() => (raw ? prepare(raw) : null), [raw]);
+  const option = useMemo(() => (raw ? prepare(raw, timeRange) : null), [raw, timeRange]);
   const ev = widget.evaluated;
   const currency = raw?._meta?.currency ?? ev.currency;
   const notes = [...(ev.notes ?? []), ...(raw?._meta?.notes ?? [])].filter((n, i, a) => a.indexOf(n) === i);

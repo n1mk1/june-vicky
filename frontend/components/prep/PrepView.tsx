@@ -8,7 +8,8 @@ import { MAX_PANEL, VcRoster } from "@/components/app/VcRoster";
 import { Panel } from "@/components/ui/Panel";
 import { PillButton, PillLink } from "@/components/ui/Pill";
 import { EmptyState, ErrorNote, Loading } from "@/components/ui/States";
-import { ApiError, apiPost } from "@/lib/api";
+import { ApiError, apiGet, apiPost } from "@/lib/api";
+import { useChannel } from "@/lib/socket";
 import { lastSpeaker, questionCounts, sessionFeed, sessionQuestions } from "@/lib/court";
 import type { PersonaSummary, Session, SessionSummary } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
@@ -131,6 +132,17 @@ export function PrepView() {
       setBusy(null);
     }
   };
+
+  // Live session: other tabs' turns arrive as events, and after a reconnect (a redeploy, a dropped
+  // connection) the session is re-read from the API, which keeps every turn in Postgres.
+  const resync = () => {
+    if (!sid || busy) return;
+    apiGet<Session>(`court/${encodeURIComponent(sid)}`).then(
+      (s) => setLive((cur) => (cur && cur.id === s.id && cur.turns.length > s.turns.length ? cur : s)),
+      (err: unknown) => guard(err),
+    );
+  };
+  useChannel(sid ? `session:${sid}` : null, resync, resync);
 
   const fresh = () => {
     setLive(null);

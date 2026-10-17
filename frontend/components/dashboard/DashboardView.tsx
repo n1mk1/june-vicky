@@ -1,37 +1,71 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
-import { PromptBar } from "@/components/app/PromptBar";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { OrbScene } from "@/components/fx/scenes";
 import { Panel } from "@/components/ui/Panel";
-import { PillLink } from "@/components/ui/Pill";
+import { PillButton, PillLink } from "@/components/ui/Pill";
 import { EmptyState, ErrorNote, Loading } from "@/components/ui/States";
-import { apiPost } from "@/lib/api";
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api";
+import { pack } from "@/lib/dashboard-layout";
 import { fmtDate, humanize } from "@/lib/format";
-import type { AttackItem, Dashboard, Engagement, ReportSummary, Truth, Widget } from "@/lib/types";
+import { useChannel, useSocketStatus, type Envelope } from "@/lib/socket";
+import type { AttackItem, ChatResult, Dashboard, Engagement, ReportSummary, TimeRange, Truth, Widget } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { themeName } from "@/lib/echarts-theme";
 import { useTheme } from "@/lib/use-theme";
 import { cn } from "@/lib/utils";
+import { AddWidget } from "./AddWidget";
+import { DashboardChat } from "./DashboardChat";
+import { DashboardGrid, type Sized } from "./DashboardGrid";
 import { WidgetView } from "./WidgetView";
 
 const FIXED = ["margin_ring", "headline_kpi", "trend"] as const;
+const isFixed = (role: string) => (FIXED as readonly string[]).includes(role);
+/** First grid row of the editable flow when nothing is placed yet (below the hero and prompt bar). */
+const FLOW_TOP = 10;
 
-const SPAN: Record<number, string> = {
-  1: "lg:col-span-1",
-  2: "lg:col-span-2",
-  3: "lg:col-span-3",
-  4: "lg:col-span-4",
-  5: "lg:col-span-5",
-  6: "lg:col-span-6",
-  7: "lg:col-span-7",
-  8: "lg:col-span-8",
-  9: "lg:col-span-9",
-  10: "lg:col-span-10",
-  11: "lg:col-span-11",
-  12: "lg:col-span-12",
-};
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Keep unchanged widgets (and the time range) as the same objects so their charts don't redraw. */
+function reconcile(prev: Dashboard | undefined, next: Dashboard): Dashboard {
+  if (!prev || prev.id !== next.id) return next;
+  const old = new Map(prev.widgets.map((w) => [w.id, w]));
+  return {
+    ...next,
+    time_range: same(prev.time_range, next.time_range) ? prev.time_range : next.time_range,
+    widgets: next.widgets.map((w) => {
+      const o = old.get(w.id);
+      return o && same(o, w) ? o : w;
+    }),
+  };
+}
+
+function LiveDot() {
+  const status = useSocketStatus();
+  const live = status === "open";
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-dim" role="status" title="Changes from other tabs appear here live">
+      <span
+        className={cn("size-1.5 rounded-full", live ? "bg-ember animate-[pulse-dot_2.4s_ease-in-out_infinite]" : "border border-dim")}
+        aria-hidden
+      />
+      {live ? "Live" : status === "reconnecting" ? "Reconnecting…" : "Connecting…"}
+    </span>
+  );
+}
+
+function RangeChip({ range, onReset }: { range: TimeRange; onReset: () => void }) {
+  return (
+    <span className="inline-flex h-7 items-center gap-2 rounded-full border border-line px-3 text-[11.5px] text-ink-2">
+      <span className="text-ink">{range.label}</span>
+      <button type="button" onClick={onReset} className="text-ink underline underline-offset-2 hover:text-ember">
+        Reset
+      </button>
+    </span>
+  );
+}
 
 function AttackList({ items, loading, error }: { items: AttackItem[]; loading: boolean; error: unknown }) {
   const shown = [...items].sort((a, b) => b.severity - a.severity);
@@ -99,7 +133,19 @@ function Readiness({ reports, company }: { reports: ReportSummary[] | undefined;
   );
 }
 
-function Slot({ widget, className, fallback, ...rest }: { widget?: Widget; className?: string; fallback: ReactNode; engagementId: string; currency?: string }) {
+function Slot({
+  widget,
+  className,
+  fallback,
+  ...rest
+}: {
+  widget?: Widget;
+  className?: string;
+  fallback: ReactNode;
+  engagementId: string;
+  currency?: string;
+  timeRange: TimeRange | null;
+}) {
   return <div className={cn("flex min-w-0 [&>*]:min-w-0 [&>*]:flex-1", className)}>{widget ? <WidgetView widget={widget} {...rest} /> : fallback}</div>;
 }
 
@@ -107,13 +153,116 @@ export function DashboardView() {
   const router = useRouter();
   const guard = useAccessGuard();
   const { theme } = useTheme();
-  const dash = useApi<Dashboard>("dashboards/active", { theme: themeName(theme) });
+  const tname = themeName(theme);
+  const dash = useApi<Dashboard>("dashboards/active", { theme: tname });
   const ready = !!dash.data;
   const truth = useApi<Truth>(ready ? "truth" : null);
   const reports = useApi<ReportSummary[]>(ready ? "reports" : null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
+  // ---- live state: REST is the record, the socket says when to re-read it
+  const { mutate } = dash;
+  const did = dash.data?.id ?? null;
+  const version = useRef(0);
+  const inFlight = useRef(0);
+  const stale = useRef(0); // highest event version seen while a request of ours was in flight
+  useEffect(() => {
+    if (dash.data) version.current = Math.max(version.current, dash.data.version);
+  }, [dash.data]);
+
+  /** Apply a dashboard from the API unless something newer is already shown. */
+  const apply = useCallback(
+    (next: Dashboard) => {
+      if (next.version < version.current) return;
+      version.current = next.version;
+      mutate((prev) => reconcile(prev, next));
+    },
+    [mutate],
+  );
+
+  const flash = useCallback((id: string | null, text?: string) => {
+    setHighlight(id);
+    if (text) setNote(text);
+    window.setTimeout(() => {
+      setHighlight((h) => (h === id ? null : h));
+      if (text) setNote((n) => (n === text ? null : n));
+    }, 4000);
+  }, []);
+
+  const refetch = useCallback(async () => {
+    if (!did) return null;
+    try {
+      const next = await apiGet<Dashboard>(`dashboards/${encodeURIComponent(did)}`, { theme: tname });
+      apply(next);
+      return next;
+    } catch (err) {
+      guard(err);
+      return null;
+    }
+  }, [did, tname, apply, guard]);
+
+  /**
+   * Track a request from this tab. The server publishes before it responds, so our own change can
+   * arrive as an event first: events seen meanwhile wait, and are re-read only if the server moved
+   * past what the response gave us (another tab wrote at the same time).
+   */
+  const track = useCallback(
+    async <T,>(p: Promise<T>): Promise<T> => {
+      inFlight.current += 1;
+      try {
+        return await p;
+      } finally {
+        inFlight.current -= 1;
+        if (!inFlight.current && stale.current > version.current) void refetch();
+        if (!inFlight.current) stale.current = 0;
+      }
+    },
+    [refetch],
+  );
+
+  /** Run a dashboard write and apply its result; a 409 re-reads the dashboard. */
+  const write = useCallback(
+    async (fn: () => Promise<Dashboard>): Promise<Dashboard | null> => {
+      try {
+        const next = await track(fn().then((d) => (apply(d), d)));
+        return next;
+      } catch (err) {
+        if (guard(err)) return null;
+        if (err instanceof ApiError && err.status === 409) {
+          setNote("The dashboard changed in another tab, so it was reloaded. Try that again.");
+          await refetch();
+        } else setNote(errorText(err));
+        return null;
+      }
+    },
+    [apply, guard, refetch, track],
+  );
+
+  const onEvent = useCallback(
+    async (e: Envelope) => {
+      const v = (e.payload as { version?: unknown }).version;
+      if (typeof v === "number" && v <= version.current) return; // our own change, or already applied
+      if (inFlight.current) {
+        stale.current = Math.max(stale.current, typeof v === "number" ? v : Number.MAX_SAFE_INTEGER);
+        return;
+      }
+      const before = new Set((dash.data?.widgets ?? []).map((w) => w.id));
+      const next = await refetch();
+      const p = e.payload as { op?: string; title?: string; by?: string };
+      if (next && e.type === "widget.diff" && p.op === "add") {
+        const added = next.widgets.find((w) => !before.has(w.id));
+        flash(added?.id ?? null, p.title ? `${p.by === "vicky" ? "Vicky added" : "Added"} “${p.title}” in another tab.` : undefined);
+      }
+    },
+    [dash.data, refetch, flash],
+  );
+  useChannel(did ? `dashboard:${did}` : null, (e) => void onEvent(e), () => void refetch());
+
+  // ---- actions
   const ask = (text: string) => {
     try {
       sessionStorage.setItem("vicky-question", text);
@@ -134,6 +283,39 @@ export function DashboardView() {
       setUploading(false);
       if (!guard(err)) setUploadError(errorText(err));
     }
+  };
+
+  const remove = async (wid: string): Promise<boolean> => {
+    if (!dash.data) return false;
+    const id = dash.data.id;
+    // optimistic: drop it now, the response (or a re-read on failure) is the record
+    mutate((prev) => (prev ? { ...prev, widgets: prev.widgets.filter((w) => w.id !== wid), layout: prev.layout.filter((l) => l.widget_id !== wid) } : prev!));
+    const next = await write(() => apiDelete<Dashboard>(`dashboards/${encodeURIComponent(id)}/widgets/${encodeURIComponent(wid)}`));
+    if (!next) await refetch();
+    return !!next;
+  };
+
+  const commitLayout = (items: Sized[]) => {
+    const d = dash.data;
+    if (!d) return;
+    const flowIds = new Set(items.map((i) => i.widget_id));
+    const fixed = d.layout.filter((l) => !flowIds.has(l.widget_id));
+    const flowYs = d.layout.filter((l) => flowIds.has(l.widget_id)).map((l) => l.y);
+    const top = flowYs.length ? Math.min(...flowYs) : FLOW_TOP;
+    const layout = [...fixed, ...pack(items, top)];
+    mutate((prev) => (prev ? { ...prev, layout } : prev!));
+    void write(() => apiPatch<Dashboard>(`dashboards/${encodeURIComponent(d.id)}/layout`, { layout, version: d.version }));
+  };
+
+  const setRange = (time_range: { last_months: number } | null) => {
+    if (!dash.data) return;
+    const id = dash.data.id;
+    void write(() => apiPatch<Dashboard>(`dashboards/${encodeURIComponent(id)}/time-range`, { time_range }));
+  };
+
+  const onChat = (r: ChatResult) => {
+    if (r.dashboard) apply(r.dashboard);
+    if (r.widget_id && (r.kind === "widget_added" || r.kind === "exists")) flash(r.widget_id);
   };
 
   if (dash.status === 404 || (dash.status === 409 && !dash.data)) {
@@ -161,16 +343,9 @@ export function DashboardView() {
 
   const d = dash.data;
   const byRole = new Map(d.widgets.map((w) => [w.role, w]));
-  const pos = new Map(d.layout.map((l) => [l.widget_id, l]));
   const currency = truth.data?.profile?.currency;
-  const rest = d.widgets
-    .filter((w) => !(FIXED as readonly string[]).includes(w.role))
-    .sort((a, b) => {
-      const pa = pos.get(a.id);
-      const pb = pos.get(b.id);
-      return (pa?.y ?? 99) - (pb?.y ?? 99) || (pa?.x ?? 99) - (pb?.x ?? 99);
-    });
-  const common = { engagementId: d.engagement_id, currency };
+  const rest = d.widgets.filter((w) => !isFixed(w.role));
+  const common = { engagementId: d.engagement_id, currency, timeRange: d.time_range };
   const empty = (title: string) => (
     <Panel title={title} bodyClassName="p-4">
       <p className="text-[12.5px] text-ink-2">Not available for this data.</p>
@@ -179,6 +354,18 @@ export function DashboardView() {
 
   return (
     <div className="scroll-thin -mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 pb-2">
+      <div className="flex min-h-7 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+        <div className="flex min-w-0 items-center gap-3">
+          <LiveDot />
+          {note && (
+            <span role="status" className="truncate text-[11.5px] text-ink-2">
+              {note}
+            </span>
+          )}
+        </div>
+        {d.time_range && <RangeChip range={d.time_range} onReset={() => setRange(null)} />}
+      </div>
+
       <div className="grid shrink-0 grid-cols-1 gap-4 md:grid-cols-2 lg:h-full lg:min-h-[620px] lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)_auto]">
         <Slot widget={byRole.get("margin_ring")} fallback={empty("Gross margin")} className="min-h-[300px] lg:col-span-3 lg:row-start-1 lg:min-h-0" {...common} />
         <Slot widget={byRole.get("headline_kpi")} fallback={empty("Headline")} className="lg:col-span-3 lg:row-start-2" {...common} />
@@ -191,38 +378,52 @@ export function DashboardView() {
         </div>
 
         <div className="md:col-span-2 lg:col-span-6 lg:col-start-4 lg:row-start-3">
-          <PromptBar
-            label="Ask about a number"
-            placeholder="Ask about a number, e.g. why is burn falling?"
-            onSubmit={ask}
+          <DashboardChat
+            dashboardId={d.id}
+            track={track}
+            engagementId={d.engagement_id}
+            onResult={onChat}
+            onAsk={ask}
+            onUndo={remove}
+            onShow={(id) => flash(id)}
+            onResetRange={() => setRange(null)}
             onAttach={attach}
-            busy={uploading}
-            hint={uploadError ? <span className="text-ember">{uploadError}</span> : undefined}
+            attachBusy={uploading}
+            attachError={uploadError}
           />
         </div>
       </div>
 
-      {rest.length > 0 && (
-        <section aria-label="More widgets" className="flex flex-col gap-3 pt-2">
-          <h2 className="label px-1">
+      <section aria-label="More widgets" className="flex flex-col gap-3 pt-2">
+        <div className="flex items-center justify-between gap-3 px-1">
+          <h2 className="label">
             {d.company} · {rest.length} more
           </h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-12">
-            {rest.map((w) => {
-              const l = pos.get(w.id);
-              const chart = w.status === "ok" && !["kpi", "gauge_ring"].includes(w.spec.template);
-              return (
-                <div
-                  key={w.id}
-                  className={cn("flex min-w-0 [&>*]:min-w-0 [&>*]:flex-1", SPAN[l?.w ?? (chart ? 6 : 3)], chart ? "min-h-[340px] md:col-span-2" : "min-h-[180px]")}
-                >
-                  <WidgetView widget={w} {...common} />
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+          {!adding && <PillButton label="Add widget" icon={<Plus className="size-3.5" strokeWidth={1.75} />} onClick={() => setAdding(true)} />}
+        </div>
+        {adding && (
+          <AddWidget
+            dashboardId={d.id}
+            track={track}
+            version={d.version}
+            engagementId={d.engagement_id}
+            currency={currency}
+            onAdded={(next, title) => {
+              const before = new Set(d.widgets.map((w) => w.id));
+              apply(next);
+              setAdding(false);
+              flash(next.widgets.find((w) => !before.has(w.id))?.id ?? null, `Added “${title}”.`);
+            }}
+            onConflict={async () => (await refetch())?.version ?? null}
+            onClose={() => setAdding(false)}
+          />
+        )}
+        {rest.length > 0 ? (
+          <DashboardGrid widgets={rest} layout={d.layout} highlight={highlight} onCommit={commitLayout} onRemove={(id) => void remove(id)} {...common} />
+        ) : (
+          !adding && <p className="px-1 text-[12.5px] text-ink-2">Ask Vicky for a chart above, or add one here.</p>
+        )}
+      </section>
     </div>
   );
 }

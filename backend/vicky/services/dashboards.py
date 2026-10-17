@@ -203,9 +203,7 @@ def resolve_time_range(tr: dict[str, Any] | None, ctx: TruthContext) -> dict[str
         n = int(tr["last_months"])
         end = period_bounds(ctx.model.periods[-1])[1]
         lo, hi = _shift(end, -(n - 1)), _shift(end, 0)
-        years = n // 12
-        name = (f"Last {years} year{'s' if years > 1 else ''}" if n % 12 == 0
-                else f"Last {n} month{'s' if n > 1 else ''}")
+        name = f"Last {n // 12} years" if n % 12 == 0 and n > 12 else f"Last {n} month{'s' if n > 1 else ''}"
     else:
         lo, hi, name = tr["from"], tr["to"], "Custom range"
     return {**tr, "from": lo, "to": hi, "label": f"{name} · {label_period(lo)} → {label_period(hi)}"}

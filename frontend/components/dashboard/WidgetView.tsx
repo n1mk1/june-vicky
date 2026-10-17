@@ -1,13 +1,23 @@
 "use client";
 
-import type { Widget } from "@/lib/types";
+import type { TimeRange, Widget } from "@/lib/types";
 import { ChartWidget } from "./ChartWidget";
 import { GaugeRingWidget } from "./GaugeRingWidget";
 import { KpiWidget } from "./KpiWidget";
 import { MissingTile } from "./MissingTile";
 
 /** Renders one dashboard widget by status and template. */
-export function WidgetView({ widget, engagementId, currency }: { widget: Widget; engagementId?: string; currency?: string }) {
+export function WidgetView({
+  widget,
+  engagementId,
+  currency,
+  timeRange,
+}: {
+  widget: Widget;
+  engagementId?: string;
+  currency?: string;
+  timeRange?: TimeRange | null;
+}) {
   if (widget.status !== "ok") return <MissingTile widget={widget} engagementId={engagementId} />;
   switch (widget.spec.template) {
     case "gauge_ring":
@@ -15,6 +25,6 @@ export function WidgetView({ widget, engagementId, currency }: { widget: Widget;
     case "kpi":
       return <KpiWidget widget={widget} currency={currency} />;
     default:
-      return <ChartWidget widget={widget} />;
+      return <ChartWidget widget={widget} timeRange={timeRange} />;
   }
 }
