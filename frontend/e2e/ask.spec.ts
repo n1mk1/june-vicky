@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ask, boxes, chatInput, dashboard, openDashboard, overlaps, pageScroll, removeAddedWidgets, restoreRange, snapshotRange } from "./helpers";
+import { ask, boxes, chatInput, dashboard, openDashboard, pageScroll, removeAddedWidgets, restoreRange, snapshotRange } from "./helpers";
 
 let before = new Set<string>();
 let state: { id: string; range: unknown } = { id: "", range: null };
@@ -44,6 +44,7 @@ test.describe("Ask Vicky about the data", () => {
   for (const { q, expect: want, numbers } of QUESTIONS) {
     test(`answers “${q}”`, async ({ page }) => {
       await openDashboard(page);
+      const before = await boxes(page);
       const reply = await ask(page, q);
       await expect(chatInput(page), "the prompt clears itself after sending").toHaveValue("");
       await expect(reply.getByTestId("chat-answer")).toHaveText(want);
@@ -52,9 +53,9 @@ test.describe("Ask Vicky about the data", () => {
         const marks = reply.getByRole("button", { name: /^Source \d+:/ });
         expect(await marks.count()).toBeGreaterThanOrEqual(1);
       }
-      // The reply sits above the bar in the page flow: no widget behind it, no page scroll.
-      const r = (await reply.boundingBox())!;
-      for (const b of await boxes(page)) expect(overlaps({ name: "reply", ...r }, b), `reply covers ${b.name}`).toBe(false);
+      // The reply opens in an overlay: the widgets keep their size and place, and the page doesn't scroll.
+      await expect(page.getByTestId("chat-thread")).toBeVisible();
+      expect(await boxes(page)).toEqual(before);
       expect(await pageScroll(page)).toBeLessThanOrEqual(1);
     });
   }
@@ -67,20 +68,31 @@ test.describe("Ask Vicky about the data", () => {
     await expect(page.getByRole("tooltip")).toContainText(/csv|derived|pack/i);
   });
 
-  test("only the latest exchange shows, and the close button clears it", async ({ page }) => {
+  test("the overlay keeps the conversation; closing it keeps the thread", async ({ page }) => {
     await openDashboard(page);
     await ask(page, "What is my ARR?");
     const reply = await ask(page, "what's my runway?");
-    await expect(page.getByTestId("chat-reply")).toHaveCount(1);
     await expect(reply).toContainText(/runway/i);
-    await reply.getByRole("button", { name: "Close the reply" }).click();
-    await expect(page.getByTestId("chat-reply")).toHaveCount(0);
+    await expect(page.getByTestId("chat-exchange")).toHaveCount(1);
+    await page.getByRole("button", { name: "Close the conversation" }).click();
+    await expect(page.getByTestId("chat-thread")).toHaveCount(0);
+    await page.getByRole("button", { name: /Show conversation \(2\)/ }).click();
+    await expect(page.getByTestId("chat-thread")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("chat-thread")).toHaveCount(0);
   });
 
-  test("confirmations clear themselves", async ({ page }) => {
+  test("a click on the dimmed dashboard closes the overlay", async ({ page }) => {
+    await openDashboard(page);
+    await ask(page, "What is my ARR?");
+    await page.getByTestId("chat-backdrop").click({ position: { x: 8, y: 8 } });
+    await expect(page.getByTestId("chat-thread")).toHaveCount(0);
+  });
+
+  test("the overlay steps aside after a dashboard change", async ({ page }) => {
     await openDashboard(page);
     await ask(page, "zoom to the last 3 months");
-    await expect(page.getByTestId("chat-reply")).toHaveCount(0, { timeout: 9_000 });
+    await expect(page.getByTestId("chat-thread")).toHaveCount(0, { timeout: 9_000 });
     await ask(page, "reset zoom");
   });
 
@@ -88,7 +100,7 @@ test.describe("Ask Vicky about the data", () => {
     await openDashboard(page);
     const reply = await ask(page, "What is my ARR?");
     await reply.getByRole("button", { name: /calculated\?/i }).first().click();
-    await expect(page.getByTestId("chat-answer")).toHaveText(/calculated as/i, { timeout: 15_000 });
+    await expect(page.getByTestId("chat-reply").getByTestId("chat-answer")).toHaveText(/calculated as/i, { timeout: 15_000 });
   });
 
   test("“Chart it” turns an answer into a widget that still fits", async ({ page }) => {
@@ -96,6 +108,9 @@ test.describe("Ask Vicky about the data", () => {
     const reply = await ask(page, "which month had the highest burn?");
     await reply.getByRole("button", { name: "Chart it" }).click();
     await expect(page.getByTestId("chat-reply")).toContainText(/Widget added|already on your dashboard/, { timeout: 15_000 });
+    // The pointer is still on the overlay (it holds it open for Undo); once it leaves, the overlay steps aside.
+    await page.mouse.move(8, 8);
+    await expect(page.getByTestId("chat-thread")).toHaveCount(0, { timeout: 9_000 });
     expect(await pageScroll(page)).toBeLessThanOrEqual(1);
   });
 });

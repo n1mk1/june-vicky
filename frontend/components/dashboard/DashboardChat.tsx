@@ -1,8 +1,9 @@
 "use client";
 
-import { BarChart3, X } from "lucide-react";
+import { BarChart3, MessageSquare, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { PromptBar } from "@/components/app/PromptBar";
 import { CitedText } from "@/components/ui/Footnote";
 import { apiPost } from "@/lib/api";
@@ -32,8 +33,9 @@ interface DashboardChatProps {
   attachError?: string | null;
 }
 
-/** Confirmations (a widget added, a zoom) clear themselves; answers stay until the next message. */
-const CONFIRM_MS = 6000;
+/** Results that change the dashboard itself: the overlay steps aside so the change can be seen. */
+const CHANGES = new Set(["widget_added", "exists", "time_range"]);
+const STEP_ASIDE_MS = 2500;
 
 function Action({ onClick, children, icon }: { onClick: () => void; children: ReactNode; icon?: ReactNode }) {
   return (
@@ -50,32 +52,60 @@ function Action({ onClick, children, icon }: { onClick: () => void; children: Re
 
 /**
  * "Ask Vicky" on the dashboard. Questions about the data are answered by code with a footnote on
- * every number; chart requests add a widget; "zoom to …" moves every chart. Only the latest
- * exchange is shown, docked above the bar in the page flow, so it never covers a widget: the
- * widgets give up the room instead.
+ * every number; chart requests add a widget; "zoom to …" moves every chart. Sending a message opens
+ * the conversation as an overlay above the bar, over a dimmed dashboard, so the widgets never give
+ * up room to it. Esc, the close button or a click on the dashboard closes it; the thread is kept.
  */
 export function DashboardChat(props: DashboardChatProps) {
   const { dashboardId, engagementId, track, onResult, onUndo, onShow, onResetRange, onAttach, attachBusy, attachError } = props;
   const guard = useAccessGuard();
-  const [current, setCurrent] = useState<Exchange | null>(null);
+  const [thread, setThread] = useState<Exchange[]>([]);
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [undone, setUndone] = useState<Set<string>>(new Set());
-  const timer = useRef<number | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const seq = useRef(0);
+  const latest = thread.at(-1);
 
-  // Confirmations fade after a few seconds; an answer stays until the next message or the close button.
+  const close = () => {
+    setOpen(false);
+    setHovered(false);
+  };
+
+  // Esc closes the overlay.
   useEffect(() => {
-    if (timer.current !== null) window.clearTimeout(timer.current);
-    const k = current?.result?.kind;
-    if (!current || current.error || !k || k === "answer" || k === "missing" || k === "none") return;
-    timer.current = window.setTimeout(() => setCurrent((c) => (c?.id === current.id ? null : c)), CONFIRM_MS);
-    return () => {
-      if (timer.current !== null) window.clearTimeout(timer.current);
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
     };
-  }, [current]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  // Keep the newest exchange in view.
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [thread, open]);
+
+  // A widget added or a zoom changes the dashboard: step aside after a moment and point at it,
+  // unless the pointer is on the overlay (reading, or about to press Undo).
+  useEffect(() => {
+    const r = latest?.result;
+    if (!open || !r || latest.error || !CHANGES.has(r.kind) || hovered) return;
+    const t = window.setTimeout(() => {
+      setOpen(false);
+      if (r.widget_id && r.kind !== "time_range") onShow(r.widget_id);
+    }, STEP_ASIDE_MS);
+    return () => window.clearTimeout(t);
+  }, [latest, open, hovered, onShow]);
 
   const send = async (text: string) => {
-    const id = Date.now();
-    setCurrent({ id, text, result: null, error: null });
+    const id = ++seq.current;
+    const patch = (p: Partial<Exchange>) => setThread((t) => t.map((x) => (x.id === id ? { ...x, ...p } : x)));
+    setThread((t) => [...t, { id, text, result: null, error: null }]);
+    setOpen(true);
     setBusy(true);
     try {
       const r = await track(
@@ -84,9 +114,9 @@ export function DashboardChat(props: DashboardChatProps) {
           return res;
         }),
       );
-      setCurrent((c) => (c?.id === id ? { ...c, result: r } : c));
+      patch({ result: r });
     } catch (err) {
-      if (!guard(err)) setCurrent((c) => (c?.id === id ? { ...c, error: errorText(err) } : c));
+      if (!guard(err)) patch({ error: errorText(err) });
     } finally {
       setBusy(false);
     }
@@ -94,6 +124,11 @@ export function DashboardChat(props: DashboardChatProps) {
 
   const undo = async (wid: string) => {
     if (await onUndo(wid)) setUndone((s) => new Set(s).add(wid));
+  };
+
+  const show = (wid: string) => {
+    close();
+    onShow(wid);
   };
 
   const body = (x: Exchange) => {
@@ -136,7 +171,7 @@ export function DashboardChat(props: DashboardChatProps) {
             <span className="text-[12.5px] text-ink">{title}</span>
             {r.widget_id && !undone.has(r.widget_id) && (
               <>
-                <Action onClick={() => onShow(r.widget_id!)}>Show</Action>
+                <Action onClick={() => show(r.widget_id!)}>Show</Action>
                 <Action onClick={() => void undo(r.widget_id!)}>Undo</Action>
               </>
             )}
@@ -146,7 +181,7 @@ export function DashboardChat(props: DashboardChatProps) {
         return (
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-[12.5px] text-ink-2">{r.reply}</span>
-            {r.widget_id && <Action onClick={() => onShow(r.widget_id!)}>Show</Action>}
+            {r.widget_id && <Action onClick={() => show(r.widget_id!)}>Show</Action>}
           </div>
         );
       case "time_range":
@@ -181,29 +216,57 @@ export function DashboardChat(props: DashboardChatProps) {
   };
 
   return (
-    <div className="flex flex-col gap-2" data-testid="dashboard-chat">
-      {current && (
+    <div className={cn("relative flex flex-col gap-2", open && "z-50")} data-testid="dashboard-chat">
+      {open &&
+        createPortal(
+          <div aria-hidden className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[3px]" data-testid="chat-backdrop" onClick={close} />,
+          document.body,
+        )}
+      {open && thread.length > 0 && (
         <section
-          aria-live="polite"
-          aria-label="Vicky's reply"
-          data-testid="chat-reply"
-          className={cn(
-            "glass scroll-thin relative max-h-[28vh] overflow-y-auto rounded-[16px] px-4 py-3",
-            current.result?.kind === "missing" && "border-dashed",
-          )}
+          aria-label="Conversation with Vicky"
+          data-testid="chat-thread"
+          onPointerEnter={() => setHovered(true)}
+          onPointerLeave={() => setHovered(false)}
+          className="glass absolute inset-x-0 bottom-full mb-2 flex bg-surface-solid/95 max-h-[min(64vh,640px)] flex-col overflow-hidden rounded-[18px] shadow-[0_24px_80px_-24px_rgba(0,0,0,0.6)]"
         >
-          <div className="mb-1.5 flex items-start justify-between gap-3">
-            <p className="truncate font-mono text-[10px] uppercase tracking-[-0.04em] text-dim">You asked · {current.text}</p>
-            <button
-              type="button"
-              onClick={() => setCurrent(null)}
-              aria-label="Close the reply"
-              className="-mt-0.5 -mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-ink-2 hover:text-ink"
-            >
-              <X className="size-3.5" strokeWidth={1.5} />
-            </button>
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+            <span className="label">Ask Vicky</span>
+            <span className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setThread([]);
+                  close();
+                }}
+                className="text-[11.5px] text-ink-2 underline underline-offset-2 hover:text-ink"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={close}
+                aria-label="Close the conversation"
+                className="-mr-1 flex size-6 items-center justify-center rounded-full text-ink-2 hover:text-ink"
+              >
+                <X className="size-3.5" strokeWidth={1.5} />
+              </button>
+            </span>
+          </header>
+          <div ref={scroller} aria-live="polite" className="scroll-thin flex min-h-0 flex-col gap-5 overflow-y-auto px-4 py-4">
+            {thread.map((x) => (
+              <article
+                key={x.id}
+                data-testid={x === latest ? "chat-reply" : "chat-exchange"}
+                className={cn("flex flex-col gap-2", x.result?.kind === "missing" && "rounded-[12px] border border-dashed border-line p-3")}
+              >
+                <p className="max-w-[85%] self-end rounded-[12px] rounded-br-[4px] border border-line bg-surface-solid/70 px-3 py-1.5 text-[12.5px] text-ink">
+                  {x.text}
+                </p>
+                {body(x)}
+              </article>
+            ))}
           </div>
-          {body(current)}
         </section>
       )}
       <PromptBar
@@ -215,6 +278,15 @@ export function DashboardChat(props: DashboardChatProps) {
         hint={
           attachError ? (
             <span className="text-ember">{attachError}</span>
+          ) : !open && thread.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="inline-flex items-center gap-1.5 text-ink-2 underline underline-offset-2 hover:text-ink"
+            >
+              <MessageSquare className="size-3.5" strokeWidth={1.5} />
+              Show conversation ({thread.length})
+            </button>
           ) : (
             "Ask a question (“how is ARR calculated?”), ask for a chart (“show gross margin by quarter”) or zoom (“last 6 months”)."
           )

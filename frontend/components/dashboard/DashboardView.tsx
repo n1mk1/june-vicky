@@ -241,7 +241,6 @@ export function DashboardView() {
 
   const onChat = (r: ChatResult) => {
     if (r.dashboard) apply(r.dashboard);
-    if (r.widget_id && (r.kind === "widget_added" || r.kind === "exists")) flash(r.widget_id);
   };
 
   if (dash.status === 404 || (dash.status === 409 && !dash.data)) {
@@ -353,7 +352,7 @@ export function DashboardView() {
           engagementId={d.engagement_id}
           onResult={onChat}
           onUndo={remove}
-          onShow={(id) => flash(id)}
+          onShow={flash}
           onResetRange={() => setRange(null)}
           onAttach={attach}
           attachBusy={uploading}

@@ -45,7 +45,7 @@ test.describe("dashboard layout: every widget on one screen", () => {
     await openDashboard(page);
     const overflowing = await page.evaluate(() =>
       [...document.querySelectorAll("main section.glass")]
-        .filter((s) => s.getAttribute("data-testid") !== "chat-reply")
+        .filter((s) => !s.closest('[data-testid="dashboard-chat"]'))
         .map((s) => {
           const body = s.querySelector(":scope > div:last-child") as HTMLElement | null;
           return { name: s.querySelector("h2")?.textContent ?? "", over: body ? body.scrollHeight - body.clientHeight : 0 };

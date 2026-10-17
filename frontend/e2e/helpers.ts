@@ -24,7 +24,7 @@ export async function openDashboard(page: Page) {
   await page.waitForTimeout(400);
 }
 
-/** Every panel on the dashboard (widgets, modules) except the chat's own reply. */
+/** Every panel on the dashboard (widgets, modules), not the chat's overlay. */
 export function panels(page: Page): Locator {
   return page.locator("main section.glass, main section.border-dashed").filter({ hasNot: page.getByTestId("chat-answer") });
 }
@@ -32,7 +32,7 @@ export function panels(page: Page): Locator {
 export async function boxes(page: Page): Promise<Box[]> {
   return page.evaluate(() =>
     [...document.querySelectorAll("main section.glass, main section.border-dashed")]
-      .filter((e) => e.getAttribute("data-testid") !== "chat-reply")
+      .filter((e) => !e.closest('[data-testid="dashboard-chat"]'))
       .map((e) => {
         const r = e.getBoundingClientRect();
         return { name: e.querySelector("h2")?.textContent ?? "(panel)", x: r.x, y: r.y, width: r.width, height: r.height };
@@ -56,7 +56,7 @@ export function chatInput(page: Page): Locator {
   return page.getByTestId("dashboard-chat").getByRole("textbox", { name: /ask vicky/i });
 }
 
-/** Send a message in the dashboard chat and wait for Vicky's reply to settle. */
+/** Send a message in the dashboard chat and wait for Vicky's reply (the newest in the overlay) to settle. */
 export async function ask(page: Page, text: string): Promise<Locator> {
   const input = chatInput(page);
   await input.fill(text);
