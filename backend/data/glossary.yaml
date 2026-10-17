@@ -1,0 +1,157 @@
+# Plain-English glossary: the 37 terms of Appendix I of the Catalyst Team 18 supporting pack
+# (pp.34-37). Definitions follow the pack's wording; the pack's sample-company examples are
+# left out. `formula` uses the metric ids of the metrics engine where one exists.
+# `source_id` points to backend/data/sources.yaml.
+
+terms:
+  - term: ARR (annual recurring revenue)
+    aliases: [ARR, annual recurring revenue, run rate]
+    definition: "MRR times 12. It leaves out one-time fees such as onboarding or setup charges."
+    formula: "mrr x 12 (latest month)"
+    source_id: a16z_16_startup_metrics
+  - term: Burn rate
+    aliases: [burn, monthly burn, cash burn]
+    definition: "How much cash the company loses each month. Leave out one-off inflows such as tax-credit refunds, or say clearly that they are included."
+    formula: "average monthly net loss excluding non-dilutive credits over a stated window"
+    source_id: a16z_16_startup_metrics
+  - term: Burn multiple
+    aliases: [burn multiple]
+    definition: "Net burn divided by net new ARR: how many dollars the company burns to add one dollar of recurring revenue. Lower is more efficient."
+    formula: "net burn / net new ARR, same window"
+    source_id: sacks_burn_multiple
+  - term: CAC (customer acquisition cost)
+    aliases: [CAC, customer acquisition cost, fully loaded CAC, blended CAC]
+    definition: "Sales and marketing spend divided by the number of new customers won. \"Fully loaded\" means it includes salaries and commissions, not just advertising or programs."
+    formula: "(sales salaries + commissions + marketing salaries + marketing programs) / new customers, same window"
+    source_id: a16z_16_startup_metrics
+  - term: CAC payback
+    aliases: [payback, payback period, CAC payback period]
+    definition: "The number of months of gross profit from a new customer needed to earn back what it cost to win them."
+    formula: "CAC / (MRR per new customer x gross margin including support)"
+    source_id: bvp_scaling_100m_cac_payback_smb
+  - term: Cap table
+    aliases: [capitalization table, cap table]
+    definition: "The list of who owns what share of the company: founders, investors, the option pool and anything that will convert into shares, such as SAFEs."
+  - term: Churn (logo)
+    aliases: [logo churn, customer churn, churn rate]
+    definition: "The share of customers who cancel in a period, usually quoted per month."
+    formula: "customers lost in the month / customers at the start of the month"
+    source_id: a16z_16_startup_metrics
+  - term: Churn (revenue)
+    aliases: [revenue churn, MRR churn, dollar churn]
+    definition: "The share of MRR lost to cancellations in a period."
+    formula: "MRR lost to cancellations in the period / MRR at the start of the period"
+    source_id: a16z_16_startup_metrics
+  - term: CMGR (compound monthly growth rate)
+    aliases: [CMGR, compound monthly growth, month-over-month growth, MoM growth]
+    definition: "The steady monthly growth rate that gets you from a start value to an end value. It smooths out lumpy months, so it is the fair way to state growth over a period."
+    formula: "(end MRR / start MRR)^(1 / number of months) - 1"
+    source_id: saastr_series_a_growth
+  - term: Cohort
+    aliases: [cohort, customer cohort]
+    definition: "A group of customers who started (or were active) in the same period, tracked over time to see how their revenue and retention change."
+  - term: Contraction
+    aliases: [contraction MRR, downgrade]
+    definition: "MRR lost when existing customers reduce seats or move to a cheaper plan without leaving."
+  - term: Cost of revenue (COGS)
+    aliases: [COGS, cost of goods sold, cost of sales]
+    definition: "The costs of delivering the product: hosting, third-party services, and usually customer support. Investors often move support into cost of revenue even if the books keep it in operating expenses."
+  - term: Deferred revenue
+    aliases: [unearned revenue, deferred revenue]
+    definition: "Cash collected for service not yet delivered, such as annual plans paid up front. It is a liability until it is earned month by month."
+    source_id: a16z_16_startup_metrics
+  - term: Dilution
+    aliases: [dilution, equity dilution]
+    definition: "The drop in existing owners' percentage of the company when new shares are issued, for example when a priced round closes or SAFEs convert."
+    formula: "new ownership = old shares / (old shares + new shares)"
+    source_id: lighter_dilution_explainer
+  - term: Expansion
+    aliases: [expansion MRR, upsell]
+    definition: "Extra MRR from existing customers adding seats or upgrading."
+  - term: Forecast
+    aliases: [projection, plan, financial model]
+    definition: "A projection of future results built on assumptions. It is not a fact, and each assumption should be checked against what actually happened."
+  - term: Gross margin
+    aliases: [gross margin, GM]
+    definition: "Gross profit divided by revenue. Say what is in cost of revenue: margin with customer support included is usually lower than margin as booked."
+    formula: "(revenue - cost of revenue) / revenue"
+    source_id: bvp_scaling_100m_gross_margin
+  - term: Gross revenue retention (GRR)
+    aliases: [GRR, gross retention, gross dollar retention]
+    definition: "Revenue kept from a cohort after churn and contraction, ignoring any expansion. It can't exceed 100%."
+    formula: "cohort MRR now, each customer capped at its starting MRR / cohort MRR a year ago"
+    source_id: saastr_series_a_grr
+  - term: Historical (actuals)
+    aliases: [actuals, historical results]
+    definition: "Results from closed months in the books, as opposed to forecasts."
+  - term: Lead investor
+    aliases: [lead, lead investor]
+    definition: "The investor who sets the round's terms and usually takes the largest share of it."
+  - term: Logo
+    aliases: [logo, logos]
+    definition: "Investor shorthand for a customer. \"Logo churn\" counts customers lost, regardless of how much they paid."
+  - term: MRR (monthly recurring revenue)
+    aliases: [MRR, monthly recurring revenue]
+    definition: "Subscription revenue in a month, excluding one-time fees."
+    formula: "recurring (subscription) revenue in the month"
+    source_id: a16z_16_startup_metrics
+  - term: Net new ARR
+    aliases: [net new ARR, NNARR]
+    definition: "ARR at the end of a period minus ARR at the start. It is the denominator of the burn multiple."
+    formula: "ARR(end) - ARR(start)"
+    source_id: sacks_burn_multiple
+  - term: Net revenue retention (NRR)
+    aliases: [NRR, NDR, net dollar retention, net retention]
+    definition: "Revenue from a cohort now divided by its revenue a year ago, including expansion and churn. Above 100% means existing customers grow on their own."
+    formula: "cohort MRR now / cohort MRR 12 months ago"
+    source_id: saastr_series_a_nrr
+  - term: Onboarding fee
+    aliases: [setup fee, implementation fee, onboarding fee]
+    definition: "A one-time setup charge. It is revenue, but not recurring revenue, so it stays out of MRR and ARR."
+  - term: Option pool
+    aliases: [option pool, ESOP, employee option pool]
+    definition: "Shares set aside for employee stock options."
+    source_id: yc_safe_dilution_order
+  - term: Post-money valuation
+    aliases: [post-money, post]
+    definition: "The company's value including the new money raised. Vicky explains how it works but never suggests one."
+    formula: "pre-money valuation + new money raised"
+    source_id: lighter_dilution_explainer
+  - term: Pre-money valuation
+    aliases: [pre-money, pre]
+    definition: "The company's value before the new money comes in."
+    source_id: lighter_dilution_explainer
+  - term: Priced round
+    aliases: [priced equity round, equity round]
+    definition: "A round where investors buy shares at a set price per share, as opposed to a SAFE or convertible note."
+  - term: Ramp
+    aliases: [rep ramp, sales ramp, ramp time]
+    definition: "The time a new salesperson takes to reach full productivity. Forecasts often assume a faster ramp than history shows."
+  - term: Runway
+    aliases: [runway, cash runway, months of runway]
+    definition: "Months until cash runs out at the current burn."
+    formula: "cash / average monthly burn (excluding one-off credits)"
+    source_id: pg_default_alive
+  - term: SAFE (simple agreement for future equity)
+    aliases: [SAFE, post-money SAFE, simple agreement for future equity]
+    definition: "Money invested now that turns into shares at the next priced round, usually at a price set by a valuation cap."
+    formula: "post-money SAFE ownership = purchase amount / post-money valuation cap"
+    source_id: yc_safe_ownership_math
+  - term: Seat
+    aliases: [seat, licence, license, user]
+    definition: "One user licence, such as one employee or technician using the software."
+  - term: SR&ED
+    aliases: [SR&ED, SRED, Scientific Research and Experimental Development]
+    definition: "Canada's Scientific Research and Experimental Development tax incentive. Small Canadian companies can get part of their R&D spending back in cash, which is non-dilutive funding."
+    source_id: cra_srred
+  - term: TAM, SAM, SOM
+    aliases: [TAM, SAM, SOM, total addressable market, market size]
+    definition: "Total, serviceable and obtainable market. These should be sourced and ideally built bottom-up (number of target customers x units per customer x price)."
+    source_id: janz_five_ways_100m
+  - term: Use of funds
+    aliases: [use of proceeds, use of funds]
+    definition: "How the company plans to spend the money it raises."
+  - term: Valuation cap
+    aliases: [cap, valuation cap, post-money valuation cap]
+    definition: "The highest valuation at which a SAFE converts into shares."
+    source_id: yc_safe_ownership_math
