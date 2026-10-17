@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EChart, type ChartClick } from "@/components/charts/EChart";
 import { Panel } from "@/components/ui/Panel";
 import { fmtAxis, fmtValue } from "@/lib/format";
@@ -25,7 +25,7 @@ interface TipParam {
  * The backend's option, minus Vicky's underscore metadata, plus display formatters for the units
  * it declares and the dashboard-wide time range on its dataZoom. No values are added or changed here.
  */
-function prepare(raw: EChartsOptionJson, range: TimeRange | null): Record<string, unknown> {
+function prepare(raw: EChartsOptionJson, range: TimeRange | null, compact = false): Record<string, unknown> {
   const meta = raw._meta ?? {};
   const units = meta.units ?? {};
   const currency = meta.currency ?? null;
@@ -84,7 +84,26 @@ function prepare(raw: EChartsOptionJson, range: TimeRange | null): Record<string
       ...(zoom ? { startValue: zoom[0], endValue: zoom[1] } : {}),
     }));
   }
+  if (compact) {
+    // Short panels keep wheel/pinch zoom but drop the slider so the plot keeps its height.
+    if (Array.isArray(opt.dataZoom)) opt.dataZoom = (opt.dataZoom as Record<string, unknown>[]).filter((dz) => dz.type === "inside");
+    if (opt.grid) opt.grid = { ...(opt.grid as object), bottom: 6, top: opt.legend ? 44 : 28 };
+  }
   return opt;
+}
+
+/** True when the element is shorter than `px` (so a chart can switch to its compact form). */
+function useShort(px: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [short, setShort] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setShort(e.contentRect.height < px));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [px]);
+  return [ref, short] as const;
 }
 
 function explainFrom(raw: EChartsOptionJson, widget: Widget, click: ChartClick): Explanation | null {
@@ -138,7 +157,8 @@ export function ChartWidget({
   const raw = widget.option;
   const [explain, setExplain] = useState<Explanation | null>(null);
   const [table, setTable] = useState(false);
-  const option = useMemo(() => (raw ? prepare(raw, timeRange) : null), [raw, timeRange]);
+  const [box, compact] = useShort(230);
+  const option = useMemo(() => (raw ? prepare(raw, timeRange, compact) : null), [raw, timeRange, compact]);
   const ev = widget.evaluated;
   const currency = raw?._meta?.currency ?? ev.currency;
   const notes = [...(ev.notes ?? []), ...(raw?._meta?.notes ?? [])].filter((n, i, a) => a.indexOf(n) === i);
@@ -222,7 +242,7 @@ export function ChartWidget({
           </table>
         </div>
       ) : option ? (
-        <div className="min-h-[140px] flex-1">
+        <div ref={box} className="min-h-[120px] flex-1" data-compact={compact || undefined}>
           <EChart
             option={option}
             ariaLabel={`${widget.spec.title} chart. Use the Table view for values.`}
@@ -237,7 +257,7 @@ export function ChartWidget({
       ) : (
         <p className="p-2 text-[12.5px] text-ink-2">No chart for this widget.</p>
       )}
-      {notes.length > 0 && <p className="px-1 pt-2 text-[11px] leading-snug text-dim">{notes.join(" ")}</p>}
+      {notes.length > 0 && !compact && <p className="px-1 pt-2 text-[11px] leading-snug text-dim">{notes.join(" ")}</p>}
       {explain && <ExplainCard x={explain} onClose={() => setExplain(null)} className="absolute right-3 bottom-3 z-30" />}
     </Panel>
   );

@@ -1,29 +1,24 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { OrbScene } from "@/components/fx/scenes";
-import { Panel } from "@/components/ui/Panel";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PillButton, PillLink } from "@/components/ui/Pill";
 import { EmptyState, ErrorNote, Loading } from "@/components/ui/States";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api";
 import { pack } from "@/lib/dashboard-layout";
-import { fmtDate, humanize } from "@/lib/format";
 import { useChannel, useSocketStatus, type Envelope } from "@/lib/socket";
-import type { AttackItem, ChatResult, Dashboard, Engagement, ReportSummary, TimeRange, Truth, Widget } from "@/lib/types";
+import type { ChatResult, Dashboard, Engagement, ReportSummary, TimeRange, Truth } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { themeName } from "@/lib/echarts-theme";
 import { useTheme } from "@/lib/use-theme";
 import { cn } from "@/lib/utils";
 import { AddWidget } from "./AddWidget";
 import { DashboardChat } from "./DashboardChat";
-import { DashboardGrid, type Sized } from "./DashboardGrid";
-import { WidgetView } from "./WidgetView";
+import { DashboardGrid, fitRowCount, type Sized } from "./DashboardGrid";
+import { HERO, HERO_ROLES } from "./layout";
+import { Module, type ModuleContext } from "./modules";
 
-const FIXED = ["margin_ring", "headline_kpi", "trend"] as const;
-const isFixed = (role: string) => (FIXED as readonly string[]).includes(role);
 /** First grid row of the editable flow when nothing is placed yet (below the hero and prompt bar). */
 const FLOW_TOP = 10;
 
@@ -66,95 +61,6 @@ function RangeChip({ range, onReset }: { range: TimeRange; onReset: () => void }
       </button>
     </span>
   );
-}
-
-function AttackList({ items, loading, error }: { items: AttackItem[]; loading: boolean; error: unknown }) {
-  const shown = [...items].sort((a, b) => b.severity - a.severity);
-  return (
-    <Panel title="What they'll ask first" aside={shown.length ? <span className="label">{shown.length}</span> : null} bodyClassName="scroll-thin overflow-y-auto">
-      {loading && !items.length ? (
-        <Loading label="Ranking weak spots" className="p-4" />
-      ) : error ? (
-        <ErrorNote message={errorText(error)} className="p-4" />
-      ) : !shown.length ? (
-        <p className="p-4 text-[12.5px] text-ink-2">Nothing stands out yet. The panel will still ask about your headline numbers.</p>
-      ) : (
-        <ol className="divide-y divide-line">
-          {shown.map((a) => (
-            <li key={a.id} className="flex gap-3 px-4 py-3">
-              <span
-                className={cn("mt-1.5 h-1.5 shrink-0 rounded-full", a.missing ? "border border-dashed border-ember" : "bg-ember")}
-                style={{ width: 6 + a.severity * 18, opacity: 0.4 + a.severity * 0.6 }}
-                aria-label={`Severity ${Math.round(a.severity * 100)} of 100`}
-                role="img"
-              />
-              <span className="min-w-0">
-                <span className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-display text-[16px] tracking-[-0.03em]">{a.topic}</span>
-                  <span className="font-mono text-[9.5px] uppercase tracking-[-0.04em] text-dim">{humanize(a.lens)}</span>
-                </span>
-                <span className="block text-[12.5px] leading-snug text-ink-2">{a.detail}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </Panel>
-  );
-}
-
-/** Pitch readiness as a small widget: the orb with the score in it, and where the score came from. */
-function Readiness({ reports, company }: { reports: ReportSummary[] | undefined; company: string }) {
-  const mine = (reports ?? []).filter((r) => r.company === company && r.overall !== null);
-  const latest = [...mine].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-  const score = latest?.overall != null ? Math.round(latest.overall * 20) : null;
-  return (
-    <Panel title="Pitch readiness" marks bodyClassName="flex items-center gap-3 px-3 py-2" className="min-h-[120px]">
-      <div aria-label={score === null ? "No score yet" : `Readiness ${score} of 100`} role="img" className="relative aspect-square h-full max-h-[104px] min-h-[64px] shrink-0">
-        <div className="absolute inset-0">
-          <OrbScene score={score ?? 0} />
-        </div>
-        <span className="display absolute inset-0 flex items-center justify-center text-[clamp(22px,3.4vh,34px)] tabular-nums">
-          {score ?? "—"}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        {latest ? (
-          <>
-            <span className="font-display text-[15px] leading-tight tracking-[-0.03em]">{humanize(latest.readiness ?? "scored")}</span>
-            <span className="text-[11.5px] leading-snug text-ink-2">Last session {fmtDate(latest.created_at)}</span>
-            <Link href="/preparation" className="text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
-              Practise again
-            </Link>
-          </>
-        ) : (
-          <>
-            <span className="text-[11.5px] leading-snug text-ink-2">No session yet.</span>
-            <Link href="/preparation" className="text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
-              Face the panel
-            </Link>
-          </>
-        )}
-      </div>
-    </Panel>
-  );
-}
-
-function Slot({
-  widget,
-  className,
-  fallback,
-  ...rest
-}: {
-  widget?: Widget;
-  className?: string;
-  fallback: ReactNode;
-  engagementId: string;
-  currency?: string;
-  timeRange: TimeRange | null;
-  onRangeChange?: (range: { from: string; to: string } | null) => void;
-}) {
-  return <div className={cn("flex min-w-0 [&>*]:min-w-0 [&>*]:flex-1", className)}>{widget ? <WidgetView widget={widget} {...rest} /> : fallback}</div>;
 }
 
 export function DashboardView() {
@@ -277,13 +183,6 @@ export function DashboardView() {
   useChannel(did ? `dashboard:${did}` : null, (e) => void onEvent(e), () => void refetch());
 
   // ---- actions
-  const ask = (text: string) => {
-    try {
-      sessionStorage.setItem("vicky-question", text);
-    } catch {}
-    router.push("/preparation");
-  };
-
   const attach = async (file: File) => {
     setUploading(true);
     setUploadError(null);
@@ -371,13 +270,16 @@ export function DashboardView() {
   const d = dash.data;
   const byRole = new Map(d.widgets.map((w) => [w.role, w]));
   const currency = truth.data?.profile?.currency;
-  const rest = d.widgets.filter((w) => !isFixed(w.role));
+  const rest = d.widgets.filter((w) => !HERO_ROLES.has(w.role));
   const common = { engagementId: d.engagement_id, currency, timeRange: d.time_range, onRangeChange: zoomTo };
-  const empty = (title: string) => (
-    <Panel title={title} bodyClassName="p-4">
-      <p className="text-[12.5px] text-ink-2">Not available for this data.</p>
-    </Panel>
-  );
+  const ctx: ModuleContext = {
+    ...common,
+    byRole,
+    company: d.company,
+    reports: reports.data,
+    attack: { items: truth.data?.attack_list ?? [], loading: truth.loading, error: truth.error },
+  };
+  const SPAN = { 3: "lg:col-span-3", 4: "lg:col-span-4", 6: "lg:col-span-6" } as const;
 
   return (
     // Desktop: one screen, no page scroll. Top row: readiness + margin, headline KPI, trend, what
@@ -401,18 +303,32 @@ export function DashboardView() {
       <div
         className={cn(
           "grid grid-cols-1 gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-cols-12",
-          rest.length ? "lg:grid-rows-[minmax(0,1.15fr)_minmax(0,1fr)]" : "lg:grid-rows-[minmax(0,1fr)]",
+          // The more rows of extra widgets, the more of the height they get.
+          !rest.length
+            ? "lg:grid-rows-[minmax(0,1fr)]"
+            : fitRowCount(rest.length) === 1
+              ? "lg:grid-rows-[minmax(0,1.15fr)_minmax(0,1fr)]"
+              : fitRowCount(rest.length) === 2
+                ? "lg:grid-rows-[minmax(0,1fr)_minmax(0,1.6fr)]"
+                : "lg:grid-rows-[minmax(0,1fr)_minmax(0,2.2fr)]",
         )}
       >
-        <div className="flex min-w-0 flex-col gap-4 lg:col-span-3 lg:min-h-0">
-          <Readiness reports={reports.data} company={d.company} />
-          <Slot widget={byRole.get("margin_ring")} fallback={empty("Gross margin")} className="min-h-[240px] lg:min-h-0 lg:flex-1" {...common} />
-        </div>
-        <Slot widget={byRole.get("headline_kpi")} fallback={empty("Headline")} className="lg:col-span-3 lg:min-h-0" {...common} />
-        <Slot widget={byRole.get("trend")} fallback={empty("Trend")} className="min-h-[280px] md:col-span-2 lg:col-span-3 lg:min-h-0" {...common} />
-        <div className="flex min-h-[260px] min-w-0 md:col-span-2 lg:col-span-3 lg:min-h-0 [&>*]:flex-1">
-          <AttackList items={truth.data?.attack_list ?? []} loading={truth.loading} error={truth.error} />
-        </div>
+        {HERO.map((col, ci) => (
+          <div key={ci} className={cn("flex min-w-0 flex-col gap-4 lg:min-h-0", SPAN[col.span])} data-testid="hero-column">
+            {col.slots.map((slot) => (
+              <div
+                key={slot.module}
+                data-module={slot.module}
+                className={cn(
+                  "flex min-h-[240px] min-w-0 lg:min-h-0 [&>*]:min-w-0 [&>*]:flex-1",
+                  slot.grow === 0 ? "shrink-0 lg:min-h-fit" : "flex-1",
+                )}
+              >
+                <Module id={slot.module} ctx={ctx} fallbackTitle={slot.title} />
+              </div>
+            ))}
+          </div>
+        ))}
 
         {rest.length > 0 && (
           <section aria-label="More widgets" className="min-w-0 md:col-span-2 lg:col-span-12 lg:min-h-0">
@@ -435,7 +351,6 @@ export function DashboardView() {
           track={track}
           engagementId={d.engagement_id}
           onResult={onChat}
-          onAsk={ask}
           onUndo={remove}
           onShow={(id) => flash(id)}
           onResetRange={() => setRange(null)}

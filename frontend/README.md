@@ -36,6 +36,22 @@ The script uses your installed Edge or Chrome. Set `BASE_URL` if the app isn't o
 
 `docs/screenshots/reference/` holds the trionn.com captures used as the style reference. They're for internal reference only; don't publish them.
 
+## End-to-end tests
+
+`e2e/` holds Playwright tests for the dashboard: every widget fits on one screen above the chat at 1366×768, 1440×900 and 1920×1080 with no overlaps, widgets explain their numbers, charts draw and show their tables, chat-added widgets fit and can be removed, zoom and reset work, and a battery of questions about the data gets footnoted answers that clear the prompt and never cover a widget. With the API and the web app running (see the repo README), run:
+
+```bash
+npm run test:e2e
+```
+
+Global setup signs in with `ACCESS_CODE` (default `vicky-demo`) and loads a sample if nothing is confirmed. Tests share the dashboard, run one at a time, and remove any widget they add and restore the time range afterwards. Set `BASE_URL` if the app isn't on port 3000.
+
+## The dashboard's building blocks
+
+- `components/dashboard/registry.tsx`: one renderer per widget template (`kpi`, `gauge_ring`, `line`, `bar`, …) plus the missing-data tile. Add a template here and the grid, dashboard and chat use it.
+- `components/dashboard/modules.tsx`: panels that aren't stored widgets (`readiness`, `attack_list`) and the `Module` renderer for `role:<role>` widgets.
+- `components/dashboard/layout.ts`: the top row as data (columns, stacked modules, height shares). Every widget not placed there fills the row below, so all of them stay above the chat.
+
 ## Where things live
 
 - `lib/tidewell.ts`: Tidewell monthly actuals from CSV 01, and every derived figure with its formula and source.

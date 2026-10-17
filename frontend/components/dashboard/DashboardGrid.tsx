@@ -9,13 +9,13 @@ import {
   MIN_H,
   MIN_W,
   ROW_PX,
-  defaultSize,
   moveTo,
   ordered,
   pack,
 } from "@/lib/dashboard-layout";
 import type { LayoutItem, TimeRange, Widget } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { kindOf } from "./registry";
 import { WidgetView } from "./WidgetView";
 
 export type Sized = Pick<LayoutItem, "widget_id" | "w" | "h">;
@@ -38,10 +38,15 @@ interface DashboardGridProps {
   fit?: boolean;
 }
 
-/** Rows for fit mode: up to four widgets side by side, then two or three rows. */
+/** How many rows fit mode uses: up to six widgets side by side, then two rows, then three. */
+export function fitRowCount(n: number): number {
+  return n <= 6 ? 1 : n <= 12 ? 2 : 3;
+}
+
+/** Rows for fit mode, in order, sharing the widgets as evenly as possible. */
 function fitRows<T>(items: T[]): T[][] {
   const n = items.length;
-  const rows = n <= 4 ? 1 : n <= 8 ? 2 : 3;
+  const rows = fitRowCount(n);
   const per = Math.ceil(n / rows);
   const out: T[][] = [];
   for (let i = 0; i < n; i += per) out.push(items.slice(i, i + per));
@@ -59,7 +64,7 @@ function flow(widgets: Widget[], layout: LayoutItem[]): Sized[] {
   const ids = new Set(widgets.map((w) => w.id));
   const placed = ordered(layout.filter((l) => ids.has(l.widget_id))).map(({ widget_id, w, h }) => ({ widget_id, w, h }));
   const seen = new Set(placed.map((p) => p.widget_id));
-  const rest = widgets.filter((w) => !seen.has(w.id)).map((w) => ({ widget_id: w.id, ...defaultSize(w) }));
+  const rest = widgets.filter((w) => !seen.has(w.id)).map((w) => ({ widget_id: w.id, ...kindOf(w).size }));
   return [...placed, ...rest];
 }
 
@@ -191,7 +196,7 @@ export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, 
   function cell(p: Sized & Partial<Pick<LayoutItem, "x" | "y">>, inFit: boolean) {
         const w = byId.get(p.widget_id);
         if (!w) return null;
-        const chart = w.status === "ok" && !["kpi", "gauge_ring"].includes(w.spec.template);
+        const chart = !kindOf(w).scalar;
         const active = gesture?.id === w.id;
         const style = inFit ? undefined : ({ "--gc": `${(p.x ?? 0) + 1} / span ${p.w}`, "--gr": `${(p.y ?? 0) + 1} / span ${p.h}` } as CSSProperties);
         return (

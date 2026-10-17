@@ -336,13 +336,19 @@ export interface WidgetPreview {
 
 /** POST /dashboards/{id}/chat. `reply` never carries a figure; `dashboard` is set when something changed. */
 export interface ChatResult {
-  kind: "widget_added" | "exists" | "missing" | "error" | "time_range" | "question" | "none";
+  kind: "answer" | "widget_added" | "exists" | "missing" | "error" | "time_range" | "question" | "none";
   reply: string;
   spec: WidgetSpec | null;
   widget_id: string | null;
   missing: MissingFigure | null;
   time_range: TimeRange | null;
   dashboard: Dashboard | null;
+  /** Answers: footnotes for every number in `reply` (computed by code, checked by the audit). */
+  citations?: Citation[];
+  /** Answers: follow-up questions worth asking next. */
+  suggestions?: string[];
+  /** Answers: a chat request that would chart what was asked about, e.g. "show total revenue by month". */
+  chart?: string | null;
 }
 
 // ---------------------------------------------------------------- the Areopagus

@@ -34,7 +34,11 @@ export function Panel({ title, aside, marks, className, bodyClassName, children 
       {marks && <CornerMarks />}
       {(title || aside) && (
         <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-          {title && <h2 className="label">{title}</h2>}
+          {title && (
+            <h2 className="label min-w-0 truncate" title={title}>
+              {title}
+            </h2>
+          )}
           {aside}
         </header>
       )}

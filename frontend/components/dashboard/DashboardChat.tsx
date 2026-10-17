@@ -1,8 +1,10 @@
 "use client";
 
+import { BarChart3, X } from "lucide-react";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PromptBar } from "@/components/app/PromptBar";
+import { CitedText } from "@/components/ui/Footnote";
 import { apiPost } from "@/lib/api";
 import type { ChatResult } from "@/lib/types";
 import { errorText, useAccessGuard } from "@/lib/use-api";
@@ -22,8 +24,6 @@ interface DashboardChatProps {
   track: <T>(p: Promise<T>) => Promise<T>;
   /** Apply the dashboard a request changed (widget added, time range set). */
   onResult: (r: ChatResult) => void;
-  /** Send a question to the panel (Preparation). */
-  onAsk: (text: string) => void;
   onUndo: (widgetId: string) => Promise<boolean>;
   onShow: (widgetId: string) => void;
   onResetRange: () => void;
@@ -32,31 +32,50 @@ interface DashboardChatProps {
   attachError?: string | null;
 }
 
-const KEEP = 3;
+/** Confirmations (a widget added, a zoom) clear themselves; answers stay until the next message. */
+const CONFIRM_MS = 6000;
 
-function Action({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+function Action({ onClick, children, icon }: { onClick: () => void; children: ReactNode; icon?: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className="text-[12px] text-ink underline underline-offset-2 hover:text-ember">
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 text-[12px] text-ink underline underline-offset-2 hover:text-ember"
+    >
+      {icon}
       {children}
     </button>
   );
 }
 
 /**
- * Vicky's dashboard chat: requests are mapped to a widget or a time range by the backend's offline
- * phrase mapper; every value in a widget is computed by code. Replies show as small cards under the
- * bar: "Widget added" with Undo, the zoom with Reset, missing data with the reason and an upload link.
+ * "Ask Vicky" on the dashboard. Questions about the data are answered by code with a footnote on
+ * every number; chart requests add a widget; "zoom to …" moves every chart. Only the latest
+ * exchange is shown, docked above the bar in the page flow, so it never covers a widget: the
+ * widgets give up the room instead.
  */
 export function DashboardChat(props: DashboardChatProps) {
-  const { dashboardId, engagementId, track, onResult, onAsk, onUndo, onShow, onResetRange, onAttach, attachBusy, attachError } = props;
+  const { dashboardId, engagementId, track, onResult, onUndo, onShow, onResetRange, onAttach, attachBusy, attachError } = props;
   const guard = useAccessGuard();
-  const [log, setLog] = useState<Exchange[]>([]);
+  const [current, setCurrent] = useState<Exchange | null>(null);
   const [busy, setBusy] = useState(false);
   const [undone, setUndone] = useState<Set<string>>(new Set());
+  const timer = useRef<number | null>(null);
+
+  // Confirmations fade after a few seconds; an answer stays until the next message or the close button.
+  useEffect(() => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    const k = current?.result?.kind;
+    if (!current || current.error || !k || k === "answer" || k === "missing" || k === "none") return;
+    timer.current = window.setTimeout(() => setCurrent((c) => (c?.id === current.id ? null : c)), CONFIRM_MS);
+    return () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    };
+  }, [current]);
 
   const send = async (text: string) => {
     const id = Date.now();
-    setLog((l) => [...l.slice(-(KEEP - 1)), { id, text, result: null, error: null }]);
+    setCurrent({ id, text, result: null, error: null });
     setBusy(true);
     try {
       const r = await track(
@@ -65,9 +84,9 @@ export function DashboardChat(props: DashboardChatProps) {
           return res;
         }),
       );
-      setLog((l) => l.map((x) => (x.id === id ? { ...x, result: r } : x)));
+      setCurrent((c) => (c?.id === id ? { ...c, result: r } : c));
     } catch (err) {
-      if (!guard(err)) setLog((l) => l.map((x) => (x.id === id ? { ...x, error: errorText(err) } : x)));
+      if (!guard(err)) setCurrent((c) => (c?.id === id ? { ...c, error: errorText(err) } : c));
     } finally {
       setBusy(false);
     }
@@ -77,12 +96,39 @@ export function DashboardChat(props: DashboardChatProps) {
     if (await onUndo(wid)) setUndone((s) => new Set(s).add(wid));
   };
 
-  const card = (x: Exchange) => {
+  const body = (x: Exchange) => {
     const r = x.result;
-    if (x.error) return <p className="text-[12.5px] text-ember">{x.error}</p>;
-    if (!r) return <p className="text-[12.5px] text-dim">Working on it…</p>;
+    if (x.error) return <p className="text-[13px] text-ember">{x.error}</p>;
+    if (!r) return <p className="text-[13px] text-dim">Working it out from your data…</p>;
     const title = r.spec?.title;
     switch (r.kind) {
+      case "answer":
+        return (
+          <div className="flex flex-col gap-2">
+            <p className="text-[13.5px] leading-relaxed text-ink" data-testid="chat-answer">
+              <CitedText text={r.reply} citations={r.citations ?? []} />
+            </p>
+            {(r.chart || !!r.suggestions?.length) && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                {r.chart && (
+                  <Action onClick={() => void send(r.chart!)} icon={<BarChart3 className="size-3.5" strokeWidth={1.5} />}>
+                    Chart it
+                  </Action>
+                )}
+                {(r.suggestions ?? []).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => void send(s)}
+                    className="rounded-full border border-line px-2.5 py-0.5 text-[11.5px] text-ink-2 hover:border-line-strong hover:text-ink"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
       case "widget_added":
         return (
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -129,25 +175,40 @@ export function DashboardChat(props: DashboardChatProps) {
             </Link>
           </div>
         );
-      case "question":
-        return (
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-[12.5px] text-ink-2">{r.reply}</span>
-            <Action onClick={() => onAsk(x.text)}>Ask the panel</Action>
-          </div>
-        );
       default:
         return <p className="text-[12.5px] text-ink-2">{r.reply}</p>;
     }
   };
 
   return (
-    // On wide screens the replies float above the bar (over the orb's lower edge) so the hero grid
-    // keeps its height; on narrow screens they stack under it.
-    <div className="relative flex flex-col gap-2">
+    <div className="flex flex-col gap-2" data-testid="dashboard-chat">
+      {current && (
+        <section
+          aria-live="polite"
+          aria-label="Vicky's reply"
+          data-testid="chat-reply"
+          className={cn(
+            "glass scroll-thin relative max-h-[28vh] overflow-y-auto rounded-[16px] px-4 py-3",
+            current.result?.kind === "missing" && "border-dashed",
+          )}
+        >
+          <div className="mb-1.5 flex items-start justify-between gap-3">
+            <p className="truncate font-mono text-[10px] uppercase tracking-[-0.04em] text-dim">You asked · {current.text}</p>
+            <button
+              type="button"
+              onClick={() => setCurrent(null)}
+              aria-label="Close the reply"
+              className="-mt-0.5 -mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-ink-2 hover:text-ink"
+            >
+              <X className="size-3.5" strokeWidth={1.5} />
+            </button>
+          </div>
+          {body(current)}
+        </section>
+      )}
       <PromptBar
-        label="Ask Vicky for a chart"
-        placeholder="Ask for a chart, e.g. burn excluding credits as % of revenue by quarter"
+        label="Ask Vicky about your data"
+        placeholder="Ask anything about your data, e.g. which month had the highest burn?"
         onSubmit={(t) => void send(t)}
         onAttach={onAttach}
         busy={busy || attachBusy}
@@ -155,36 +216,10 @@ export function DashboardChat(props: DashboardChatProps) {
           attachError ? (
             <span className="text-ember">{attachError}</span>
           ) : (
-            "Try “gross margin by quarter”, “zoom to the last 6 months” or “reset zoom”. Questions go to the panel."
+            "Ask a question (“how is ARR calculated?”), ask for a chart (“show gross margin by quarter”) or zoom (“last 6 months”)."
           )
         }
       />
-      {log.length > 0 && (
-        // The bar spans one column more than the orb above it; stay within the orb's five.
-        <div className="z-20 flex flex-col gap-1.5 lg:absolute lg:bottom-full lg:left-2 lg:right-[calc(100%/6+0.5rem)] lg:mb-2">
-          <button
-            type="button"
-            onClick={() => setLog([])}
-            className="self-end rounded-full border border-line bg-surface-solid px-2 py-0.5 text-[10.5px] text-ink-2 hover:text-ink"
-          >
-            Clear
-          </button>
-          <ol aria-live="polite" aria-label="Vicky's replies" className="flex flex-col gap-1.5">
-            {log.map((x) => (
-              <li
-                key={x.id}
-                className={cn(
-                  "rounded-[14px] border bg-surface-solid/95 px-3 py-2 shadow-sm",
-                  x.result?.kind === "missing" ? "border-dashed border-line-strong" : "border-line",
-                )}
-              >
-                <p className="mb-1 truncate font-mono text-[10px] uppercase tracking-[-0.04em] text-dim">You · {x.text}</p>
-                {card(x)}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
     </div>
   );
 }
