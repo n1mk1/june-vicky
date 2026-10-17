@@ -29,6 +29,14 @@ def _norm(name: str) -> str:
 # (pattern, field, confidence). First match wins, so specific rules come first.
 RULES: list[tuple[str, str | None, float]] = [
     (r"^ (month|period|date|quarter|qtr|year|fiscal period|month ending|period ending|line item) $", "period", 0.95),
+    # Lines that look like revenue/cash/customers but are derived metrics or balance-sheet items:
+    # keep them raw rather than double count (ARR is 12× MRR; burn is not a cash balance).
+    (r"^ (arr|annual recurring revenue|run rate|annual run rate) $", None, 0.6),
+    (r" (mrr churn|revenue churn|churn rate|net revenue retention|gross revenue retention|nrr|grr|retention)\b", None, 0.6),
+    (r" accounts (payable|receivable) | (deferred|unearned) revenue |^ (ap|ar) $", None, 0.6),
+    (r" (cash burn|burn rate|net burn|operating cash flow|free cash flow|cash flow)\b", None, 0.6),
+    (r"^ (net )?(revenue|sales|turnover|income from sales) $", "revenue.total", 0.9),
+    (r" (product|software) (revenue|sales)| (support|maintenance) (revenue|income|sales)", "revenue.recurring", 0.6),
     # totals
     (r" total (net )?revenue | total sales | revenue total | net revenue ", "revenue.total", 0.95),
     (r" total (cogs|cost of (revenue|sales|goods sold))| cost of (revenue|sales|goods sold) total |^ (cogs|cost of (revenue|sales|goods sold)) $", "cogs", 0.95),
@@ -39,9 +47,9 @@ RULES: list[tuple[str, str | None, float]] = [
     # non-dilutive
     (r" sr ?and ?ed | sred | srred | tax credit| r and d credit| rnd credit| grant| non dilutive| government (funding|assistance)| irap ", "non_dilutive_income", 0.9),
     # revenue lines
-    (r" (subscription|recurring|saas|license|licence|platform|mrr|arr)\b.*(revenue|sales|income)?", "revenue.recurring", 0.85),
+    (r" (subscription|recurring|saas|license|licence|platform|mrr)\b.*(revenue|sales|income)?", "revenue.recurring", 0.85),
     (r" (onboarding|implementation|professional services|services|setup|set up|one time|consulting|project|training)\b.*", "revenue.one_time", 0.75),
-    (r" (revenue|sales|turnover)$", "revenue.total", 0.6),
+    (r" (revenue|sales|turnover) $", "revenue.total", 0.6),
     # cost of revenue components
     (r" (hosting|infrastructure|cloud|aws|server|sms|telephony|payment processing|merchant fees|third party data|data costs|contractor costs|subcontract|cogs|cost of (revenue|sales|goods))", "cogs", 0.75),
     # opex categories

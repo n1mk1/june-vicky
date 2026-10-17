@@ -19,6 +19,7 @@ abs, rolling(x, n), cmgr(x, months), pct_of(a, b), yoy(x), mom(x), cumsum(x), la
 """
 
 import keyword
+import math
 import re
 from dataclasses import dataclass
 
@@ -161,6 +162,10 @@ _FORBIDDEN = {
 }
 
 
+MAX_LITERAL = 1e15   # no real figure is larger; blocks 1e999 / overflow tricks
+MAX_WINDOW = 240     # periods for rolling/lag windows
+
+
 def _check_name(name: str) -> None:
     if "__" in name:
         raise DSLError(f"'{name}' is not allowed: double-underscore names are reserved")
@@ -269,7 +274,10 @@ class _Parser:
     def nud(self, t: Token) -> Node:
         self.count()
         if t.kind == "num":
-            return Num(float(t.text))
+            v = float(t.text)
+            if not math.isfinite(v) or abs(v) > MAX_LITERAL:
+                raise DSLError(f"number at position {t.pos} is too large (limit {MAX_LITERAL:g})")
+            return Num(v)
         if t.kind == "str":
             raise DSLError(f"strings are only allowed inside raw(\"dataset:column\") (position {t.pos})")
         if t.kind == "end":
@@ -334,8 +342,8 @@ class _Parser:
             raise DSLError(f"{fn}() takes {want} argument{'s' if want != '1' else ''}, got {len(args)}")
         for k in int_args:
             a = args[k]
-            if not (isinstance(a, Num) and a.value == int(a.value) and a.value >= 1):
-                raise DSLError(f"argument {k + 1} of {fn}() must be a whole number of at least 1")
+            if not (isinstance(a, Num) and a.value == int(a.value) and 1 <= a.value <= MAX_WINDOW):
+                raise DSLError(f"argument {k + 1} of {fn}() must be a whole number from 1 to {MAX_WINDOW}")
         return Call(fn, tuple(args))
 
 

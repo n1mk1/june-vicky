@@ -228,6 +228,15 @@ def _granularity(keys: list[str]) -> str:
 def parse_table(t: RawTable) -> ParsedDataset:
     header, rows = t.header, t.rows
     notes: list[str] = []
+    # Drop columns with no header and no values (trailing commas, spacer columns in spreadsheets).
+    width = max([len(header), *(len(r) for r in rows)]) if rows else len(header)
+    padded = [list(r) + [None] * (width - len(r)) for r in rows]
+    header = list(header) + [""] * (width - len(header))
+    keep = [i for i in range(width)
+            if str(header[i] or "").strip() or any(str(r[i] if r[i] is not None else "").strip() for r in padded)]
+    if len(keep) < width:
+        header = [header[i] for i in keep]
+        rows = [[r[i] for i in keep] for r in padded]
     cols = list(zip(*rows, strict=False)) if rows else [[] for _ in header]
 
     period_like = [
@@ -275,7 +284,11 @@ def parse_table(t: RawTable) -> ParsedDataset:
     text_dims = [i for i, p in enumerate(profiles) if i != period_idx and p.dtype in ("text", "period")]
     numeric_cols = [i for i, p in enumerate(profiles) if p.dtype == "number"]
 
-    if text_dims and numeric_cols:
+    # A long customer/cohort table repeats each period once per customer; a P&L with a notes
+    # column has one row per period and must stay a series.
+    period_keys = [parse_period(r[period_idx]) for r in rows]
+    repeats = len([p for p in period_keys if p]) > len({p[0] for p in period_keys if p})
+    if text_dims and numeric_cols and repeats:
         dim_idx = text_dims[0]
         is_cohort = _share(list(cols[dim_idx]), lambda v: parse_period(v) is not None) >= 0.8
         kind = "cohort_mrr" if is_cohort else "customer_mrr"

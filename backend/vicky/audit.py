@@ -58,6 +58,10 @@ VALUATION_PATTERNS = [
     r"\braise\s+at\s+(a\s+)?[$£€]?\s?\d",
     r"\b(worth|valued at)\s+(about\s+|around\s+|roughly\s+)?[$£€]\s?\d",
     r"\bvalue\s+(the company|your company|it|you)\s+at\s+[$£€]?\s?\d",
+    r"\b\d[\d.,]*\s*(k|m|mm|b|million|billion)?\s+(pre|post)[- ]?money\b",
+    r"\b(value|valuing|price|pricing)\s+(it|the company|the round|your company|you)\s+(at|around|near)\s+(about\s+|around\s+)?[$£€]?\s?\d",
+    r"\b(price|priced)\s+(the round\s+)?at\s+[$£€]?\s?\d[\d.,]*\s*(k|m|mm|b|million|billion)?(\s+(pre|post)\b)?",
+    r"[$£€]\s?\d[\d.,]*\s*(k|m|mm|b|million|billion)?\s+(pre|post)\b",
 ]
 ADVICE_PATTERNS = [
     r"\b(you|founders?|investors?)\s+should\s+(invest|buy|sell|accept the|take the|sign the|raise at|price the round)",
@@ -74,7 +78,8 @@ BENCHMARK_PATTERNS = [
 ]
 
 SRC_RE = re.compile(r"\[src:([a-z0-9_\-.]+)\]", re.I)
-MONEY_RE = re.compile(r"(?<![\w.])([$£€])\s?(\d[\d,]*(?:\.\d+)?)\s*(k|m|mm|b|bn|thousand|million|billion)?\b", re.I)
+MONEY_RE = re.compile(r"(?<![\w.])(?:(?:CA|C|US|AU|A|NZ)(?=\$))?([$£€])\s?(\d[\d,]*(?:\.\d+)?)\s*(k|m|mm|b|bn|thousand|million|billion)?\b", re.I)
+CODE_MONEY_RE = re.compile(r"\b(CAD|USD|GBP|EUR|AUD)\s?(\d[\d,]*(?:\.\d+)?)\s*(k|m|mm|b|bn|thousand|million|billion)?\b", re.I)
 PCT_RE = re.compile(r"(?<![\w.$£€])(-?\d[\d,]*(?:\.\d+)?)\s?(%|percent\b|per cent\b|pp\b|percentage points?\b)", re.I)
 MONTHS_RE = re.compile(r"(?<![\w.$£€])(\d+(?:\.\d+)?)\s?(months?|mo)\b", re.I)
 MULT_RE = re.compile(r"(?<![\w.$£€])(\d+(?:\.\d+)?)\s?x\b", re.I)
@@ -95,7 +100,7 @@ def _spans_overlap(a: tuple[int, int], spans: list[tuple[int, int]]) -> bool:
 def _ignorable_plain(text: str, start: int, end: int, value: float) -> bool:
     before = text[max(0, start - 12):start].lower()
     after = text[end:end + 12].lower()
-    if 1900 <= value <= 2100 and float(value).is_integer():
+    if 1900 <= value <= 2100 and float(value).is_integer() and "," not in text[start:end]:
         return True
     if re.search(r"(slide|page|p\.|q|question|step|round|#|section|appendix|no\.)\s*$", before):
         return True
@@ -111,7 +116,9 @@ def _ignorable_plain(text: str, start: int, end: int, value: float) -> bool:
 def extract_numbers(text: str) -> list[dict]:
     found: list[dict] = []
     spans: list[tuple[int, int]] = []
-    for m in MONEY_RE.finditer(text):
+    for m in [*MONEY_RE.finditer(text), *CODE_MONEY_RE.finditer(text)]:
+        if _spans_overlap((m.start(), m.end()), spans):
+            continue
         v = _num(m.group(2)) * MULTIPLIERS.get((m.group(3) or "").lower(), 1.0)
         found.append({"start": m.start(), "end": m.end(), "text": m.group(0), "value": v, "unit": "money"})
         spans.append((m.start(), m.end()))
@@ -158,7 +165,45 @@ def _compatible(fig: Figure, unit: str) -> bool:
     return fig.unit in ("count",) or fig.unit in CURRENCY_UNITS
 
 
-def match_figure(value: float, unit: str, figures: list[Figure]) -> Figure | None:
+_CLAUSE_END = re.compile(r"[.!?](?=\s|$)|[;:\n]|,\s")
+
+
+def metric_context(text: str, start: int, end: int) -> list[str]:
+    """Figure ids named next to a number ("NRR is 92%" → nrr), nearest metric phrase first."""
+    from vicky.model.truth import METRIC_ALIASES
+
+    lo = max(0, start - 60)
+    cuts = [m.end() for m in _CLAUSE_END.finditer(text, lo, start)]
+    lo = cuts[-1] if cuts else lo
+    stop = _CLAUSE_END.search(text, end)
+    hi = min(len(text), end + 30, stop.start() if stop else len(text))
+    aliases = sorted(METRIC_ALIASES, key=len, reverse=True)
+
+    def scan(window: str) -> list[tuple[int, int, str]]:
+        hits: list[tuple[int, int, str]] = []
+        for alias in aliases:
+            for m in re.finditer(rf"\b{re.escape(alias)}\b", window):
+                if not any(a <= m.start() < b for a, b, _ in hits):
+                    hits.append((m.start(), m.end(), alias))
+        return hits
+
+    left = sorted(scan(text[lo:start].lower()), key=lambda h: -h[1])   # nearest to the number first
+    right = sorted(scan(text[end:hi].lower()), key=lambda h: h[0])
+    ordered = [a for _, _, a in left] + [a for _, _, a in right]
+    ids: list[str] = []
+    for alias in ordered:
+        for i in METRIC_ALIASES[alias]:
+            if i not in ids:
+                ids.append(i)
+    return ids
+
+
+def match_figure(value: float, unit: str, figures: list[Figure], prefer: list[str] | None = None) -> Figure | None:
+    if prefer:
+        named = [f for f in figures if f.id in prefer and _compatible(f, unit)]
+        if named:
+            # The sentence names a metric: the number must be that metric, not any figure that happens to match.
+            return match_figure(value, unit, named)
     best: tuple[float, Figure] | None = None
     for f in figures:
         if not _compatible(f, unit):
@@ -226,11 +271,11 @@ def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | Non
             continue
         if _spans_overlap(span, quote_spans):
             quoted = next(text[a:b] for a, b in quote_spans if a <= span[0] < b).lower()
-            if not quotes_lower or any(quoted.strip("\"“” ") in q or q in quoted for q in quotes_lower):
+            if quotes_lower and any(quoted.strip("\"“” ") in q or q in quoted for q in quotes_lower):
                 continue
         if any(abs(n["value"] - a) <= max(abs(a) * 0.02, 1e-9) for a in allowed):
             continue
-        fig = match_figure(n["value"], n["unit"], figures)
+        fig = match_figure(n["value"], n["unit"], figures, metric_context(text, n["start"], n["end"]))
         if fig is None:
             findings.append(Finding(kind="number", text=n["text"],
                                     detail="No computed figure matches this number; use get_metric and quote the figure."))

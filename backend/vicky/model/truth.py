@@ -50,6 +50,7 @@ class ClaimCheck(BaseModel):
     figure_id: str | None = None
     delta: float | None = None
     explanation: str = ""
+    text: str = ""  # the founder's own words, when the claim came from a deck or transcript
 
 
 class AttackItem(BaseModel):
@@ -61,6 +62,7 @@ class AttackItem(BaseModel):
     figure_ids: list[str] = Field(default_factory=list)
     source_id: str | None = None
     missing: bool = False
+    quotes: list[str] = Field(default_factory=list)  # founder words the item quotes (allowed through the audit)
 
 
 def resolve_metric(metric: str) -> list[str]:
@@ -112,6 +114,11 @@ def check_claim(metric: str, value: float, unit: str, figures: dict[str, Figure 
     if period and ("12" in period or "l12m" in period.lower() or "year" in period.lower()):
         ids = sorted(ids, key=lambda i: 0 if "12m" in i or "l12m" in i else 1)
     unit = (unit or "").lower()
+    unit = {"%": "pct", "percent": "pct", "month": "months", "mo": "months", "$": "money"}.get(unit, unit)
+    if unit == "pct" and abs(value) > 1.5:
+        value = value / 100  # "2" with unit % means 2%, i.e. 0.02
+    # Non-metric facts (customer count, headcount …) are figures named fact.<id>.
+    ids = ids + [f"fact.{i}" for i in ids if f"fact.{i}" in figures and i not in figures]
     candidates = [figures[i] for i in ids if isinstance(figures.get(i), Figure)]
     if not candidates:
         missing = next((figures[i] for i in ids if isinstance(figures.get(i), MissingFigure)), None)
@@ -243,8 +250,19 @@ def attack_list(figures: dict[str, Figure | MissingFigure], facts: list[Fact], p
     # deck claims that contradict the model
     for i, c in enumerate(deck_checks or []):
         if c.status in ("contradicts", "forecast_as_fact"):
-            add(f"deck_{i + 1}", "claims", f"Deck claim: {c.metric}", c.explanation, 0.85 if c.status == "contradicts" else 0.7,
+            fig = F.get(c.figure_id or "")
+            label = fig.label if fig else c.metric.replace("_", " ")
+            said = f'The deck says "{c.text}"' if c.text else f"The deck's {label.lower()} figure"
+            if c.status == "contradicts" and fig:
+                detail = f"{said}; the data says {label.lower()} is {fig.display}."
+            elif c.status == "forecast_as_fact":
+                detail = f"{said}, but that number is the plan, not an actual."
+            else:
+                detail = c.explanation
+            add(f"deck_{i + 1}", "claims", f"The deck's {label.lower()}", detail, 0.85 if c.status == "contradicts" else 0.7,
                 [c.figure_id] if c.figure_id else [])
+            if c.text:
+                items[-1].quotes = [c.text]
     # missing data becomes questions
     for mid, lens, topic in [("nrr", "retention", "Retention isn't evidenced"), ("cash_balance", "runway", "No cash balance in the data"),
                              ("cac", "unit_economics", "Acquisition cost isn't evidenced"),

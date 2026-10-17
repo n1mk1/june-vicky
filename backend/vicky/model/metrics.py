@@ -201,15 +201,28 @@ def _burn_multiple(ctx: Ctx, fid: str, label: str, include_credits: bool) -> Fig
         return _missing(fid, label, ["revenue.recurring", "net_income"], "Needs 12 months of net income and recurring revenue", "recurring")
     total, ps = ni
     credits = 0.0
+    nd = _l12m_sum(ctx, "non_dilutive_income")
     if not include_credits:
-        nd = _l12m_sum(ctx, "non_dilutive_income")
         credits = nd[0] if nd else 0.0
-    burn = -(total - credits)
     if nna.value <= 0:
         return _missing(fid, label, ["revenue.recurring"], "Net new ARR is not positive over the window, so the burn multiple is undefined", "recurring")
     note = "including" if include_credits else "excluding"
+    # Burn multiple is a cash measure (Sacks): prefer cash-basis net burn (fall in cash excluding
+    # equity raised) when the source of truth states it; the P&L net loss is the fallback.
+    cash_burn = ctx.fact("net_burn_l12m")
+    if cash_burn is not None and cash_burn.value > 0:
+        burn = cash_burn.value + (nd[0] if nd and not include_credits else 0.0)
+        src, kind = _weakest(nna.source, [nna, _fact_figure(ctx, "net_burn_l12m", "Net burn, last 12 months", ctx.unit, "recurring", "")])
+        extra = f" + credits received ({nd[0]:,.0f})" if nd and not include_credits else ""
+        return Figure(id=fid, label=label, value=burn / nna.value, unit="x",
+                      formula=f"Cash net burn over the last 12 months ({cash_burn.value:,.0f}{extra}) ÷ net new ARR ({nna.value:,.0f})",
+                      inputs=[FigureRef(figure_id="net_new_arr_l12m", value=nna.value),
+                              FigureRef(figure_id="net_burn_l12m", value=cash_burn.value)],
+                      source=src, kind=kind, period="L12M", group="recurring")
+    burn = -(total - credits)
     return Figure(id=fid, label=label, value=burn / nna.value, unit="x",
-                  formula=f"Net burn {note} non-dilutive credits over the last 12 months ({burn:,.0f}) ÷ net new ARR ({nna.value:,.0f})",
+                  formula=f"Net loss {note} non-dilutive credits over the last 12 months ({burn:,.0f}) ÷ net new ARR ({nna.value:,.0f}); "
+                          f"P&L basis because no cash-basis burn is in the data",
                   inputs=[FigureRef(figure_id="net_new_arr_l12m", value=nna.value), FigureRef(column="net_income", period="L12M", value=total)],
                   source=_src(ctx, "net_income", ps), period="L12M", group="recurring")
 
@@ -284,7 +297,7 @@ def _count_fig(ctx: Ctx, fid: str) -> Figure | None:
 
 def m_cac(ctx: Ctx) -> Figure | MissingFigure:
     m = ctx.model
-    steps = max(1, 6 // ctx.mpp)
+    steps = max(1, 12 // ctx.mpp)  # fully loaded, last 12 months
     ps_new = _window(m, "customers.new", steps)
     ps_sm = _window(m, "opex.s_and_m", steps)
     if len(ps_new) == steps and ps_new == ps_sm:
@@ -304,7 +317,16 @@ def m_cac(ctx: Ctx) -> Figure | MissingFigure:
 def m_cac_payback(ctx: Ctx) -> Figure | MissingFigure:
     cac, mrr = ctx.fig("cac"), ctx.fig("mrr")
     customers = _count_fig(ctx, "customers.count")
-    gm = ctx.fig("gross_margin_incl_cs") or ctx.fig("gross_margin")
+    gm = ctx.fig("gross_margin_incl_cs_l12m") or ctx.fig("gross_margin_incl_cs") or ctx.fig("gross_margin")
+    new_mrr = ctx.fact("new_customer_mrr_avg")
+    if cac and new_mrr and gm and new_mrr.value > 0 and gm.value > 0:
+        # Payback is earned on what a NEW customer pays, not on the average of the installed base.
+        nm = _fact_figure(ctx, "new_customer_mrr_avg", "MRR a new customer brings", ctx.unit, "recurring", "")
+        src, kind = _weakest(cac.source, [cac, nm, gm])
+        return Figure(id="cac_payback_months", label="CAC payback", value=cac.value / (new_mrr.value * gm.value), unit="months",
+                      formula=f"CAC {cac.display} ÷ (MRR per new customer {nm.display} × gross margin incl. support {gm.display})",
+                      inputs=[FigureRef(figure_id=f.id, value=f.value) for f in (cac, nm, gm)],
+                      source=src, kind=kind, period=cac.period, group="recurring")
     if cac and mrr and customers and gm and customers.value > 0 and gm.value > 0:
         arpa = mrr.value / customers.value
         v = cac.value / (arpa * gm.value)

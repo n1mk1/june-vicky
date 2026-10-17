@@ -10,6 +10,7 @@ value; partial groups are left empty rather than summed short). Functions that l
 (lag, yoy, cmgr, rolling) see the whole history; the window only decides what is shown.
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -474,6 +475,8 @@ class Evaluator:
                 return P(None, text, inputs, defs, "division by zero")
             else:
                 v = x.value / y.value
+            if not math.isfinite(v):
+                return P(None, text, inputs, defs, "result out of range")
             return P(v, text, inputs, defs)
 
         return self.zip([a, b], f)

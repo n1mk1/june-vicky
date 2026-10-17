@@ -293,7 +293,9 @@ def build_harbor():
     hc_gtm = [1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6]
     hc_sup = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3]
     hc_adm = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2]
-    year_step = lambda t: t // 4  # salary review every January
+    def year_step(t: int) -> int:  # salary review every January
+        return t // 4
+
     eng = {t: hc_eng[t] * (41000 + 1500 * year_step(t)) for t in qs}
     net_new_arr = {t: 12 * (mrr[t] - (mrr[t - 1] if t else 0)) for t in qs}
     gtm = {t: hc_gtm[t] * (31000 + 1200 * year_step(t)) + round(0.08 * max(net_new_arr[t], 0))
@@ -557,11 +559,11 @@ def build_services():
               "Apr 2026", "May 2026", "Jun 2026", "Jul 2026", "Aug 2026", "Sep 2026"]
     revenue = [38400, 44150, 29800, 31250, 47600, 52300, 36900, 41750, 49200, 33600, 30150, 45900]
     contractor_pct = [0.31, 0.34, 0.22, 0.27, 0.36, 0.38, 0.29, 0.33, 0.35, 0.26, 0.24, 0.33]
-    contractors = [round(r * p / 10) * 10 for r, p in zip(revenue, contractor_pct)]
+    contractors = [round(r * p / 10) * 10 for r, p in zip(revenue, contractor_pct, strict=True)]
     # Four staff incl. the two directors; pay review in April (fiscal year start).
     salaries = [19600] * 6 + [20850] * 6
     rent = [4350, 4350, 4980, 4350, 4350, 4420, 4610, 4610, 4610, 4610, 4610, 4795]
-    net = [r - c - s - o for r, c, s, o in zip(revenue, contractors, salaries, rent)]
+    net = [r - c - s - o for r, c, s, o in zip(revenue, contractors, salaries, rent, strict=True)]
     bank, bal = [], 57_300  # end of Sep 2025
     dividends = {2: 9000, 5: 9000, 8: 9000, 11: 9000}  # quarterly director dividends
     for i, n in enumerate(net):
