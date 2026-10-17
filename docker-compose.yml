@@ -1,0 +1,119 @@
+# Local stack.
+#   docker compose up -d db kv          # infra only (run the api/web on the host)
+#   docker compose up api               # + API in Docker with --reload
+#   docker compose --profile full up    # everything: db, kv, api, worker, web
+# After changing frontend/package*.json run `docker compose --profile full up --build -V web`
+# (-V renews the anonymous node_modules volume).
+
+name: vicky
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: vicky
+      POSTGRES_PASSWORD: vicky
+      POSTGRES_DB: vicky
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vicky -d vicky"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  kv:
+    image: valkey/valkey:8
+    command: ["valkey-server", "--maxmemory-policy", "noeviction", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    image: vicky-api
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://vicky:vicky@db:5432/vicky
+      REDIS_URL: redis://kv:6379
+      JOBS_MODE: inline
+      WEB_ORIGIN: http://localhost:3000
+      PORT: "8000"
+      # Docker Desktop on Windows/macOS does not forward inotify events from bind mounts.
+      WATCHFILES_FORCE_POLLING: "true"
+    command:
+      - uvicorn
+      - vicky.api:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --ws-ping-interval=20
+      - --reload
+      - --reload-dir=/app/vicky
+    volumes:
+      - ./backend/vicky:/app/vicky
+      - ./backend/migrations:/app/migrations:ro
+      - ./backend/data:/app/data:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      kv:
+        condition: service_healthy
+
+  worker:
+    profiles: ["full"]
+    image: vicky-api
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://vicky:vicky@db:5432/vicky
+      REDIS_URL: redis://kv:6379
+      JOBS_MODE: worker
+      WEB_ORIGIN: http://localhost:3000
+    command: ["arq", "vicky.jobs.WorkerSettings"]
+    volumes:
+      - ./backend/vicky:/app/vicky
+      - ./backend/migrations:/app/migrations:ro
+      - ./backend/data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      kv:
+        condition: service_healthy
+
+  web:
+    profiles: ["full"]
+    build:
+      context: ./frontend
+      target: dev
+    image: vicky-web-dev
+    environment:
+      API_INTERNAL_URL: http://api:8000
+      API_PUBLIC_WS_URL: ws://localhost:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

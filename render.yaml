@@ -1,0 +1,148 @@
+# Render Blueprint for Vicky (docs/02-TRD.md §10). Free phase: api, web, kv, db; worker commented out.
+# Paths are repo-root-relative and rootDir is not used.
+# Spec: https://render.com/docs/blueprint-spec  (schema: https://render.com/schema/render.yaml.json)
+#
+# Demo-phase switch (day before judging): plan 0.5c-512mb for api and web, uncomment vicky-worker,
+# set JOBS_MODE=worker, add `preDeployCommand: python -m vicky.migrate` to vicky-api, raise
+# DAILY_USD_BUDGET; in the dashboard: vicky-db -> 0.1c-256mb, vicky-kv -> 256mb.
+# Fallback: if the free web plan refuses runtime: docker, put vicky-api on 0.5c-512mb.
+
+services:
+  - type: web
+    name: vicky-api
+    runtime: docker
+    plan: free
+    region: ohio
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    # No dockerCommand: the image's entrypoint serves uvicorn on $PORT.
+    healthCheckPath: /healthz
+    maxShutdownDelaySeconds: 60
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
+      ignoredPaths:
+        - backend/tests/**
+        - backend/evals/**
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vicky-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: vicky-kv
+          property: connectionString
+      - key: JOBS_MODE
+        value: inline
+      # Public origin of vicky-web (CORS + cookie domain). Fix it after the first deploy if Render
+      # gave the web service a suffixed hostname.
+      - key: WEB_ORIGIN
+        value: https://vicky-web.onrender.com
+      - key: DAILY_USD_BUDGET
+        value: "5"
+      - key: LLM_MODE
+        value: auto
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ACCESS_CODE
+        sync: false
+
+  # Workers have no free plan; uncomment for the demo phase (and set vicky-api JOBS_MODE=worker).
+  # The worker must share COOKIE_SECRET with the api: after uncommenting, copy the api's generated
+  # value into the worker (or move both into an envVarGroup).
+  # - type: worker
+  #   name: vicky-worker
+  #   runtime: docker
+  #   plan: 0.5c-512mb
+  #   region: ohio
+  #   dockerfilePath: ./backend/Dockerfile
+  #   dockerContext: ./backend
+  #   dockerCommand: arq vicky.jobs.WorkerSettings
+  #   maxShutdownDelaySeconds: 60
+  #   autoDeployTrigger: checksPass
+  #   buildFilter:
+  #     paths:
+  #       - backend/**
+  #       - render.yaml
+  #     ignoredPaths:
+  #       - backend/tests/**
+  #       - backend/evals/**
+  #   envVars:
+  #     - key: DATABASE_URL
+  #       fromDatabase:
+  #         name: vicky-db
+  #         property: connectionString
+  #     - key: REDIS_URL
+  #       fromService:
+  #         type: keyvalue
+  #         name: vicky-kv
+  #         property: connectionString
+  #     - key: JOBS_MODE
+  #       value: worker
+  #     - key: WEB_ORIGIN
+  #       value: https://vicky-web.onrender.com
+  #     - key: DAILY_USD_BUDGET
+  #       value: "5"
+  #     - key: LLM_MODE
+  #       value: auto
+  #     - key: COOKIE_SECRET
+  #       sync: false
+  #     - key: ANTHROPIC_API_KEY
+  #       sync: false
+  #     - key: ELEVENLABS_API_KEY
+  #       sync: false
+  #     - key: ACCESS_CODE
+  #       sync: false
+
+  - type: web
+    name: vicky-web
+    runtime: docker
+    plan: free
+    region: ohio
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - frontend/**
+        - render.yaml
+      ignoredPaths:
+        - frontend/docs/**
+        - frontend/**/*.md
+    envVars:
+      # Private-network address of the API. Render's `hostport` is `vicky-api:10000` with NO scheme;
+      # the /api/v1 proxy must prepend `http://` when the value has no `://`.
+      - key: API_INTERNAL_URL
+        fromService:
+          type: web
+          name: vicky-api
+          property: hostport
+      # Public WebSocket base for the browser, e.g. wss://vicky-api.onrender.com (set after first deploy).
+      - key: API_PUBLIC_WS_URL
+        sync: false
+
+  - type: keyvalue
+    name: vicky-kv
+    plan: free
+    region: ohio
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # private network only
+
+databases:
+  - name: vicky-db
+    plan: free
+    region: ohio
+    postgresMajorVersion: "17"
+    databaseName: vicky
+    user: vicky
