@@ -1,6 +1,6 @@
 """Job handlers registered with `vicky.jobs`. Reports are built inline at session end today;
-this hook re-builds one on demand (e.g. a Retry from the UI) and is where memo, prescan,
-extract and persona_gen handlers attach as those pipelines land.
+this hook re-builds one on demand (e.g. a Retry from the UI). `extract` reads cited facts out of
+PDF / DOCX / MD uploads (FR-7); memo, prescan and persona_gen attach as those pipelines land.
 """
 
 from vicky.areopagus import registry
@@ -20,3 +20,26 @@ async def report_job(payload: dict) -> dict:
     panel = {p.id: p for p in await registry.panel(sess["panel"])}
     rid = await report.build(sid, ctx, panel)
     return {"report_id": rid}
+
+
+@job("extract")
+async def extract_job(payload: dict) -> dict:
+    """FR-7: cited facts from a PDF / DOCX / MD upload → pending facts in the TruthPack."""
+    from vicky import db
+    from vicky.llm import docs
+
+    uid = payload["upload_id"]
+    row = await db.fetchrow("select id::text, engagement_id::text as eid, filename, kind::text, bytes from uploads "
+                            "where id::text = $1", uid)
+    if row is None:
+        raise ValueError(f"no upload {uid}")
+    currency = await db.fetchval("select currency from company_profiles where engagement_id::text = $1", row["eid"])
+    try:
+        out = await docs.extract_facts(bytes(row["bytes"]), row["filename"], row["kind"], upload_id=uid,
+                                       currency=str(currency or "usd").lower())
+    except Exception:
+        await db.execute("update uploads set status = 'failed' where id::text = $1", uid)
+        raise
+    added = await engagements.add_extracted_facts(uid, out["facts"])
+    flagged = sum(1 for f in out["facts"] if f.source.verified is False)
+    return {"added": added, "flagged": flagged, "dropped": out["dropped"], "lines": out["lines"]}

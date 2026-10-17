@@ -3,17 +3,23 @@
 Stateless between requests: the court state lives in `sessions.state` and the transcript in
 `turns` (append-only), so any API instance can serve the next answer and a redeploy loses
 nothing. Every event is also published on `session:{id}` for other tabs.
+
+The minds come from `vicky.llm.minds`: Claude when a key is set, the deterministic minds otherwise
+(and on any LLM failure). Every model call happens before the transaction that stores the turn.
 """
 
-import time
+import asyncio
+import copy
+from dataclasses import dataclass
 from typing import Any
 
 from vicky import db
 from vicky.areopagus import registry
 from vicky.areopagus.schema import VCPersona
 from vicky.court import minds, referee
+from vicky.llm import minds as agents
 from vicky.model.context import TruthContext
-from vicky.model.truth import check_claim, quick_claims
+from vicky.model.truth import check_claim
 from vicky.realtime import publish
 from vicky.services import engagements
 
@@ -33,13 +39,14 @@ def _speaker_name(speaker: str, panel: dict[str, VCPersona]) -> str:
 
 
 async def _add_turn(conn, sid: str, speaker: str, kind: str, text: str, ctx: TruthContext, *, intent: str | None = None,
-                    hyp: str | None = None, quotes: list[str] | None = None, audit_text: bool = True) -> dict:
+                    hyp: str | None = None, quotes: list[str] | None = None, audit_text: bool = True,
+                    regenerated: bool = False) -> dict:
     seq = await conn.fetchval("select coalesce(max(seq), 0) + 1 from turns where session_id = $1", sid)
     citations, audit = [], None
     if audit_text:
         res = minds.audit_text(text, ctx.available(), quotes)
         citations = [c.model_dump(mode="json") for c in res.citations]
-        audit = {"passed": res.passed, "regenerated": False, "findings": [f.model_dump() for f in res.findings]}
+        audit = {"passed": res.passed, "regenerated": regenerated, "findings": [f.model_dump() for f in res.findings]}
     row = await conn.fetchrow(
         """insert into turns (session_id, seq, speaker, kind, intent, hypothesis_id, text, citations, audit)
            values ($1,$2,$3,$4::turn_kind,$5,$6,$7,$8,$9) returning id::text, seq""",
@@ -61,10 +68,23 @@ async def start(panel_ids: list[str] | None, question_cap: int | None, coaching:
     panel = await registry.panel(panel_ids)
     cap = max(4, min(20, int(question_cap or DEFAULT_CAP)))
     coaching = coaching if coaching in ("coached", "realistic") else "coached"
-    memos = minds.build_memos(panel, ctx, focus)
+    memos = await agents.build_memos(panel, ctx, focus)
     state: dict[str, Any] = {"vcs": {p.id: {"hyps": memos[p.id]["hypotheses"], "last_spoke": -99, "asked": []}
                                      for p in panel},
                              "thread": None, "turn_no": 0, "asked_bank": []}
+    # Opening: the referee ranks opening bids; the chair picks; that VC speaks.
+    bids = []
+    for p in panel:
+        hs = state["vcs"][p.id]["hyps"]
+        if not hs:
+            continue
+        top = max(hs, key=lambda h: h["severity"] * (0.5 + p.weight(h["lens"])))
+        bids.append(referee.Bid(p.id, round(top["confidence"] * (0.5 + top["severity"] / 2), 3), "new_topic", top["id"],
+                                lane_fit=0.4 + 0.6 * p.weight(top["lens"])))
+    ranked = referee.rank(bids, answer_weak=False)
+    if not ranked:
+        raise CourtError("No investor found anything to ask; check the source of truth")
+    line = await _next_line(state, {p.id: p for p in panel}, ctx, ranked, question_count=0, cap=cap)
     async with db.pool().acquire() as conn, conn.transaction():
         sid = await conn.fetchval(
             """insert into sessions (engagement_id, truthpack_id, mode, panel, settings, agenda, state, status)
@@ -78,46 +98,43 @@ async def start(panel_ids: list[str] | None, question_cap: int | None, coaching:
                 """insert into memos (session_id, vc_id, persona_version, truthpack_version, memo)
                    values ($1, $2, $3, $4, $5)""", sid, p.id, p.version, ctx.version, memos[p.id])
         await _add_turn(conn, sid, "vicky", "intro", minds.intro(panel, ctx, coaching, cap), ctx)
-        # Opening: the referee ranks opening bids; the chair (offline: code) takes the top.
-        bids = []
-        for p in panel:
-            hs = state["vcs"][p.id]["hyps"]
-            if not hs:
-                continue
-            top = max(hs, key=lambda h: h["severity"] * (0.5 + p.weight(h["lens"])))
-            bids.append(referee.Bid(p.id, round(top["confidence"] * (0.5 + top["severity"] / 2), 3), "new_topic", top["id"],
-                                    lane_fit=0.4 + 0.6 * p.weight(top["lens"])))
-        ranked = referee.rank(bids, answer_weak=False)
-        if not ranked:
-            raise CourtError("No investor found anything to ask; check the source of truth")
-        await _speak(conn, sid, state, {p.id: p for p in panel}, ctx, ranked, after_seq=1)
+        line_turn = await _store_line(conn, sid, line, ctx, ranked, after_seq=1)
         await conn.execute("update sessions set state = $2, question_count = 1 where id = $1", sid, state)
+    await _publish_line(sid, line, line_turn)
     await publish(f"session:{sid}", "vc.turn.done", {"turn": "opening"})
     return sid
 
 
-async def _speak(conn, sid: str, state: dict, panel: dict[str, VCPersona], ctx: TruthContext,
-                 ranked: list[referee.Candidate], after_seq: int, answer: str = "", checks: list[dict] | None = None) -> None:
-    t0 = time.perf_counter()
-    top = ranked[0]
-    decision = {"action": "call_on", "vc_id": top.vc_id, "intent": top.intent, "hypothesis_id": top.target_hyp,
-                "note": "offline chair: top code candidate"}
-    valid, reason = referee.validate(decision, ranked)
-    await conn.execute(
-        """insert into chair_decisions (session_id, after_turn_seq, candidates, decision, valid, fallback, latency_ms, reason)
-           values ($1, $2, $3, $4, $5, $6, $7, $8)""",
-        sid, after_seq, [c.__dict__ for c in ranked], decision, valid, False, int((time.perf_counter() - t0) * 1000), reason)
+@dataclass
+class _Line:
+    """The next VC line, decided and worded before the transaction that stores it."""
+    pick: agents.ChairPick
+    vc: str
+    hyp: dict
+    intent: str
+    text: str
+    regenerated: bool
+    quotes: list[str]
+
+
+async def _next_line(state: dict, panel: dict[str, VCPersona], ctx: TruthContext, ranked: list[referee.Candidate], *,
+                     answer: str = "", checks: list[dict] | None = None, weak: bool = False, question: str = "",
+                     question_count: int = 0, cap: int = DEFAULT_CAP) -> _Line:
+    """Chair pick + the VC's line; updates the court state (thread, asked, discussed) in place."""
+    pick = await agents.chair(ranked, state, panel, weak=weak, question_count=question_count, cap=cap)
+    top = pick.candidate
     p = panel[top.vc_id]
     vs = state["vcs"][p.id]
     asked = set(state.get("asked_bank", []))
     _, hyp = _hyp(state, top.target_hyp)
     if hyp is None:
         hyp = vs["hyps"][0]
-    if top.intent == "follow_up" and state.get("thread"):
-        text = minds.follow_up_for(p, hyp, ctx, checks or [], answer, asked)
+    follow_up = top.intent == "follow_up" and bool(state.get("thread"))
+    spoken = await agents.speak(p, hyp, ctx, top.intent, asked, answer=answer, question=question, checks=checks,
+                                follow_up=follow_up)
+    if follow_up:
         state["thread"]["depth"] += 1
     else:
-        text = minds.question_for(p, hyp, ctx, asked)
         state["thread"] = {"vc": p.id, "hyp": hyp["id"], "depth": 0, "weak": 0}
     hyp["asked"] += 1
     state["asked_bank"] = sorted(asked)
@@ -127,9 +144,23 @@ async def _speak(conn, sid: str, state: dict, panel: dict[str, VCPersona], ctx: 
             discussed.append(key)
     vs["last_spoke"] = state["turn_no"]
     quotes = [*(hyp.get("quotes") or []), *([answer] if answer else [])]
-    turn = await _add_turn(conn, sid, p.id, "question", text, ctx, intent=top.intent, hyp=hyp["id"], quotes=quotes or None)
-    await publish(f"session:{sid}", "chair.decision", decision)
-    await publish(f"session:{sid}", "vc.turn.done", {"turn_seq": turn["seq"], "speaker": p.id})
+    return _Line(pick, p.id, hyp, top.intent, spoken.text, spoken.regenerated, quotes)
+
+
+async def _store_line(conn, sid: str, line: _Line, ctx: TruthContext, ranked: list[referee.Candidate],
+                      after_seq: int) -> dict:
+    pk = line.pick
+    await conn.execute(
+        """insert into chair_decisions (session_id, after_turn_seq, candidates, decision, valid, fallback, latency_ms, reason)
+           values ($1, $2, $3, $4, $5, $6, $7, $8)""",
+        sid, after_seq, [c.__dict__ for c in ranked], pk.decision, pk.valid, pk.fallback, pk.latency_ms, pk.reason)
+    return await _add_turn(conn, sid, line.vc, "question", line.text, ctx, intent=line.intent, hyp=line.hyp["id"],
+                           quotes=line.quotes or None, regenerated=line.regenerated)
+
+
+async def _publish_line(sid: str, line: _Line, turn: dict) -> None:
+    await publish(f"session:{sid}", "chair.decision", line.pick.decision)
+    await publish(f"session:{sid}", "vc.turn.done", {"turn_seq": turn["seq"], "speaker": line.vc})
 
 
 async def answer(sid: str, text: str) -> None:
@@ -150,15 +181,57 @@ async def answer(sid: str, text: str) -> None:
     last_q = await db.fetchrow("select * from turns where session_id = $1 and kind = 'question' order by seq desc limit 1",
                                sess["id"])
 
-    claims = quick_claims(text)
+    question = last_q["text"] if last_q else ""
+
+    claims = await agents.extract_claims(text)
     checks = []
     for c in claims:
         r = check_claim(c["metric"], c["value"], c["unit"], ctx.figures, period=c.get("period"),
                         is_forecast=c.get("is_forecast", False), facts=ctx.facts)
         checks.append({**r.model_dump(mode="json"), "text": c["text"]})
-    score = minds.judge(text, hyp, checks, ctx, last_q["text"] if last_q else "")
-    weak = minds.is_weak(score)
+    # The judge and every VC's belief update run in parallel; the VCs get code's weak/adequate call.
+    weak_hint = minds.is_weak(minds.judge(text, hyp, checks, ctx, question))
     state["turn_no"] += 1
+    discussed = set(state.get("discussed", []))
+    results = await asyncio.gather(
+        agents.judge(text, hyp, checks, ctx, question),
+        *(agents.update_and_bid(p, state["vcs"][vid], checks, weak_hint, cur_vc, thread.get("hyp"),
+                                state["turn_no"] - state["vcs"][vid]["last_spoke"], discussed, ctx=ctx, answer=text,
+                                question=question)
+          for vid, p in panel.items()))
+    score, upds = results[0], dict(zip(panel, results[1:], strict=True))
+    weak = minds.is_weak(score)
+    if hyp is not None and weak:
+        hyp["weak_answers"] += 1
+        thread["weak"] = thread.get("weak", 0) + 1
+
+    bids, belief_rows = [], []
+    for vid, p in panel.items():
+        vs, upd = state["vcs"][vid], upds[vid]
+        belief_rows.append((vid, {"hypotheses": copy.deepcopy(vs["hyps"]), "deltas": upd["deltas"]}, upd))
+        bids.append(referee.Bid(vid, upd["bid"], upd["intent"], upd["target_hyp"], lane_fit=upd["lane_fit"],
+                                turns_since_spoke=state["turn_no"] - vs["last_spoke"], is_current=vid == cur_vc,
+                                depth=thread.get("depth", 0), max_depth=p.style.follow_up_depth))
+
+    count = sess["question_count"]
+    cap = settings.get("question_cap", DEFAULT_CAP)
+    ended, coach, line, ranked = count >= cap, None, None, []
+    if not ended:
+        ranked = referee.rank(bids, answer_weak=weak)
+        if settings.get("coaching") == "coached" and hyp is not None and thread.get("weak", 0) >= 2:
+            coach = minds.coach_card(hyp, ctx)
+            for s_ in state["vcs"].values():  # the chair closed this topic for everyone
+                for h_ in s_["hyps"]:
+                    if h_["attack_id"] == hyp["attack_id"]:
+                        h_["status"] = "confirmed"
+            state["thread"] = None
+            ranked = [c for c in referee.rank([b for b in bids if b.target_hyp != hyp["id"]], answer_weak=False)
+                      if c.intent != "follow_up"]
+        if not ranked:
+            ended = True
+        else:
+            line = await _next_line(state, panel, ctx, ranked, answer=text, checks=checks, weak=weak, question=question,
+                                    question_count=count, cap=cap)
 
     async with db.pool().acquire() as conn, conn.transaction():
         turn = await _add_turn(conn, sid, "founder", "answer", text, ctx, audit_text=False)
@@ -171,51 +244,26 @@ async def answer(sid: str, text: str) -> None:
         await conn.execute(
             "insert into scores (turn_id, question_turn_id, accuracy, dims, rationale) values ($1, $2, $3, $4, $5)",
             turn["id"], last_q["id"] if last_q else None, score["accuracy"], score["dims"], score["rationale"])
-        if hyp is not None and weak:
-            hyp["weak_answers"] += 1
-            thread["weak"] = thread.get("weak", 0) + 1
-
-        # Every VC updates its beliefs and bids, in parallel in the LLM path; here in a loop.
-        bids = []
-        for vid, p in panel.items():
-            vs = state["vcs"][vid]
-            upd = minds.update_and_bid(p, vs, checks, weak, cur_vc, thread.get("hyp"), state["turn_no"] - vs["last_spoke"],
-                                       set(state.get("discussed", [])))
+        for vid, snapshot, upd in belief_rows:
             await conn.execute(
                 """insert into beliefs (session_id, vc_id, turn_seq, state, bid, intent, target_hyp)
                    values ($1, $2, $3, $4, $5, $6, $7) on conflict do nothing""",
-                sess["id"], vid, turn["seq"], {"hypotheses": vs["hyps"], "deltas": upd["deltas"]}, upd["bid"], upd["intent"],
-                upd["target_hyp"])
-            bids.append(referee.Bid(vid, upd["bid"], upd["intent"], upd["target_hyp"], lane_fit=upd["lane_fit"],
-                                    turns_since_spoke=state["turn_no"] - vs["last_spoke"], is_current=vid == cur_vc,
-                                    depth=thread.get("depth", 0), max_depth=p.style.follow_up_depth))
-        if settings.get("coaching") == "coached":
-            await publish(f"session:{sid}", "score.ready", {"turn_seq": turn["seq"]})
-
-        count = sess["question_count"]
-        if count >= settings.get("question_cap", DEFAULT_CAP):
-            await conn.execute("update sessions set state = $2 where id = $1", sess["id"], state)
-            ended = True
+                sess["id"], vid, turn["seq"], snapshot, upd["bid"], upd["intent"], upd["target_hyp"])
+        if coach:
+            await _add_turn(conn, sid, "vicky", "coach", coach, ctx)
+        line_turn = None
+        if line is not None:
+            line_turn = await _store_line(conn, sid, line, ctx, ranked, after_seq=turn["seq"])
+            await conn.execute("update sessions set state = $2, question_count = question_count + 1 where id = $1",
+                               sess["id"], state)
         else:
-            ended = False
-            ranked = referee.rank(bids, answer_weak=weak)
-            if settings.get("coaching") == "coached" and hyp is not None and thread.get("weak", 0) >= 2:
-                await _add_turn(conn, sid, "vicky", "coach", minds.coach_card(hyp, ctx), ctx)
-                await publish(f"session:{sid}", "coach.timeout", {"hypothesis_id": hyp["id"]})
-                for s_ in state["vcs"].values():  # the chair closed this topic for everyone
-                    for h_ in s_["hyps"]:
-                        if h_["attack_id"] == hyp["attack_id"]:
-                            h_["status"] = "confirmed"
-                state["thread"] = None
-                ranked = [c for c in referee.rank([b for b in bids if b.target_hyp != hyp["id"]], answer_weak=False)
-                          if c.intent != "follow_up"]
-            if not ranked:
-                ended = True
-                await conn.execute("update sessions set state = $2 where id = $1", sess["id"], state)
-            else:
-                await _speak(conn, sid, state, panel, ctx, ranked, after_seq=turn["seq"], answer=text, checks=checks)
-                await conn.execute("update sessions set state = $2, question_count = question_count + 1 where id = $1",
-                                   sess["id"], state)
+            await conn.execute("update sessions set state = $2 where id = $1", sess["id"], state)
+    if settings.get("coaching") == "coached":
+        await publish(f"session:{sid}", "score.ready", {"turn_seq": turn["seq"]})
+    if coach and hyp is not None:
+        await publish(f"session:{sid}", "coach.timeout", {"hypothesis_id": hyp["id"]})
+    if line is not None and line_turn is not None:
+        await _publish_line(sid, line, line_turn)
     if ended:
         await end(sid)
 

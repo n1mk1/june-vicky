@@ -150,3 +150,40 @@ type Session = { id: string; status: "live"|"ended"; mode: "prepare"; panel: Per
 - **Extra fields** returned beyond the tables above: citation `start`, `end`, `kind`; dataset `transposed`, `notes`; mapping `proposer` (`heuristic` | `sample` | `reused`); report list `dims`, `delta`; session `started_at`, `settings.focus`; attack item `quotes` (founder words the item quotes); report question `seq`, `lens`, `vc_name`; report source `label`, `formula`, `as_of`.
 - **Profile casing:** `currency` is stored upper-case (`CAD`); figure units are lower-case (`cad`).
 - **Uploads:** a file uploaded without an `engagement_id` creates a draft engagement whose profile `granularity` is prefilled from the file (`inferred.granularity`).
+
+## LLM path (Claude minds, column mapper, document facts)
+
+Off by default: with no `ANTHROPIC_API_KEY` (or `LLM_MODE=offline`) every route behaves exactly as above, on the deterministic agents. With a key (`LLM_MODE=auto|live`) the same routes and shapes are served by Claude, and any LLM failure (refusal, timeout, rate limit, invalid output, budget) falls back to the deterministic result for that step. Code in `backend/vicky/llm/`.
+
+| Step | Model / effort | Code keeps the authority |
+|---|---|---|
+| VC memo (`/court/start`) | `MODEL_DEEP`, high; tool runner over `get_metric` + the persona's kit tools | starts from code's gap ownership; a hypothesis must name an attack item or a real figure id; confidences clamped; opening question audited |
+| Belief update + bid (`/court/{id}/answer`) | `MODEL_FAST`, low; one call per VC, in parallel | no-concession rule (confidence drops only on a cited matching figure), at most ±0.35 per answer; bids/targets validated |
+| Chair | `MODEL_FAST`, low, no thinking | must name a ranked candidate within `CHAIR_TIMEOUT_S` (1.5 s), else `ranked[0]`; logged in `chair_decisions` with `fallback` |
+| VC line | `MODEL_FAST`, medium | `audit_text`; on failure regenerated once with the findings, then the offline line (`turn.audit.regenerated`) |
+| Judge | `MODEL_DEEP`, high | dims 2–5 clamped to 0–5; accuracy, correct figure and why-asked stay code's; rationale and strong answer audited |
+| Claim extraction | `MODEL_TINY`, low | merged with code's extraction; a claim must quote the answer verbatim, number included |
+| Column mapper (`POST /uploads`, series tables) | `MODEL_FAST`, medium, ≤ 30 s | targets validated, units set by code, merged with the heuristic; a heuristic total column keeps its field |
+| Document facts (FR-7) | `MODEL_DEEP`, medium, two passes | see below |
+
+Opus/Sonnet calls opt into server-side fallbacks (`fallbacks: "default"`, `LLM_SERVER_FALLBACKS`). Every response's usage is priced at list rates into `vicky:spend:{date}`.
+
+**Budget.** Once the day's spend reaches `DAILY_USD_BUDGET`, `POST /court/start` and `POST /court/{id}/answer` return **402** `{detail: "Daily budget reached. …"}`; everything else keeps working. Never 402 on the offline path.
+
+**Uploads of PDF / DOCX / MD (FR-7).** With a key, `POST /uploads` also enqueues an `extract` job. Pass 1 sends the document with citations enabled (PDF through the Files API, DOCX/MD as text) and asks for one fact per line; pass 2 (`messages.parse`) turns the cited lines into facts. A fact lands only if its number appears in its cited text; the page (or char span) comes from the citation object, and pypdf checks the cited text is on that page. Facts land in the TruthPack as `pending` for the confirm step:
+
+```ts
+type DocFact = Fact & { status: "pending"; kind: "historical"|"forecast";   // forecast names are prefixed "plan."
+  source: { kind: "pdf"|"docx"|"md"; ref: string /* "update.pdf, p. 2" */; page: number|null;
+            cited_text: string; verified: boolean };
+  note: string|null };                                                     // "Check this: cited text not found on page 1."
+```
+
+`Engagement` gains `extract_jobs: {id, upload_id, status: "queued"|"running"|"done"|"failed"|"stale", error, result: {added, flagged, dropped, lines}|null}[]` (newest first; empty on the offline path). The upload's `status` goes `stored → extracted` (or `failed`). `job.status` events are published on `engagement:{id}`.
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/jobs/{id}` | `{id, kind, status, error, result, enqueued_at, finished_at}` |
+| POST | `/jobs/{id}/retry` | `{ok: true}` (re-runs a failed or stale job) |
+
+Mapping `proposer` gains `"claude"` (Claude's proposal merged with the heuristic). Memos stored for a session carry `source: "llm"` when Claude wrote them.

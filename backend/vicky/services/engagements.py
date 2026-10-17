@@ -12,7 +12,8 @@ from typing import Any
 
 import yaml
 
-from vicky import db
+from vicky import db, jobs, llm
+from vicky.llm import mapper
 from vicky.model.canonical import FIELDS, SPECIAL_TARGETS
 from vicky.model.context import TruthContext, build_context
 from vicky.model.coverage import coverage
@@ -25,6 +26,7 @@ from vicky.samples import SAMPLES_DIR, load_sample
 
 STAGES = {"pre_seed", "seed", "series_a", "series_b_plus", "other"}
 UPLOAD_KINDS = {".csv": "csv", ".xlsx": "xlsx", ".xlsm": "xlsx", ".pdf": "pdf", ".docx": "docx", ".md": "md", ".txt": "md"}
+DOC_KINDS = {"pdf", "docx", "md"}
 PROFILE_COLUMNS = ("name", "country", "currency", "fiscal_year_start_month", "stage", "round_type", "round_size",
                    "business_model", "granularity")
 
@@ -157,7 +159,7 @@ def _upload_kind(filename: str) -> str:
 
 async def _store_datasets(conn, engagement_id: str, upload_id: str, kind: str, parsed: list[ParsedDataset],
                           currency: str, preset: dict[str, list[ColumnMapping]] | None = None,
-                          filename: str = "") -> None:
+                          filename: str = "", refined: dict[str, tuple[list[ColumnMapping], str]] | None = None) -> None:
     for ds in parsed:
         dsid = await conn.fetchval(
             """insert into datasets (engagement_id, upload_id, name, period_axis, granularity, table_kind, columns, rows,
@@ -174,6 +176,8 @@ async def _store_datasets(conn, engagement_id: str, upload_id: str, kind: str, p
                 "order by confirmed_at desc limit 1", ds.fingerprint)
             if reuse:
                 proposed, proposer = [ColumnMapping.model_validate(m) for m in reuse], "reused"
+            elif refined and ds.name in refined:
+                proposed, proposer = refined[ds.name]
             else:
                 proposed = propose_heuristic(ds, currency)
         await conn.execute(
@@ -201,16 +205,46 @@ async def add_upload(engagement_id: str | None, filename: str, data: bytes, mime
                              {"granularity": "from the uploaded file"})
     else:
         await _require(engagement_id)
+    currency = str(await db.fetchval("select currency from company_profiles where engagement_id = $1", engagement_id)
+                   or "USD").lower()
+    # Claude refines the heuristic mapping (when a key is set) before the transaction; a dataset whose
+    # fingerprint has a confirmed mapping already reuses it, so it isn't sent.
+    refined: dict[str, tuple[list[ColumnMapping], str]] = {}
+    if llm.enabled() and parsed:
+        fresh = [ds for ds in parsed if not await db.fetchval(
+            "select 1 from dataset_mappings where fingerprint = $1 and confirmed is not null limit 1", ds.fingerprint)]
+        refined = await mapper.propose_all(fresh, currency)
     async with db.pool().acquire() as conn, conn.transaction():
-        prof = await conn.fetchrow("select currency from company_profiles where engagement_id = $1", engagement_id)
         uid = await conn.fetchval(
             """insert into uploads (engagement_id, filename, mime, bytes, size, sha256, kind, status)
                values ($1,$2,$3,$4,$5,$6,$7::upload_kind,$8::upload_status) returning id::text""",
             engagement_id, filename, mime or "application/octet-stream", data, len(data), hashlib.sha256(data).hexdigest(),
             kind, "parsed" if parsed else "stored")
-        await _store_datasets(conn, engagement_id, uid, kind, parsed, (prof or {}).get("currency", "USD").lower())
+        await _store_datasets(conn, engagement_id, uid, kind, parsed, currency, refined=refined)
         await _bump(conn, engagement_id)
+    if kind in DOC_KINDS and llm.enabled():
+        # FR-7: facts with citations from the document, landing as pending in the TruthPack.
+        await jobs.enqueue("extract", {"upload_id": uid}, engagement_id=engagement_id)
     return engagement_id
+
+
+async def add_extracted_facts(upload_id: str, facts: list[Fact]) -> int:
+    """Append an extract job's facts to the upload's TruthPack as pending (idempotent per fact id)."""
+    from vicky.llm.docs import merge_pending
+
+    eid = await db.fetchval("select engagement_id::text from uploads where id::text = $1", upload_id)
+    if eid is None:
+        raise NotFound("upload")
+    async with db.pool().acquire() as conn, conn.transaction():
+        pack = await conn.fetchrow("select * from truthpacks where engagement_id = $1 order by created_at desc limit 1 "
+                                   "for update", eid)
+        if pack is None:
+            pack = await _pack(conn, eid)
+        merged, added = merge_pending(list(pack["facts"] or []), facts)
+        if added:
+            await conn.execute("update truthpacks set facts = $2, version = version + 1 where id = $1", pack["id"], merged)
+        await conn.execute("update uploads set status = 'extracted' where id::text = $1", upload_id)
+    return added
 
 
 async def load_sample_engagement(sample_id: str) -> str:
@@ -446,8 +480,11 @@ async def detail(engagement_id: str, full: bool = True) -> dict:
     ds = await db.fetch(
         """select d.*, m.proposed, m.confirmed from datasets d left join dataset_mappings m on m.dataset_id = d.id
            where d.engagement_id = $1 order by d.created_at""", engagement_id)
+    extract_jobs = await db.fetch(
+        """select id::text, payload->>'upload_id' as upload_id, status::text, error, result from jobs
+           where engagement_id = $1 and kind = 'extract' order by enqueued_at desc limit 20""", engagement_id)
     ctx = await context(engagement_id)
-    out.update(uploads=uploads, datasets=[_dataset_summary(r) for r in ds],
+    out.update(uploads=uploads, datasets=[_dataset_summary(r) for r in ds], extract_jobs=extract_jobs,
                facts=[f for f in (pack["facts"] if pack else []) if f.get("status") != "removed"],
                coverage=coverage(ctx.figures))
     return out
