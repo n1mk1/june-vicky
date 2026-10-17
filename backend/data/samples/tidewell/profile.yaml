@@ -1,0 +1,56 @@
+# Company profile for the Tidewell sample (Catalyst Team 18 supporting pack).
+# Every value is transcribed from the pack; `refs` gives the appendix and page.
+# Sample/test fixture only.
+
+name: Tidewell Systems Inc.
+country: CA
+currency: cad
+fiscal_year_start_month: 1
+stage: seed
+round_type: priced_equity
+round_size: 4000000
+business_model: recurring
+granularity: month
+city: Toronto
+founders:
+  - name: Jennifer
+    role: CEO
+  - name: Craig
+    role: CTO
+one_liner: >-
+  Tidewell Dispatch is scheduling and dispatch software for trades businesses
+  with 3 to 30 field technicians (HVAC, plumbing, electrical, landscaping,
+  pest control and appliance repair).
+
+# Non-numeric round context (numeric terms live in pack_facts.yaml).
+round:
+  target_close: "2027-01"
+  investor_meetings_start: "2026-11"
+  lead_sought: Canadian seed fund, with angels and possibly a strategic investor from the trades industry
+  stated_goal: "Series A at $5M ARR"   # founders' own words; a founder claim, not a fact
+incorporated: "2024-01"
+product_name: Tidewell Dispatch
+competitors_named_by_founders: [Jobber, Housecall Pro, ServiceTitan, spreadsheets or paper]
+acquisition_channels: [outbound account executives, inbound content and search, distributor partner referrals, founders' network]
+
+refs:
+  name: "Appendix A, p.3"
+  country: "Appendix A, p.3 (Toronto); Appendix F, p.27 (Canadian SAFE, CRA SR&ED)"
+  currency: "Supporting pack 'How to use this pack', p.2: all amounts are CAD"
+  fiscal_year_start_month: "Appendix B, p.6: the fiscal year ends December 31"
+  stage: "Appendix A, p.5: $4,000,000 seed round"
+  round_type: "Appendix A, p.5: priced equity"
+  round_size: "Appendix A, p.5"
+  business_model: "Appendix A, p.3: $45 per technician seat per month, monthly or annual billing"
+  granularity: "income_statement_monthly.csv (24 monthly rows, 2024-10..2026-09)"
+  city: "Appendix A, p.3"
+  founders: "Appendix A, p.3"
+  one_liner: "Appendix A, p.3"
+  round: "Appendix A, p.5"
+  incorporated: "Appendix A, p.3"
+  competitors_named_by_founders: "Appendix A, p.4"
+  acquisition_channels: "Appendix A, p.4"
+
+notes:
+  - The pack gives founders' first names only.
+  - Stage is the round being raised (seed). Prior financing was a pre-seed SAFE (Appendix A, p.4).

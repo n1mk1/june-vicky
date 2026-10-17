@@ -1,0 +1,148 @@
+# Prefilled column mapping for income_statement_monthly.csv (ColumnMapping[]).
+# Shape: {source_column, canonical_field | null, unit, confidence 0-1, note}.
+# Values in the CSV are strings like "$15,171.00" and "-$57,492.00" (CAD, Appendix
+# "How to use this pack", p.2). Line items reconcile to the totals on every row:
+#   total_revenue = subscription_revenue + onboarding_services_revenue
+#   total_cogs = cogs_hosting + cogs_sms_telephony + cogs_payment_processing
+#   gross_profit = total_revenue - total_cogs
+#   total_operating_expenses = sum of rnd_* .. ga_* + depreciation
+#   net_income = operating_income + other_income_srred_credit
+
+- source_column: month
+  canonical_field: period
+  unit: null
+  confidence: 1.0
+  note: "Period axis, YYYY-MM, 2024-10..2026-09 (24 closed months, Appendix B p.6)."
+
+# Revenue
+- source_column: subscription_revenue
+  canonical_field: revenue.recurring
+  unit: cad
+  confidence: 0.98
+  note: "MRR is monthly subscription revenue (Appendix B p.8). Onboarding fees are excluded."
+- source_column: onboarding_services_revenue
+  canonical_field: revenue.one_time
+  unit: cad
+  confidence: 0.97
+  note: "One-time onboarding fees, recognized in the month the customer signs (Appendix B p.9)."
+- source_column: total_revenue
+  canonical_field: revenue.total
+  unit: cad
+  confidence: 0.99
+  note: "Equals subscription + onboarding on every row."
+
+# Cost of revenue
+- source_column: cogs_hosting
+  canonical_field: null
+  unit: cad
+  confidence: 0.95
+  note: "component of cogs"
+- source_column: cogs_sms_telephony
+  canonical_field: null
+  unit: cad
+  confidence: 0.95
+  note: "component of cogs"
+- source_column: cogs_payment_processing
+  canonical_field: null
+  unit: cad
+  confidence: 0.95
+  note: "component of cogs"
+- source_column: total_cogs
+  canonical_field: cogs
+  unit: cad
+  confidence: 0.98
+  note: "Hosting, SMS and telephony, card fees. Customer success is NOT in cost of revenue (Appendix B p.9); see opex.customer_success."
+- source_column: gross_profit
+  canonical_field: gross_profit
+  unit: cad
+  confidence: 0.99
+  note: "As booked (excludes customer success). Gross margin incl. support must subtract opex.customer_success."
+
+# Operating expenses
+- source_column: rnd_salaries
+  canonical_field: opex.r_and_d
+  unit: cad
+  confidence: 0.95
+  note: "Loaded salaries (pay + payroll taxes + benefits, Appendix B p.9). Includes the CTO (Appendix C p.14)."
+- source_column: sales_salaries
+  canonical_field: opex.s_and_m
+  unit: cad
+  confidence: 0.95
+  note: "Loaded salaries of account executives."
+- source_column: sales_commissions
+  canonical_field: opex.s_and_m
+  unit: cad
+  confidence: 0.95
+  note: "Part of fully loaded CAC (Appendix D q6)."
+- source_column: marketing_salaries
+  canonical_field: opex.s_and_m
+  unit: cad
+  confidence: 0.95
+  note: "Loaded salary of the marketing manager."
+- source_column: marketing_programs
+  canonical_field: opex.s_and_m
+  unit: cad
+  confidence: 0.95
+  note: "Programs only. The deck's $970 CAC used this line alone (Appendix D q6)."
+- source_column: customer_success_salaries
+  canonical_field: opex.customer_success
+  unit: cad
+  confidence: 0.95
+  note: "Recorded in opex, not cost of revenue (Appendix B p.9). Investors usually move it into COGS (Appendix D q5)."
+- source_column: ga_salaries
+  canonical_field: opex.g_and_a
+  unit: cad
+  confidence: 0.95
+  note: "G&A today is the CEO (Appendix C p.14)."
+- source_column: ga_rent
+  canonical_field: opex.g_and_a
+  unit: cad
+  confidence: 0.95
+  note: null
+- source_column: ga_software
+  canonical_field: opex.g_and_a
+  unit: cad
+  confidence: 0.95
+  note: null
+- source_column: ga_professional_fees
+  canonical_field: opex.g_and_a
+  unit: cad
+  confidence: 0.9
+  note: "One-off spikes in 2025-03, 2026-02 and 2026-03; the pack does not explain them."
+- source_column: ga_bookkeeping
+  canonical_field: opex.g_and_a
+  unit: cad
+  confidence: 0.95
+  note: "Outsourced part-time bookkeeper (Appendix A p.4)."
+- source_column: ga_other
+  canonical_field: opex.g_and_a
+  unit: cad
+  confidence: 0.9
+  note: null
+- source_column: depreciation
+  canonical_field: depreciation
+  unit: cad
+  confidence: 0.97
+  note: "Non-cash, and included inside total_operating_expenses. Do not add it to opex.total again."
+- source_column: total_operating_expenses
+  canonical_field: opex.total
+  unit: cad
+  confidence: 0.98
+  note: "Includes depreciation and customer success salaries."
+
+# Profit
+- source_column: operating_income
+  canonical_field: operating_income
+  unit: cad
+  confidence: 0.99
+  note: "Negative values are losses."
+- source_column: other_income_srred_credit
+  canonical_field: non_dilutive_income
+  unit: cad
+  confidence: 0.97
+  note: "SR&ED refundable tax credit, booked in the month the cash arrived (2025-06 $96,400; 2026-07 $182,300), not the year the work was done (Appendix B p.9). Exclude for burn ex-credits."
+- source_column: net_income
+  canonical_field: net_income
+  unit: cad
+  confidence: 0.99
+  note: "Operating income plus SR&ED credit."
