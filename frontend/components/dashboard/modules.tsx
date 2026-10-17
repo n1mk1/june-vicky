@@ -94,13 +94,13 @@ export function Readiness({ reports, company }: { reports: ReportSummary[] | und
           {latest ? "Practise again" : "Face the panel"}
         </Link>
       }
-      bodyClassName="flex items-center gap-4 px-4 py-3"
-      className="min-h-[150px]"
+      bodyClassName="flex items-center gap-4 overflow-hidden px-4 py-3"
+      className="min-h-[150px] lg:min-h-0"
     >
       <div
         aria-label={score === null ? "No score yet" : `Readiness ${score} of 100`}
         role="img"
-        className="relative aspect-square h-full max-h-[min(200px,42vw)] min-h-[96px] shrink-0"
+        className="relative aspect-square h-full max-h-[min(200px,42vw)] min-h-[96px] lg:min-h-[56px] shrink-0"
       >
         <div className="absolute inset-0">
           <OrbScene score={score ?? 0} />
