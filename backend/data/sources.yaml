@@ -1,0 +1,567 @@
+# Benchmark and reference library (seeds the `sources` table; this YAML is the source of truth).
+# Seeded from Appendix F of the Catalyst Team 18 supporting pack (pp.25-27; every link there was
+# checked by the organisers on 2026-10-14) plus primary benchmark sources.
+#
+# Fields
+#   id: snake_case, cited as source_id. One entry = one citable claim; a publication with
+#       several benchmarks gets several entries sharing the url.
+#   claim: one sentence stating exactly what the source says (quoted where possible).
+#   as_of: publication date (YYYY-MM-DD, YYYY-MM or YYYY); null when the page shows none.
+#   business_model / stage / topic: filters for the benchmark picker.
+#   verified: true only if the page was fetched on `checked` and its text supports the claim.
+#   verification_note: what was and wasn't confirmed.
+#   pack_ref: where Appendix F lists it, if it does.
+#
+# Rules: quote the benchmark with its publisher when used. US/portfolio data must be labelled
+# as such for a non-US company. No SR&ED limit or rate figures are recorded here (none were
+# verified on canada.ca).
+
+sources:
+  # ------------------------------------------------------------------ capital efficiency
+  - id: sacks_burn_multiple
+    publisher: David Sacks (Craft Ventures)
+    title: "The Burn Multiple"
+    claim: "Burn Multiple = Net Burn / Net New ARR, i.e. how much a startup burns to add each incremental dollar of ARR; the essay calls about 2x reasonable for an early-stage startup and 5x terrible."
+    url: https://sacks.substack.com/p/the-burn-multiple-51a7e43cb200
+    as_of: "2020-04-23"
+    business_model: [recurring]
+    stage: [seed, series_a, series_b_plus]
+    topic: [burn_multiple]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Formula and the 2x / 5x remarks confirmed in the text. The rating-band table (amazing/great/good/suspect/bad) is an image and was NOT verified, so no bands are recorded."
+    pack_ref: "Appendix F, p.26"
+  - id: saastr_series_a_burn_multiple
+    publisher: SaaStr (Jason Lemkin)
+    title: "Dear SaaStr: What Are The Top 10 Metrics Series A Investors Look At?"
+    claim: "\"A burn multiple of 1-2x is healthy.\""
+    url: https://www.saastr.com/dear-saastr-what-are-the-top-10-metrics-series-a-investors-look-at
+    as_of: null
+    business_model: [recurring]
+    stage: [series_a]
+    topic: [burn_multiple]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed; the page shows no publication date."
+    pack_ref: null
+  - id: bvp_10_laws_efficiency
+    publisher: Bessemer Venture Partners
+    title: "10 Laws of Cloud"
+    claim: "\"For growth stage startups earning less than $30 million ARR, efficient growth is defined by net new ARR over net burn\" (optimal score >1.5)."
+    url: https://www.bvp.com/atlas/10-laws-of-cloud
+    as_of: "2019-06-19"
+    business_model: [recurring]
+    stage: [series_a, series_b_plus]
+    topic: [burn_multiple, efficiency]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed. This ratio is the inverse of the burn multiple (>1.5 here = burn multiple below ~0.67)."
+    pack_ref: "Appendix F, p.26"
+  - id: bvp_state_of_cloud_2024_efficiency
+    publisher: Bessemer Venture Partners
+    title: "State of the Cloud 2024"
+    claim: "Vertical AI companies with at least $4M ARR showed ~400% year-over-year growth, ~65% average gross margin and a ~1.1x BVP Efficiency Ratio (Net New CARR / Net Burn)."
+    url: https://www.bvp.com/atlas/state-of-the-cloud-2024
+    as_of: "2024-06-20"
+    business_model: [recurring]
+    stage: [series_a, series_b_plus]
+    topic: [efficiency, growth, gross_margin]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed. Cohort is Vertical AI at $4M+ ARR, not early-stage SaaS generally; use with that caveat."
+    pack_ref: null
+
+  # ------------------------------------------------------------------ growth
+  - id: saastr_series_a_growth
+    publisher: SaaStr (Jason Lemkin)
+    title: "Dear SaaStr: What Are The Rough Benchmarks for Raising a Series A?"
+    claim: "\"Typically, you'll want to show 7%-15% month-over-month growth leading up to the raise.\""
+    url: https://saastr.com/dear-saastr-what-are-the-rough-benchmarks-for-raising-a-series-a
+    as_of: null
+    business_model: [recurring]
+    stage: [seed, series_a]
+    topic: [cmgr, growth]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed; no publication date shown. The same page says at $1M ARR founders should have 'a believable path to 3x your ARR in the next 12 months.'"
+    pack_ref: null
+  - id: saastr_series_a_arr
+    publisher: SaaStr (Jason Lemkin)
+    title: "Dear SaaStr: What Are The Rough Benchmarks for Raising a Series A?"
+    claim: "\"Most SaaS companies raising a Series A are doing between $1M and $2.5M in ARR\" ($250K-$1M can raise in hot markets or with exceptional growth)."
+    url: https://saastr.com/dear-saastr-what-are-the-rough-benchmarks-for-raising-a-series-a
+    as_of: null
+    business_model: [recurring]
+    stage: [seed, series_a]
+    topic: [growth, arr]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed; US-centric SaaS commentary."
+    pack_ref: null
+  - id: bvp_scaling_100m_growth
+    publisher: Bessemer Venture Partners
+    title: "Scaling to $100 Million"
+    claim: "For cloud companies at $1-10MM ARR, median ARR growth was 165% (average nearly 200%; top performers 230%+)."
+    url: https://www.bvp.com/atlas/scaling-to-100-million
+    as_of: "2021-09-21"
+    business_model: [recurring]
+    stage: [seed, series_a]
+    topic: [growth]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed. Bessemer portfolio data 2010-1H21, not a random sample of the market."
+    pack_ref: null
+
+  # ------------------------------------------------------------------ retention
+  - id: saastr_series_a_nrr
+    publisher: SaaStr (Jason Lemkin)
+    title: "Dear SaaStr: What Are The Top 10 Metrics Series A Investors Look At?"
+    claim: "\"While 120%+ NDR is the gold standard, at seed stage, aim for at least 100% (i.e., no net churn).\""
+    url: https://www.saastr.com/dear-saastr-what-are-the-top-10-metrics-series-a-investors-look-at
+    as_of: null
+    business_model: [recurring]
+    stage: [seed, series_a]
+    topic: [nrr]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed; no publication date shown."
+    pack_ref: null
+  - id: saastr_series_a_grr
+    publisher: SaaStr (Jason Lemkin)
+    title: "Dear SaaStr: What Are The Top 10 Metrics Series A Investors Look At?"
+    claim: "\"A GRR of 90%+ is ideal. Anything below 80% signals churn issues that need fixing before scaling.\""
+    url: https://www.saastr.com/dear-saastr-what-are-the-top-10-metrics-series-a-investors-look-at
+    as_of: null
+    business_model: [recurring]
+    stage: [seed, series_a]
+    topic: [grr]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed; no publication date shown."
+    pack_ref: null
+  - id: bvp_scaling_100m_nrr
+    publisher: Bessemer Venture Partners
+    title: "Scaling to $100 Million"
+    claim: "\"The average net retention is 140% between $1-10MM of ARR\" (median 125%; top performers 145%+)."
+    url: https://www.bvp.com/atlas/scaling-to-100-million
+    as_of: "2021-09-21"
+    business_model: [recurring]
+    stage: [seed, series_a]
+    topic: [nrr]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed. Bessemer portfolio data, skewed to enterprise cloud; not SMB-specific."
+    pack_ref: null
+  - id: bvp_scaling_100m_grr
+    publisher: Bessemer Venture Partners
+    title: "Scaling to $100 Million"
+    claim: "\"Looking at gross retention by ARR range, we find that it is relatively consistent at 85-90%.\""
+    url: https://www.bvp.com/atlas/scaling-to-100-million
+    as_of: "2021-09-21"
+    business_model: [recurring]
+    stage: [any]
+    topic: [grr]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed. Bessemer portfolio data."
+    pack_ref: null
+  - id: bvp_10_laws_smb_churn
+    publisher: Bessemer Venture Partners
+    title: "10 Laws of Cloud"
+    claim: "\"SMB-focused companies often have higher churn rates (often approximately 20% gross)\" a year, while top enterprise companies run below 7% annual gross logo churn."
+    url: https://www.bvp.com/atlas/10-laws-of-cloud
+    as_of: "2019-06-19"
+    business_model: [recurring]
+    stage: [any]
+    topic: [churn, grr]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "SMB quote confirmed; the <7% enterprise figure is from the same page (summarised, not quoted)."
+    pack_ref: "Appendix F, p.26"
+
+  # ------------------------------------------------------------------ CAC payback and gross margin
+  - id: saastr_series_a_cac_payback
+    publisher: SaaStr (Jason Lemkin)
+    title: "Dear SaaStr: What Are The Top 10 Metrics Series A Investors Look At?"
+    claim: "\"Your customer acquisition cost (CAC) payback period should be 12 months or less.\""
+    url: https://www.saastr.com/dear-saastr-what-are-the-top-10-metrics-series-a-investors-look-at
+    as_of: null
+    business_model: [recurring]
+    stage: [series_a]
+    topic: [cac_payback]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed (the Series A benchmarks page says 'ideally under 12 months')."
+    pack_ref: null
+  - id: bvp_scaling_100m_cac_payback_smb
+    publisher: Bessemer Venture Partners
+    title: "Scaling to $100 Million"
+    claim: "\"For cloud companies selling into SMB-focused accounts, you should target CAC payback <12 months\" (mid-market <18, enterprise <24)."
+    url: https://www.bvp.com/atlas/scaling-to-100-million
+    as_of: "2021-09-21"
+    business_model: [recurring]
+    stage: [any]
+    topic: [cac_payback]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "SMB quote confirmed; mid-market and enterprise targets from the same section."
+    pack_ref: null
+  - id: bvp_10_laws_cac_payback_smb
+    publisher: Bessemer Venture Partners
+    title: "10 Laws of Cloud"
+    claim: "\"CAC payback periods for SMB customers should be approximately 6-18 months\" (enterprise can reach 24-36 months)."
+    url: https://www.bvp.com/atlas/10-laws-of-cloud
+    as_of: "2019-06-19"
+    business_model: [recurring]
+    stage: [any]
+    topic: [cac_payback]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "SMB quote confirmed."
+    pack_ref: "Appendix F, p.26"
+  - id: bvp_scaling_100m_gross_margin
+    publisher: Bessemer Venture Partners
+    title: "Scaling to $100 Million"
+    claim: "Cloud companies at $1-10MM ARR averaged about 70% gross margin (median 72%; top performers 85%+)."
+    url: https://www.bvp.com/atlas/scaling-to-100-million
+    as_of: "2021-09-21"
+    business_model: [recurring]
+    stage: [seed, series_a]
+    topic: [gross_margin]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed. The page does not say whether support costs are in cost of revenue."
+    pack_ref: null
+
+  # ------------------------------------------------------------------ runway and survival
+  - id: pg_default_alive
+    publisher: Paul Graham
+    title: "Default Alive or Default Dead?"
+    claim: "A startup is default alive if, with expenses held constant and revenue growing at its recent rate, it reaches profitability on the money it has left; otherwise it is default dead."
+    url: https://paulgraham.com/aord.html
+    as_of: "2015-10"
+    business_model: [any]
+    stage: [pre_seed, seed, series_a]
+    topic: [default_alive, runway]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Definition and method confirmed; the essay gives no formula and points to Trevor Blackwell's calculator (growth.tlb.org)."
+    pack_ref: "Appendix F, p.26"
+  - id: bvp_10_laws_runway
+    publisher: Bessemer Venture Partners
+    title: "10 Laws of Cloud"
+    claim: "Law 10 ('Map your fuel stops'): raise early enough \"so that they can always have one to three years of runway in the bank.\""
+    url: https://www.bvp.com/atlas/10-laws-of-cloud
+    as_of: "2019-06-19"
+    business_model: [any]
+    stage: [any]
+    topic: [runway]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed."
+    pack_ref: "Appendix F, p.26"
+
+  # ------------------------------------------------------------------ metric definitions
+  - id: a16z_16_startup_metrics
+    publisher: Andreessen Horowitz
+    title: "16 Startup Metrics"
+    claim: "Investors check metrics such as bookings vs revenue (\"A common mistake is to use bookings and revenue interchangeably\"), recurring vs total revenue, CAC including all acquisition costs, and gross vs net churn (net churn understates losses)."
+    url: https://a16z.com/16-startup-metrics/
+    as_of: "2015-08-21"
+    business_model: [any]
+    stage: [any]
+    topic: [metric_definitions, cac, churn, growth, burn_rate, deferred_revenue]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Authors Jeff Jordan, Anu Hariharan, Frank Chen, Preethi Kasireddy. Quotes confirmed."
+    pack_ref: "Appendix F, p.26"
+  - id: janz_five_ways_100m
+    publisher: Christoph Janz (Point Nine Capital)
+    title: "Five ways to build a $100 million business"
+    claim: "A $100M business needs one of five customer profiles: 1,000 x $100k+/yr (elephants), 10,000 x $10k+ (deer), 100,000 x $1k+ (rabbits, small businesses), 1M x $100+ (mice) or 10M x $10+ (flies)."
+    url: https://christophjanz.blogspot.com/2014/10/five-ways-to-build-100-million-business.html
+    as_of: "2014-10-05"
+    business_model: [recurring]
+    stage: [any]
+    topic: [market_size, acv, business_model]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed."
+    pack_ref: "Appendix F, p.26"
+
+  # ------------------------------------------------------------------ fundraising process and pitching
+  - id: pg_how_to_raise_money
+    publisher: Paul Graham
+    title: "How to Raise Money"
+    claim: "Raise only when you need to and investors want in, then fundraise full-time, talk to many investors in parallel in order of likely value, take an acceptable offer, and don't count the money until it's in the bank."
+    url: https://paulgraham.com/fr.html
+    as_of: "2013-09"
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [valuation_process, fundraising_process]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Summary of the essay's advice; confirmed."
+    pack_ref: "Appendix F, p.26"
+  - id: yc_seed_fundraising_guide
+    publisher: Y Combinator (Geoff Ralston)
+    title: "A guide to seed fundraising"
+    claim: "Geoff Ralston's guide to why, when and how to raise a seed round."
+    url: https://www.ycombinator.com/library/4A-a-guide-to-seed-fundraising
+    as_of: "2016-01-07"
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [fundraising_process, safe]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Page title confirmed at the URL; author and date from the YC blog listing. The body is client-rendered and could not be read, so do not cite specific numbers from it."
+    pack_ref: "Appendix F, p.26"
+  - id: yc_how_to_pitch
+    publisher: Y Combinator (Kevin Hale)
+    title: "How to Pitch Your Startup"
+    claim: "Kevin Hale's Startup School talk on pitching an idea clearly and concisely to investors."
+    url: https://www.ycombinator.com/library/6q-how-to-pitch-your-startup
+    as_of: "2019"
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [pitch]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Title confirmed at the URL (startupschool.org/videos/77 redirects here); speaker and 2019 date from secondary listings; body client-rendered."
+    pack_ref: "Appendix F, p.25"
+  - id: yc_seed_deck
+    publisher: Y Combinator (Aaron Harris)
+    title: "How to build your seed round pitch deck"
+    claim: "Aaron Harris's slide-by-slide template for a seed deck, stressing clarity and concision."
+    url: https://www.ycombinator.com/library/2u-how-to-build-your-seed-round-pitch-deck
+    as_of: "2018-03-12"
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [pitch, deck]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Title confirmed at the URL; author and date from the YC blog post (blog.ycombinator.com/intro-to-the-yc-seed-deck); body client-rendered."
+    pack_ref: "Appendix F, p.25"
+  - id: sequoia_business_plan
+    publisher: Sequoia Capital
+    title: "Writing a Business Plan"
+    claim: "A ten-section pitch outline: company purpose, problem, solution, why now, market potential, competition, business model, team, financials, vision."
+    url: https://www.sequoiacap.com/article/writing-a-business-plan/
+    as_of: null
+    business_model: [any]
+    stage: [pre_seed, seed, series_a]
+    topic: [pitch, deck]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Ten sections confirmed; no date shown."
+    pack_ref: "Appendix F, p.25"
+  - id: buffer_seed_deck
+    publisher: Buffer
+    title: "The slide deck we used to raise half a million dollars"
+    claim: "Buffer's seed deck (about $500K raised) with the founders' commentary on what worked."
+    url: https://buffer.com/resources/the-slide-deck-we-used-to-raise-half-a-million-dollars/
+    as_of: "2013-05-23"
+    business_model: [recurring]
+    stage: [seed]
+    topic: [pitch, deck]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed (author Leo Widrich). The pack calls it the 2011 seed deck; the article is dated 2013."
+    pack_ref: "Appendix F, p.25"
+  - id: front_series_c_deck
+    publisher: Front (Mathilde Collin)
+    title: "Front Series C Deck"
+    claim: "Front's CEO shares the deck used to raise its Series C, with commentary on investor feedback; a later-stage model for showing SaaS metrics."
+    url: https://front.com/blog/front-series-c-deck
+    as_of: "2022-02-24"
+    business_model: [recurring]
+    stage: [series_b_plus]
+    topic: [pitch, deck]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed; the deck itself is linked (SlideShare), not inline."
+    pack_ref: "Appendix F, p.25"
+  - id: slidebean_airbnb_deck
+    publisher: Slidebean
+    title: "AirBnb Pitch Deck: Teardown and Redesign"
+    claim: "The original 2009 Airbnb deck shown slide by slide beside redesigned versions (a third-party rehost)."
+    url: https://slidebean.com/blog/startups-airbnb-pitch-deck
+    as_of: null
+    business_model: [other]
+    stage: [seed]
+    topic: [pitch, deck]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed. Several Slidebean URLs carry the same article."
+    pack_ref: "Appendix F, p.25"
+  - id: bdc_pitch_deck_template
+    publisher: BDC
+    title: "Pitch deck template for start-ups"
+    claim: "A free, form-gated Canadian pitch deck template from BDC."
+    url: https://www.bdc.ca/en/articles-tools/entrepreneur-toolkit/templates-business-guides/pitch-deck-template
+    as_of: null
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [pitch, deck]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Page exists with this title; the template requires a sign-up form."
+    pack_ref: "Appendix F, p.25"
+  - id: bdc_pitch_vc
+    publisher: BDC
+    title: "How to pitch your business to venture capital investors"
+    claim: "\"The number-one reason investors say 'no' is that the business isn't growing fast enough for VC\"; know your numbers and don't rely on someone else to explain them."
+    url: https://bdc.ca/en/articles-tools/start-buy-business/start-business/how-pitch-your-business-venture-capital-investors
+    as_of: null
+    business_model: [any]
+    stage: [seed, series_a]
+    topic: [pitch, growth]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quote confirmed; seven tips from BDC Capital."
+    pack_ref: "Appendix F, p.26"
+  - id: bdc_find_angels
+    publisher: BDC
+    title: "How to find angel investors in Canada"
+    claim: "An estimated 20,000 to 50,000 individuals or groups in Canada actively invest in start-ups; networks include NACO and Canadian International Angel Investors."
+    url: https://bdc.ca/en/articles-tools/start-buy-business/start-business/angel-investors-how-find-them
+    as_of: null
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [angels, fundraising_process]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed."
+    pack_ref: "Appendix F, p.26"
+
+  # ------------------------------------------------------------------ terms, SAFEs and dilution
+  - id: yc_safe_documents
+    publisher: Y Combinator
+    title: "Safe Financing Documents"
+    claim: "YC publishes the post-money SAFE forms (valuation cap, discount, MFN), a pro rata side letter and the user guide, plus a Canadian valuation-cap SAFE; consult a lawyer licensed in the relevant country before using them."
+    url: https://www.ycombinator.com/documents
+    as_of: null
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [safe]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Document list and Canada versions confirmed."
+    pack_ref: "Appendix F, p.27"
+  - id: yc_safe_ownership_math
+    publisher: Y Combinator
+    title: "Post-Money Safe User Guide"
+    claim: "With a post-money SAFE, ownership sold = purchase amount / post-money valuation cap (e.g. $500k / $6.7M = ~7.5%), and several SAFEs on different caps simply add up (e.g. ~9% + ~6% = ~15%)."
+    url: https://bookface-static.ycombinator.com/assets/ycdc/Website%20User%20Guide%20Feb%202023%20-%20final-28acf9a3b938e643cc270b7da514194d5c271359be25b631b025605673fa9f95.pdf
+    as_of: "2023-02"
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [safe, dilution]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Quick Start examples confirmed in the PDF text. The guide warns SAFEs may convert into more than the estimated ownership if the priced round's valuation is below or near the cap."
+    pack_ref: "Appendix F, p.27"
+  - id: yc_safe_dilution_order
+    publisher: Y Combinator
+    title: "Post-Money Safe User Guide"
+    claim: "Post-money SAFEs are not diluted by each other but are diluted by the new money in the priced round and by any option pool increase adopted in that round; the founders bear the dilution from the SAFEs themselves."
+    url: https://bookface-static.ycombinator.com/assets/ycdc/Website%20User%20Guide%20Feb%202023%20-%20final-28acf9a3b938e643cc270b7da514194d5c271359be25b631b025605673fa9f95.pdf
+    as_of: "2023-02"
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [safe, dilution]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed in the 'Post-Money Valuation Cap' section of the guide."
+    pack_ref: "Appendix F, p.27"
+  - id: lighter_dilution_explainer
+    publisher: Lighter Capital
+    title: "The Founder's Guide to Equity Dilution"
+    claim: "\"Equity dilution occurs when new shares in a company are issued\"; e.g. $1M invested at a $4M pre-money valuation buys 20% ($1M / $5M post-money), so a holder's percentage falls by a fifth."
+    url: https://www.lightercapital.com/blog/the-founders-guide-to-equity-dilution
+    as_of: "2024-02-12"
+    business_model: [any]
+    stage: [any]
+    topic: [dilution, valuation_process]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Definition and worked example confirmed. Carta's dilution explainer (carta.com/blog/what-is-stock-dilution/) returned HTTP 403 and was not used."
+    pack_ref: null
+  - id: nvca_model_documents
+    publisher: NVCA
+    title: "Model Legal Documents"
+    claim: "US model venture financing documents (certificate of incorporation, stock purchase, investors' rights, voting, right of first refusal and co-sale agreements), useful for term definitions; Canadian deals use different forms."
+    url: https://nvca.org/model-legal-documents/
+    as_of: "2026"
+    business_model: [any]
+    stage: [seed, series_a, series_b_plus]
+    topic: [terms, information_rights, rofr]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Document list confirmed (latest revisions dated up to June 2026). US forms."
+    pack_ref: "Appendix F, p.27"
+  - id: carta_state_private_markets_q1_2026
+    publisher: Carta
+    title: "State of Private Markets: Q1 2026"
+    claim: "US venture funding volumes, valuations and dilution for Q1 2026 (US data; say so if used for a Canadian company)."
+    url: https://carta.com/data/state-of-private-markets-q1-2026/
+    as_of: "2026"
+    business_model: [any]
+    stage: [any]
+    topic: [dilution, valuation_process, market_data]
+    verified: false
+    checked: "2026-10-17"
+    verification_note: "HTTP 403 on fetch; URL is a best guess from the pack's title. Do not cite figures from it until checked."
+    pack_ref: "Appendix F, p.27"
+  - id: cvca_market_reports
+    publisher: CVCA
+    title: "Q1 2026 Canadian Venture Capital Market Report"
+    claim: "Canadian VC recorded 104 deals and CAD $936.3M deployed in Q1 2026, with the stage mix shifting toward earlier-stage transactions."
+    url: https://www.cvca.ca/insights/market-reports/q1-2026/
+    as_of: "2026"
+    business_model: [any]
+    stage: [any]
+    topic: [market_data]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Headline numbers confirmed; some historical CVCA reports are members only."
+    pack_ref: "Appendix F, p.27"
+  - id: naco
+    publisher: National Angel Capital Organization
+    title: "NACO"
+    claim: "NACO is \"Canada's national industry association for angel investors.\""
+    url: https://nacocanada.com/
+    as_of: null
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [angels]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Confirmed on the home page. angelinvestor.ca now redirects to an unrelated site; do not use it."
+    pack_ref: "Appendix F, p.27"
+  - id: bdc_seed_venture_fund
+    publisher: BDC Capital
+    title: "Seed Venture Fund"
+    claim: "BDC Capital's Seed Venture Fund is \"a $100-million fund\" that aims to \"lead investment rounds\" in seed-stage Canadian start-ups across every region of Canada (software and hardware)."
+    url: https://www.bdc.ca/en/bdc-capital/venture-capital/funds/seed-fund
+    as_of: null
+    business_model: [any]
+    stage: [pre_seed, seed]
+    topic: [government_fund, seed_mandate]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Fund size, lead mandate and Canadian focus confirmed; cheque size not stated on the page."
+    pack_ref: "Appendix F, p.27"
+  - id: cra_srred
+    publisher: Canada Revenue Agency
+    title: "Scientific Research and Experimental Development (SR&ED) tax incentives"
+    claim: "The federal SR&ED program encourages businesses to do R&D in Canada by letting them claim an income deduction or an investment tax credit through their tax return."
+    url: https://www.canada.ca/en/revenue-agency/services/scientific-research-experimental-development-tax-incentive-program.html
+    as_of: null
+    business_model: [any]
+    stage: [any]
+    topic: [non_dilutive, srred]
+    verified: true
+    checked: "2026-10-17"
+    verification_note: "Program description confirmed. The page states no refund rate or expenditure limit, so none are recorded; verify any limit with an advisor."
+    pack_ref: "Appendix F, p.27"
