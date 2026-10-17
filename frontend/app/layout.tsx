@@ -21,18 +21,29 @@ const martian = Martian_Mono({
   weight: ["400"],
 });
 
+const TITLE = "Vicky · AI venture capitalist by June";
+
+// Icons and the share image come from the file conventions in this folder
+// (icon.svg, apple-icon.png, opengraph-image.png), all made from brand/vicky/Vicky_Logo_250x250.
 export const metadata: Metadata = {
+  // Absolute base for the share image URL; Render sets RENDER_EXTERNAL_URL on the web service.
+  metadataBase: new URL(process.env.RENDER_EXTERNAL_URL ?? "http://localhost:3000"),
   title: {
-    default: "JUNE × VICKY — your AI venture capitalist",
-    template: "%s · JUNE × VICKY",
+    default: TITLE,
+    template: "%s · Vicky",
   },
   description:
     "Know your numbers before they do. Load your data, face a panel of AI investors and rehearse your pitch against the source of truth.",
   openGraph: {
-    title: "JUNE × VICKY",
+    title: TITLE,
     description: "Your AI venture capitalist. Know your numbers before they do.",
     siteName: "JUNE × VICKY",
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: "Your AI venture capitalist. Know your numbers before they do.",
   },
 };
 
