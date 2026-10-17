@@ -12,14 +12,14 @@ export function KpiWidget({ widget, currency }: { widget: Widget; currency?: str
   const badge = kpiBadge(primary);
 
   return (
-    <Panel title={widget.spec.title} bodyClassName="flex flex-col justify-between gap-5 p-4">
+    <Panel title={widget.spec.title} bodyClassName="scroll-thin flex flex-col justify-between gap-3 overflow-y-auto p-4">
       <div className="flex flex-col items-start gap-2">
         {primary.missing ? (
           <p className="text-[12.5px] text-ink-2">{primary.missing.reason}</p>
         ) : (
           <>
             <span className="flex items-baseline gap-2">
-              <Explainable x={kpiExplain(primary, currency)} triggerClassName="display text-[clamp(48px,5.4vw,80px)] tabular-nums">
+              <Explainable x={kpiExplain(primary, currency)} triggerClassName="display text-[clamp(40px,min(5.4vw,8.5vh),80px)] tabular-nums">
                 {primary.display}
               </Explainable>
               {badge && <span className="text-[10px] text-dim">{badge}</span>}
@@ -35,7 +35,7 @@ export function KpiWidget({ widget, currency }: { widget: Widget; currency?: str
             return (
               <div key={`${k.id}-${i}`} className="flex min-w-0 flex-col gap-0.5">
                 <dt className="text-[11px] leading-tight text-ink-2">{k.label}</dt>
-                <dd className="flex items-baseline gap-1.5 font-display text-[22px] tracking-[-0.04em] tabular-nums">
+                <dd className="flex items-baseline gap-1.5 font-display text-[20px] tracking-[-0.04em] tabular-nums">
                   {k.missing || k.value === null ? (
                     <span
                       className="rounded-full border border-dashed border-line-strong px-2 py-0.5 font-sans text-[10.5px] tracking-normal text-dim"

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { EChart, type ChartClick } from "@/components/charts/EChart";
 import { Panel } from "@/components/ui/Panel";
 import { fmtAxis, fmtValue } from "@/lib/format";
-import { zoomWindow } from "@/lib/dashboard-layout";
+import { chronological, rangeFromWindow, zoomWindow } from "@/lib/dashboard-layout";
 import type { EChartsOptionJson, Provenance, TimeRange, Widget } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ExplainCard, type Explanation } from "./Explain";
@@ -73,12 +73,13 @@ function prepare(raw: EChartsOptionJson, range: TimeRange | null): Record<string
   // The brush toolbox competes with the legend in small panels; keep zoom, drop the toolbox chrome.
   if (opt.toolbox) opt.toolbox = { ...(opt.toolbox as object), show: false };
   // Every chart follows the dashboard's time range ("zoom to the last 6 months").
+  // Wheel zoom needs Ctrl, so scrolling the page over a chart scrolls the page.
   const zoom = template === "heatmap" ? null : zoomWindow(meta.periods, range);
-  if (zoom && Array.isArray(opt.dataZoom)) {
+  if (Array.isArray(opt.dataZoom)) {
     opt.dataZoom = (opt.dataZoom as Record<string, unknown>[]).map((dz) => ({
       ...dz,
-      startValue: zoom[0],
-      endValue: zoom[1],
+      ...(dz.type === "inside" ? { zoomOnMouseWheel: "ctrl", moveOnMouseWheel: false } : {}),
+      ...(zoom ? { startValue: zoom[0], endValue: zoom[1] } : {}),
     }));
   }
   return opt;
@@ -120,7 +121,18 @@ function explainFrom(raw: EChartsOptionJson, widget: Widget, click: ChartClick):
 }
 
 /** Line / area / bar / stacked / combo / heatmap from the backend's option, with click-to-explain and a table view. */
-export function ChartWidget({ widget, timeRange = null, className }: { widget: Widget; timeRange?: TimeRange | null; className?: string }) {
+export function ChartWidget({
+  widget,
+  timeRange = null,
+  onRangeChange,
+  className,
+}: {
+  widget: Widget;
+  timeRange?: TimeRange | null;
+  /** Called when the user zooms this chart: the months now shown, or null for the full range. */
+  onRangeChange?: (range: { from: string; to: string } | null) => void;
+  className?: string;
+}) {
   const raw = widget.option;
   const [explain, setExplain] = useState<Explanation | null>(null);
   const [table, setTable] = useState(false);
@@ -213,6 +225,11 @@ export function ChartWidget({ widget, timeRange = null, className }: { widget: W
             option={option}
             ariaLabel={`${widget.spec.title} chart. Use the Table view for values.`}
             onPointClick={(c) => raw && setExplain(explainFrom(raw, widget, c))}
+            onZoom={
+              onRangeChange && raw?._meta?.template !== "heatmap" && chronological(raw?._meta?.periods)
+                ? (win) => onRangeChange(rangeFromWindow(raw?._meta?.periods, win))
+                : undefined
+            }
           />
         </div>
       ) : (

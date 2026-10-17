@@ -57,20 +57,24 @@ export interface ChartClick {
 interface EChartProps {
   option: Record<string, unknown>;
   onPointClick?: (p: ChartClick) => void;
+  /** The category index window `[start, end]` after the user zooms (slider, wheel or pinch). */
+  onZoom?: (window: [number, number]) => void;
   className?: string;
   ariaLabel?: string;
 }
 
 /** Thin wrapper over echarts/core: themed from CSS tokens, resizes with its box, re-inits on theme change. */
-export function EChart({ option, onPointClick, className, ariaLabel }: EChartProps) {
+export function EChart({ option, onPointClick, onZoom, className, ariaLabel }: EChartProps) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
   const click = useRef(onPointClick);
+  const zoom = useRef(onZoom);
   const { theme } = useTheme();
 
   useEffect(() => {
     click.current = onPointClick;
-  }, [onPointClick]);
+    zoom.current = onZoom;
+  }, [onPointClick, onZoom]);
 
   // (Re)create the instance when the theme changes; ECharts themes are fixed at init.
   useEffect(() => {
@@ -127,6 +131,11 @@ export function EChart({ option, onPointClick, className, ariaLabel }: EChartPro
           // Non-cartesian charts (gauge, radar) have no grid to resolve against.
         }
       }, 0);
+    });
+    // Only user gestures emit `datazoom` (setOption doesn't), so applying a range never loops back.
+    inst.on("datazoom", () => {
+      const dz = (inst.getOption() as { dataZoom?: { startValue?: number; endValue?: number }[] }).dataZoom?.[0];
+      if (typeof dz?.startValue === "number" && typeof dz.endValue === "number") zoom.current?.([dz.startValue, dz.endValue]);
     });
     const ro = new ResizeObserver(() => inst.resize());
     ro.observe(node);

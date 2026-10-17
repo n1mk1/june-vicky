@@ -145,6 +145,7 @@ function Slot({
   engagementId: string;
   currency?: string;
   timeRange: TimeRange | null;
+  onRangeChange?: (range: { from: string; to: string } | null) => void;
 }) {
   return <div className={cn("flex min-w-0 [&>*]:min-w-0 [&>*]:flex-1", className)}>{widget ? <WidgetView widget={widget} {...rest} /> : fallback}</div>;
 }
@@ -307,10 +308,23 @@ export function DashboardView() {
     void write(() => apiPatch<Dashboard>(`dashboards/${encodeURIComponent(d.id)}/layout`, { layout, version: d.version }));
   };
 
-  const setRange = (time_range: { last_months: number } | null) => {
+  const setRange = (time_range: { last_months: number } | { from: string; to: string } | null) => {
     if (!dash.data) return;
     const id = dash.data.id;
     void write(() => apiPatch<Dashboard>(`dashboards/${encodeURIComponent(id)}/time-range`, { time_range }));
+  };
+
+  // Zooming any chart sets the dashboard-wide range (UI doc: linked interaction). Slider drags and
+  // pinches fire many events, so only the last one in a short pause is saved.
+  const zoomTimer = useRef<number | null>(null);
+  const zoomTo = (range: { from: string; to: string } | null) => {
+    if (zoomTimer.current !== null) window.clearTimeout(zoomTimer.current);
+    zoomTimer.current = window.setTimeout(() => {
+      zoomTimer.current = null;
+      const cur = dash.data?.time_range ?? null;
+      if (!range ? !cur : cur && cur.from === range.from && cur.to === range.to) return;
+      setRange(range);
+    }, 450);
   };
 
   const onChat = (r: ChatResult) => {
@@ -345,7 +359,7 @@ export function DashboardView() {
   const byRole = new Map(d.widgets.map((w) => [w.role, w]));
   const currency = truth.data?.profile?.currency;
   const rest = d.widgets.filter((w) => !isFixed(w.role));
-  const common = { engagementId: d.engagement_id, currency, timeRange: d.time_range };
+  const common = { engagementId: d.engagement_id, currency, timeRange: d.time_range, onRangeChange: zoomTo };
   const empty = (title: string) => (
     <Panel title={title} bodyClassName="p-4">
       <p className="text-[12.5px] text-ink-2">Not available for this data.</p>
@@ -366,7 +380,7 @@ export function DashboardView() {
         {d.time_range && <RangeChip range={d.time_range} onReset={() => setRange(null)} />}
       </div>
 
-      <div className="grid shrink-0 grid-cols-1 gap-4 md:grid-cols-2 lg:h-full lg:min-h-[620px] lg:grid-cols-12 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+      <div className="grid shrink-0 grid-cols-1 gap-4 md:grid-cols-2 lg:h-full lg:min-h-[720px] lg:grid-cols-12 lg:grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto]">
         <Slot widget={byRole.get("margin_ring")} fallback={empty("Gross margin")} className="min-h-[300px] lg:col-span-3 lg:row-start-1 lg:min-h-0" {...common} />
         <Slot widget={byRole.get("headline_kpi")} fallback={empty("Headline")} className="lg:col-span-3 lg:row-start-2" {...common} />
 

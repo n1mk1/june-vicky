@@ -83,15 +83,32 @@ export function periodMonths(p: string): [string, string] | null {
   return m ? [`${p}-01`, `${p}-12`] : null;
 }
 
+/** Whether a chart's periods are known and in time order, so its zoom can map to months. */
+export function chronological(periods: string[] | undefined): boolean {
+  if (!periods?.length) return false;
+  const spans = periods.map(periodMonths);
+  return spans.every((s, i) => s && (i === 0 || s[0] >= spans[i - 1]![0]));
+}
+
+/**
+ * The months a zoomed window `[start, end]` of a chart's periods covers, or null when the window
+ * shows every period (the full range) or the chart's periods can't be mapped.
+ */
+export function rangeFromWindow(periods: string[] | undefined, win: [number, number]): { from: string; to: string } | null {
+  if (!periods || !chronological(periods)) return null;
+  const lo = Math.max(0, Math.min(periods.length - 1, Math.round(win[0])));
+  const hi = Math.max(lo, Math.min(periods.length - 1, Math.round(win[1])));
+  if (lo === 0 && hi === periods.length - 1) return null;
+  return { from: periodMonths(periods[lo])![0], to: periodMonths(periods[hi])![1] };
+}
+
 /**
  * Category indexes `[start, end]` of a chart's periods that overlap the range, or null when the
  * chart can't follow it (unknown periods, periods not in time order, or nothing overlaps).
  */
 export function zoomWindow(periods: string[] | undefined, range: TimeRange | null): [number, number] | null {
-  if (!range || !periods?.length) return null;
+  if (!range || !periods || !chronological(periods)) return null; // e.g. bars sorted by value
   const spans = periods.map(periodMonths);
-  if (spans.some((s) => !s)) return null;
-  for (let i = 1; i < spans.length; i++) if (spans[i]![0] < spans[i - 1]![0]) return null; // sorted by value
   let lo = -1;
   let hi = -1;
   spans.forEach((s, i) => {

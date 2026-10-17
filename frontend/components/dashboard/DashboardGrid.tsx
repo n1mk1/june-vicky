@@ -30,6 +30,7 @@ interface DashboardGridProps {
   engagementId: string;
   currency?: string;
   timeRange: TimeRange | null;
+  onRangeChange?: (range: { from: string; to: string } | null) => void;
 }
 
 type Gesture =
@@ -53,7 +54,7 @@ function flow(widgets: Widget[], layout: LayoutItem[]): Sized[] {
  * Shift + arrows resize). Changes are committed on release; positions come from `pack`, the same
  * rule the backend uses, so other tabs render exactly this arrangement.
  */
-export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, engagementId, currency, timeRange }: DashboardGridProps) {
+export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, engagementId, currency, timeRange, onRangeChange }: DashboardGridProps) {
   const grid = useRef<HTMLDivElement>(null);
   const cells = useRef(new Map<string, HTMLDivElement>());
   const [draft, setDraft] = useState<Sized[] | null>(null);
@@ -173,7 +174,7 @@ export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, 
               highlight === w.id && "rounded-[20px] ring-2 ring-ember/70 ring-offset-2 ring-offset-bg",
             )}
           >
-            <WidgetView widget={w} engagementId={engagementId} currency={currency} timeRange={timeRange} />
+            <WidgetView widget={w} engagementId={engagementId} currency={currency} timeRange={timeRange} onRangeChange={onRangeChange} />
             <div
               className={cn(
                 "absolute -top-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-line bg-surface-solid p-0.5 shadow-sm transition-opacity",

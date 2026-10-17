@@ -12,11 +12,13 @@ export function WidgetView({
   engagementId,
   currency,
   timeRange,
+  onRangeChange,
 }: {
   widget: Widget;
   engagementId?: string;
   currency?: string;
   timeRange?: TimeRange | null;
+  onRangeChange?: (range: { from: string; to: string } | null) => void;
 }) {
   if (widget.status !== "ok") return <MissingTile widget={widget} engagementId={engagementId} />;
   switch (widget.spec.template) {
@@ -25,6 +27,6 @@ export function WidgetView({
     case "kpi":
       return <KpiWidget widget={widget} currency={currency} />;
     default:
-      return <ChartWidget widget={widget} timeRange={timeRange} />;
+      return <ChartWidget widget={widget} timeRange={timeRange} onRangeChange={onRangeChange} />;
   }
 }
