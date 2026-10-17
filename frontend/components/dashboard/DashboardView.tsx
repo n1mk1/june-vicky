@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { OrbScene } from "@/components/fx/scenes";
@@ -102,35 +103,40 @@ function AttackList({ items, loading, error }: { items: AttackItem[]; loading: b
   );
 }
 
+/** Pitch readiness as a small widget: the orb with the score in it, and where the score came from. */
 function Readiness({ reports, company }: { reports: ReportSummary[] | undefined; company: string }) {
   const mine = (reports ?? []).filter((r) => r.company === company && r.overall !== null);
   const latest = [...mine].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   const score = latest?.overall != null ? Math.round(latest.overall * 20) : null;
   return (
-    <section
-      aria-label="Pitch readiness"
-      className="relative order-first flex min-h-[300px] items-center justify-center md:col-span-2 lg:order-none lg:col-span-5 lg:col-start-4 lg:row-span-2 lg:row-start-1 lg:min-h-0"
-    >
-      {/* A centred square no larger than the slot, so the orb stays an accent rather than the whole view. */}
-      <div className="absolute top-1/2 left-1/2 aspect-square h-[min(100%,34rem)] max-w-full -translate-x-1/2 -translate-y-1/2">
-        <OrbScene score={score ?? 0} />
-      </div>
-      <div className="relative flex flex-col items-center text-center">
-        <span className="label">Pitch readiness</span>
-        <span className="display mt-1 text-[clamp(52px,min(5.6vw,9vh),104px)] tabular-nums">{score ?? "—"}</span>
-        <span className="mt-1 max-w-[26ch] text-[12px] text-ink-2">
-          {latest ? (
-            <>
-              From your last session, {fmtDate(latest.created_at)}
-              {latest.readiness ? ` · ${humanize(latest.readiness)}` : ""}.
-            </>
-          ) : (
-            "No session yet. Face the panel in Preparation to get a score."
-          )}
+    <Panel title="Pitch readiness" marks bodyClassName="flex items-center gap-3 px-3 py-2" className="min-h-[120px]">
+      <div aria-label={score === null ? "No score yet" : `Readiness ${score} of 100`} role="img" className="relative aspect-square h-full max-h-[104px] min-h-[64px] shrink-0">
+        <div className="absolute inset-0">
+          <OrbScene score={score ?? 0} />
+        </div>
+        <span className="display absolute inset-0 flex items-center justify-center text-[clamp(22px,3.4vh,34px)] tabular-nums">
+          {score ?? "—"}
         </span>
-        {!latest && <PillLink href="/preparation" label="Start a session" variant="outline" className="mt-3" />}
       </div>
-    </section>
+      <div className="flex min-w-0 flex-col gap-1">
+        {latest ? (
+          <>
+            <span className="font-display text-[15px] leading-tight tracking-[-0.03em]">{humanize(latest.readiness ?? "scored")}</span>
+            <span className="text-[11.5px] leading-snug text-ink-2">Last session {fmtDate(latest.created_at)}</span>
+            <Link href="/preparation" className="text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
+              Practise again
+            </Link>
+          </>
+        ) : (
+          <>
+            <span className="text-[11.5px] leading-snug text-ink-2">No session yet.</span>
+            <Link href="/preparation" className="text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
+              Face the panel
+            </Link>
+          </>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -165,6 +171,12 @@ export function DashboardView() {
   const [adding, setAdding] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!adding) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setAdding(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [adding]);
 
   // ---- live state: REST is the record, the socket says when to re-read it
   const { mutate } = dash;
@@ -368,10 +380,9 @@ export function DashboardView() {
   );
 
   return (
-    <div className="scroll-thin -mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 pb-2">
-      {/* The fold: status, headline stats, readiness, trend, attack list and chat fill exactly the
-          visible height on desktop, so the key numbers never need a scroll. Extra widgets follow below. */}
-      <div className="flex shrink-0 flex-col gap-3 lg:h-full lg:min-h-[560px]">
+    // Desktop: one screen, no page scroll. Top row: readiness + margin, headline KPI, trend, what
+    // they'll ask first. Bottom row: every other widget side by side. Then the chat. Phones stack.
+    <div className="scroll-thin -mx-1 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pb-1 lg:overflow-hidden">
       <div className="flex min-h-6 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
         <div className="flex min-w-0 items-center gap-3">
           <LiveDot />
@@ -381,68 +392,83 @@ export function DashboardView() {
             </span>
           )}
         </div>
-        {d.time_range && <RangeChip range={d.time_range} onReset={() => setRange(null)} />}
+        <div className="flex items-center gap-2">
+          {d.time_range && <RangeChip range={d.time_range} onReset={() => setRange(null)} />}
+          <PillButton label="Add widget" icon={<Plus className="size-3.5" strokeWidth={1.75} />} onClick={() => setAdding(true)} />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,0.94fr)_minmax(0,1.06fr)_auto]">
-        <Slot widget={byRole.get("margin_ring")} fallback={empty("Gross margin")} className="min-h-[300px] lg:col-span-3 lg:row-start-1 lg:min-h-0" {...common} />
-        <Slot widget={byRole.get("headline_kpi")} fallback={empty("Headline")} className="lg:col-span-3 lg:row-start-2" {...common} />
-
-        <Readiness reports={reports.data} company={d.company} />
-
-        <Slot widget={byRole.get("trend")} fallback={empty("Trend")} className="min-h-[300px] lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:min-h-0" {...common} />
-        <div className="flex min-h-[260px] min-w-0 lg:col-span-4 lg:col-start-9 lg:row-start-2 lg:min-h-0 [&>*]:flex-1">
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-cols-12",
+          rest.length ? "lg:grid-rows-[minmax(0,1.15fr)_minmax(0,1fr)]" : "lg:grid-rows-[minmax(0,1fr)]",
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-3 lg:min-h-0">
+          <Readiness reports={reports.data} company={d.company} />
+          <Slot widget={byRole.get("margin_ring")} fallback={empty("Gross margin")} className="min-h-[240px] lg:min-h-0 lg:flex-1" {...common} />
+        </div>
+        <Slot widget={byRole.get("headline_kpi")} fallback={empty("Headline")} className="lg:col-span-3 lg:min-h-0" {...common} />
+        <Slot widget={byRole.get("trend")} fallback={empty("Trend")} className="min-h-[280px] md:col-span-2 lg:col-span-3 lg:min-h-0" {...common} />
+        <div className="flex min-h-[260px] min-w-0 md:col-span-2 lg:col-span-3 lg:min-h-0 [&>*]:flex-1">
           <AttackList items={truth.data?.attack_list ?? []} loading={truth.loading} error={truth.error} />
         </div>
 
-        <div className="md:col-span-2 lg:col-span-6 lg:col-start-4 lg:row-start-3">
-          <DashboardChat
-            dashboardId={d.id}
-            track={track}
-            engagementId={d.engagement_id}
-            onResult={onChat}
-            onAsk={ask}
-            onUndo={remove}
-            onShow={(id) => flash(id)}
-            onResetRange={() => setRange(null)}
-            onAttach={attach}
-            attachBusy={uploading}
-            attachError={uploadError}
-          />
-        </div>
-      </div>
+        {rest.length > 0 && (
+          <section aria-label="More widgets" className="min-w-0 md:col-span-2 lg:col-span-12 lg:min-h-0">
+            <DashboardGrid
+              fit
+              widgets={rest}
+              layout={d.layout}
+              highlight={highlight}
+              onCommit={commitLayout}
+              onRemove={(id) => void remove(id)}
+              {...common}
+            />
+          </section>
+        )}
       </div>
 
-      <section aria-label="More widgets" className="flex flex-col gap-3 pt-2">
-        <div className="flex items-center justify-between gap-3 px-1">
-          <h2 className="label">
-            {d.company} · {rest.length} more
-          </h2>
-          {!adding && <PillButton label="Add widget" icon={<Plus className="size-3.5" strokeWidth={1.75} />} onClick={() => setAdding(true)} />}
+      <div className="mx-auto w-full shrink-0 lg:max-w-[min(820px,50%)]">
+        <DashboardChat
+          dashboardId={d.id}
+          track={track}
+          engagementId={d.engagement_id}
+          onResult={onChat}
+          onAsk={ask}
+          onUndo={remove}
+          onShow={(id) => flash(id)}
+          onResetRange={() => setRange(null)}
+          onAttach={attach}
+          attachBusy={uploading}
+          attachError={uploadError}
+        />
+      </div>
+
+      {adding && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 pt-20 pb-6 backdrop-blur-[2px]"
+          onClick={(e) => e.target === e.currentTarget && setAdding(false)}
+        >
+          <div className="w-full max-w-[920px]" role="dialog" aria-modal="true" aria-label="Add a widget">
+            <AddWidget
+              dashboardId={d.id}
+              track={track}
+              version={d.version}
+              engagementId={d.engagement_id}
+              currency={currency}
+              onAdded={(next, title) => {
+                const before = new Set(d.widgets.map((w) => w.id));
+                apply(next);
+                setAdding(false);
+                flash(next.widgets.find((w) => !before.has(w.id))?.id ?? null, `Added “${title}”.`);
+              }}
+              onConflict={async () => (await refetch())?.version ?? null}
+              onClose={() => setAdding(false)}
+            />
+          </div>
         </div>
-        {adding && (
-          <AddWidget
-            dashboardId={d.id}
-            track={track}
-            version={d.version}
-            engagementId={d.engagement_id}
-            currency={currency}
-            onAdded={(next, title) => {
-              const before = new Set(d.widgets.map((w) => w.id));
-              apply(next);
-              setAdding(false);
-              flash(next.widgets.find((w) => !before.has(w.id))?.id ?? null, `Added “${title}”.`);
-            }}
-            onConflict={async () => (await refetch())?.version ?? null}
-            onClose={() => setAdding(false)}
-          />
-        )}
-        {rest.length > 0 ? (
-          <DashboardGrid widgets={rest} layout={d.layout} highlight={highlight} onCommit={commitLayout} onRemove={(id) => void remove(id)} {...common} />
-        ) : (
-          !adding && <p className="px-1 text-[12.5px] text-ink-2">Ask Vicky for a chart above, or add one here.</p>
-        )}
-      </section>
+      )}
     </div>
   );
 }

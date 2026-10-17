@@ -15,9 +15,10 @@ export function GaugeRingWidget({ widget, currency }: { widget: Widget; currency
   const lead = items[0];
 
   return (
-    <Panel title={widget.spec.title} marks bodyClassName="flex flex-col items-center justify-center gap-3 p-4">
-      <div className="relative">
-        <svg viewBox="0 0 160 160" className="size-[clamp(96px,min(15vw,17vh),168px)] -rotate-90" aria-hidden>
+    <Panel title={widget.spec.title} marks bodyClassName="flex items-center gap-4 px-4 py-3">
+      {/* Ring on the left sized by the panel height; legend and source on the right. */}
+      <div className="relative aspect-square h-full max-h-[168px] min-h-[64px] shrink-0">
+        <svg viewBox="0 0 160 160" className="size-full -rotate-90" aria-hidden>
           {items.map((k, i) => {
             const r = RADII[i];
             const frac = k.unit === "pct" ? Math.max(0, Math.min(1, k.value ?? 0)) : 0;
@@ -40,14 +41,15 @@ export function GaugeRingWidget({ widget, currency }: { widget: Widget; currency
         </svg>
         {lead && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <Explainable x={kpiExplain(lead, currency)} triggerClassName="display text-[clamp(28px,min(3.6vw,5vh),48px)] tabular-nums">
+            <Explainable x={kpiExplain(lead, currency)} triggerClassName="display text-[clamp(18px,min(2.4vw,4vh),44px)] tabular-nums">
               {lead.display}
             </Explainable>
-            <span className="text-[11px] text-ink-2">{lead.label.toLowerCase()}</span>
+            <span className="text-[10.5px] leading-none text-ink-2">{lead.label.toLowerCase()}</span>
           </div>
         )}
       </div>
-      <dl className="grid w-full grid-cols-1 gap-x-3 gap-y-1.5 text-[11.5px] sm:grid-cols-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <dl className="flex flex-col gap-1.5 text-[11.5px]">
         {items.map((k, i) => (
           <div key={k.id} className="flex min-w-0 items-center gap-1.5">
             <span className="h-px w-3 shrink-0" style={{ background: STROKES[i] }} aria-hidden />
@@ -56,7 +58,8 @@ export function GaugeRingWidget({ widget, currency }: { widget: Widget; currency
           </div>
         ))}
       </dl>
-      {lead && <SourceChip x={kpiExplain(lead, currency)} className="self-start" />}
+      {lead && <SourceChip x={kpiExplain(lead, currency)} className="max-w-full self-start" />}
+      </div>
     </Panel>
   );
 }

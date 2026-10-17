@@ -31,6 +31,21 @@ interface DashboardGridProps {
   currency?: string;
   timeRange: TimeRange | null;
   onRangeChange?: (range: { from: string; to: string } | null) => void;
+  /**
+   * Fit the widgets into the height the parent gives (desktop): rows of side-by-side widgets whose
+   * widths follow their stored `w`, sharing the height equally. Order and width stay editable.
+   */
+  fit?: boolean;
+}
+
+/** Rows for fit mode: up to four widgets side by side, then two or three rows. */
+function fitRows<T>(items: T[]): T[][] {
+  const n = items.length;
+  const rows = n <= 4 ? 1 : n <= 8 ? 2 : 3;
+  const per = Math.ceil(n / rows);
+  const out: T[][] = [];
+  for (let i = 0; i < n; i += per) out.push(items.slice(i, i + per));
+  return out;
 }
 
 type Gesture =
@@ -54,7 +69,7 @@ function flow(widgets: Widget[], layout: LayoutItem[]): Sized[] {
  * Shift + arrows resize). Changes are committed on release; positions come from `pack`, the same
  * rule the backend uses, so other tabs render exactly this arrangement.
  */
-export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, engagementId, currency, timeRange, onRangeChange }: DashboardGridProps) {
+export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, engagementId, currency, timeRange, onRangeChange, fit }: DashboardGridProps) {
   const grid = useRef<HTMLDivElement>(null);
   const cells = useRef(new Map<string, HTMLDivElement>());
   const [draft, setDraft] = useState<Sized[] | null>(null);
@@ -100,7 +115,8 @@ export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, 
     if (!gesture || e.pointerId !== gesture.pointer || !draft) return;
     if (gesture.kind === "resize") {
       const w = clamp(gesture.w0 + Math.round((e.clientX - gesture.x0) / gesture.col), MIN_W, COLUMNS);
-      const h = clamp(gesture.h0 + Math.round((e.clientY - gesture.y0) / (ROW_PX + GAP_PX)), MIN_H, MAX_H);
+      // In fit mode heights are shared equally, so only the width (the widget's share of its row) changes.
+      const h = fit ? gesture.h0 : clamp(gesture.h0 + Math.round((e.clientY - gesture.y0) / (ROW_PX + GAP_PX)), MIN_H, MAX_H);
       const cur = draft.find((d) => d.widget_id === gesture.id);
       if (cur && (cur.w !== w || cur.h !== h)) setDraft(draft.map((d) => (d.widget_id === gesture.id ? { ...d, w, h } : d)));
       return;
@@ -144,20 +160,40 @@ export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, 
     }
   };
 
+  const handlers = {
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel: () => commit(draft ?? items),
+  };
+
+  if (fit) {
+    return (
+      <div ref={grid} className="flex flex-col gap-4 lg:h-full lg:min-h-0" {...handlers}>
+        {fitRows(items).map((row) => (
+          <div
+            key={row.map((r) => r.widget_id).join("|")}
+            style={{ "--cols": row.map((r) => `minmax(0,${r.w}fr)`).join(" ") } as CSSProperties}
+            className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:[grid-template-columns:var(--cols)]"
+          >
+            {row.map((p) => cell(p, true))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div
-      ref={grid}
-      className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-12 lg:auto-rows-[60px]"
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={() => commit(draft ?? items)}
-    >
-      {placed.map((p) => {
+    <div ref={grid} className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-12 lg:auto-rows-[60px]" {...handlers}>
+      {placed.map((p) => cell(p, false))}
+    </div>
+  );
+
+  function cell(p: Sized & Partial<Pick<LayoutItem, "x" | "y">>, inFit: boolean) {
         const w = byId.get(p.widget_id);
         if (!w) return null;
         const chart = w.status === "ok" && !["kpi", "gauge_ring"].includes(w.spec.template);
         const active = gesture?.id === w.id;
-        const style = { "--gc": `${p.x + 1} / span ${p.w}`, "--gr": `${p.y + 1} / span ${p.h}` } as CSSProperties;
+        const style = inFit ? undefined : ({ "--gc": `${(p.x ?? 0) + 1} / span ${p.w}`, "--gr": `${(p.y ?? 0) + 1} / span ${p.h}` } as CSSProperties);
         return (
           <div
             key={w.id}
@@ -168,8 +204,10 @@ export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, 
             style={style}
             data-widget={w.id}
             className={cn(
-              "group/cell relative flex min-w-0 transition-[box-shadow,opacity] duration-300 lg:[grid-column:var(--gc)] lg:[grid-row:var(--gr)] lg:min-h-0 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1",
-              chart ? "min-h-[340px] md:col-span-2" : "min-h-[180px]",
+              "group/cell relative flex min-w-0 transition-[box-shadow,opacity] duration-300 lg:min-h-0 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1",
+              !inFit && "lg:[grid-column:var(--gc)] lg:[grid-row:var(--gr)]",
+              chart ? "min-h-[300px] md:col-span-2" : "min-h-[180px]",
+              chart && inFit && "lg:col-span-1",
               active && "z-20 opacity-90",
               highlight === w.id && "rounded-[20px] ring-2 ring-ember/70 ring-offset-2 ring-offset-bg",
             )}
@@ -212,7 +250,5 @@ export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, 
             />
           </div>
         );
-      })}
-    </div>
-  );
+  }
 }
