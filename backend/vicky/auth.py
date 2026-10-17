@@ -62,7 +62,13 @@ async def require_access(request: Request) -> None:
 
 
 async def require_budget() -> None:
+    """402 on LLM routes once the day's spend reaches DAILY_USD_BUDGET. The offline path costs
+    nothing, so without a key (or with LLM_MODE=offline) the guard never blocks."""
+    from vicky import llm
+
     s = get_settings()
+    if not llm.enabled():
+        return
     try:
         spent = await kv.spend_today()
     except Exception:

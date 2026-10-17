@@ -386,7 +386,7 @@ class AnswerIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
-@api.post("/court/start")
+@api.post("/court/start", dependencies=[auth.Budget])
 async def court_start(body: CourtStart) -> dict:
     try:
         await engagements.require_confirmed()
@@ -404,7 +404,7 @@ async def court_view(sid: str) -> dict:
     return await court.view(sid)
 
 
-@api.post("/court/{sid}/answer")
+@api.post("/court/{sid}/answer", dependencies=[auth.Budget])
 async def court_answer(sid: str, body: AnswerIn) -> dict:
     try:
         await court.answer(sid, body.text)

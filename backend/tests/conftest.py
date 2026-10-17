@@ -21,6 +21,45 @@ def _test_dsn() -> tuple[str, str, str]:
     return admin, urlunparse(u._replace(path=f"/{test_name}")), test_name
 
 
+@pytest.fixture
+def live_llm(monkeypatch):
+    """Switch the app to the LLM path with a recorded transport (no network, no real key).
+
+    `live_llm.install(responder)` returns the `Recorder`; spend goes to `live_llm.spend` instead of Redis.
+    """
+    from types import SimpleNamespace
+
+    from tests.llm_fakes import Recorder, make_llm
+    from vicky import kv
+    from vicky.llm import client
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODE", "auto")
+    get_settings.cache_clear()
+    state = SimpleNamespace(spend=0.0, recorder=None)
+
+    async def add_spend(usd: float) -> float:
+        state.spend += usd
+        return state.spend
+
+    async def spend_today() -> float:
+        return state.spend
+
+    monkeypatch.setattr(kv, "add_spend", add_spend)
+    monkeypatch.setattr(kv, "spend_today", spend_today)
+
+    def install(responder):
+        state.recorder = Recorder(responder)
+        client.set_llm(make_llm(state.recorder))
+        return state.recorder
+
+    state.install = install
+    yield state
+    client.set_llm(None)
+    monkeypatch.undo()
+    get_settings.cache_clear()
+
+
 @pytest.fixture(scope="session")
 async def api_client():
     admin, dsn, name = _test_dsn()
