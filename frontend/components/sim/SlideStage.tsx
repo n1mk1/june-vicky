@@ -1,8 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import Image from "next/image";
 import { CornerMarks } from "@/components/ui/Panel";
-import { VickyMark } from "@/components/ui/VickyMark";
 import { ClaimChip } from "@/components/prep/ClaimChip";
 import { DECK } from "@/lib/panel";
 
@@ -25,7 +25,7 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
             <p className="mt-2 text-[clamp(11px,1.4vw,18px)] text-[#434343]">{slide.body}</p>
           </div>
           <div className="flex items-end justify-between">
-            <VickyMark className="size-[clamp(12px,1.6vw,20px)] opacity-30" />
+            <Image src="/brand/Vicky_Logo.svg" alt="" width={769} height={248} unoptimized className="-ml-[1.5%] h-[clamp(14px,2.2vw,28px)] w-auto opacity-30" />
             <span className="text-[clamp(8px,0.9vw,11px)] text-[#434343]/70">Sample deck · Tidewell Systems</span>
           </div>
         </div>
