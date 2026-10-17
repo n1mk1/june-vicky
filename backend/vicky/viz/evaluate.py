@@ -754,7 +754,7 @@ def _resolve(s: SeriesSpec, ctx: TruthContext, frame: Frame, scalar: bool, title
 
 # ---------------------------------------------------------------- windows and provenance
 
-def _bounds(p: str) -> tuple[tuple[int, int], tuple[int, int]]:
+def period_bounds(p: str) -> tuple[tuple[int, int], tuple[int, int]]:
     if "-Q" in p:
         y, q = p.split("-Q")
         return (int(y), int(q) * 3 - 2), (int(y), int(q) * 3)
@@ -769,11 +769,11 @@ def apply_window(periods: list[str], window: Window | None) -> list[str]:
         return list(periods)
     out = list(periods)
     if window.from_:
-        lo = _bounds(window.from_)[0]
-        out = [p for p in out if _bounds(p)[1] >= lo]
+        lo = period_bounds(window.from_)[0]
+        out = [p for p in out if period_bounds(p)[1] >= lo]
     if window.to:
-        hi = _bounds(window.to)[1]
-        out = [p for p in out if _bounds(p)[0] <= hi]
+        hi = period_bounds(window.to)[1]
+        out = [p for p in out if period_bounds(p)[0] <= hi]
     if window.last_n:
         out = out[-window.last_n:]
     return out

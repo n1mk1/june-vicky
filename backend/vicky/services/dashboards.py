@@ -2,16 +2,25 @@
 
 `version` is optimistic concurrency: writes carry the version they saw and get 409 when it
 moved. Every change is published on `dashboard:{id}` so other tabs refresh.
+
+`time_range` is the dashboard-wide zoom every chart's dataZoom follows. It is stored as asked
+(`{last_months}` or `{from, to}` months) and resolved against the data's latest period on read.
+`chat` maps a request to a widget or a time range with the offline phrase mapper (viz/phrases.py);
+the spec is evaluated by code before it is added, and missing data answers with the reason.
 """
 
+import re
 from typing import Any
 
 from vicky import db
 from vicky.model.context import TruthContext
+from vicky.model.metrics import label_period
 from vicky.realtime import publish
 from vicky.services import engagements
 from vicky.viz import WidgetSpec, build_option, default_dashboard, evaluate_widget, spec_hash
 from vicky.viz.defaults import RESERVED
+from vicky.viz.evaluate import period_bounds
+from vicky.viz.phrases import interpret
 from vicky.viz.spec import spec_json
 
 THEMES = ("vicky-dark", "vicky-light")
@@ -78,7 +87,8 @@ async def get(dashboard_id: str, theme: str = "vicky-dark") -> dict:
     return {"id": str(dash["id"]), "engagement_id": str(dash["engagement_id"]), "version": dash["version"],
             "company": ctx.company, "truthpack_version": ctx.version,
             "layout": [li for li in (dash["layout"] or []) if li.get("widget_id") in ids],
-            "reserved": [dict(r) for r in RESERVED], "time_range": dash["time_range"], "widgets": widgets}
+            "reserved": [dict(r) for r in RESERVED], "time_range": resolve_time_range(dash["time_range"], ctx),
+            "widgets": widgets}
 
 
 async def active(theme: str = "vicky-dark") -> dict:
@@ -123,7 +133,8 @@ async def add_widget(dashboard_id: str, spec: dict, version: int | None, created
             layout.append({"widget_id": wid, "x": 0, "y": bottom, "w": w, "h": 5})
             await conn.execute("update dashboards set layout = $2, version = version + 1 where id = $1", dash["id"], layout)
     out = await get(dashboard_id)
-    await publish(f"dashboard:{dashboard_id}", "widget.diff", {"version": out["version"], "op": "add"})
+    await publish(f"dashboard:{dashboard_id}", "widget.diff",
+                  {"version": out["version"], "op": "add", "title": ws.title, "by": created_by})
     return out
 
 
@@ -153,4 +164,120 @@ async def set_layout(dashboard_id: str, layout: list[dict[str, Any]], version: i
         await conn.execute("update dashboards set layout = $2, version = version + 1 where id = $1", dash["id"], clean)
     out = await get(dashboard_id)
     await publish(f"dashboard:{dashboard_id}", "layout.diff", {"version": out["version"]})
+    return out
+
+
+# ---------------------------------------------------------------- time range
+
+_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def _shift(ym: tuple[int, int], months: int) -> str:
+    i = ym[0] * 12 + (ym[1] - 1) + months
+    return f"{i // 12:04d}-{i % 12 + 1:02d}"
+
+
+def clean_time_range(tr: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Validate a time range: `{last_months: 1–240}` or `{from, to}` as YYYY-MM; empty clears it."""
+    if not tr:
+        return None
+    if tr.get("last_months") is not None:
+        try:
+            n = int(tr["last_months"])
+        except (TypeError, ValueError) as e:
+            raise engagements.Invalid("last_months must be a whole number of months") from e
+        if not 1 <= n <= 240:
+            raise engagements.Invalid("last_months must be between 1 and 240")
+        return {"last_months": n}
+    lo, hi = tr.get("from"), tr.get("to")
+    if not (isinstance(lo, str) and isinstance(hi, str) and _MONTH_RE.match(lo) and _MONTH_RE.match(hi)):
+        raise engagements.Invalid("A time range needs last_months, or from and to as YYYY-MM")
+    return {"from": min(lo, hi), "to": max(lo, hi)}
+
+
+def resolve_time_range(tr: dict[str, Any] | None, ctx: TruthContext) -> dict[str, Any] | None:
+    """`{last_months?, from, to, label}`, months resolved against the data's latest period."""
+    if not tr or not ctx.model.periods:
+        return None
+    if tr.get("last_months"):
+        n = int(tr["last_months"])
+        end = period_bounds(ctx.model.periods[-1])[1]
+        lo, hi = _shift(end, -(n - 1)), _shift(end, 0)
+        years = n // 12
+        name = (f"Last {years} year{'s' if years > 1 else ''}" if n % 12 == 0
+                else f"Last {n} month{'s' if n > 1 else ''}")
+    else:
+        lo, hi, name = tr["from"], tr["to"], "Custom range"
+    return {**tr, "from": lo, "to": hi, "label": f"{name} · {label_period(lo)} → {label_period(hi)}"}
+
+
+async def set_time_range(dashboard_id: str, time_range: dict[str, Any] | None, version: int | None) -> dict:
+    clean = clean_time_range(time_range)
+    async with db.pool().acquire() as conn, conn.transaction():
+        dash = await _check_version(conn, dashboard_id, version)
+        await conn.execute("update dashboards set time_range = $2, version = version + 1 where id = $1",
+                           dash["id"], clean)
+    out = await get(dashboard_id)
+    await publish(f"dashboard:{dashboard_id}", "time_range.diff",
+                  {"version": out["version"], "time_range": out["time_range"]})
+    return out
+
+
+# ---------------------------------------------------------------- chat (offline phrase mapper)
+
+NOT_UNDERSTOOD = ("I can chart a metric from your data or zoom the dashboard. Try “burn excluding credits as % of "
+                  "revenue by quarter” or “zoom to the last 6 months”.")
+FOR_THE_PANEL = "That's a question for the panel. Ask it in Preparation, where every answer is checked against your data."
+
+
+async def _log(dashboard_id: str, role: str, content: str, tool_calls: list[dict] | None = None) -> None:
+    await db.execute("insert into dashboard_messages (dashboard_id, role, content, tool_calls) "
+                     "values ($1::uuid, $2::message_role, $3, $4)", dashboard_id, role, content, tool_calls or [])
+
+
+async def chat(dashboard_id: str, text: str) -> dict:
+    """One dashboard request → a reply plus the widget added or the time range set.
+
+    The reply never carries a figure: it names the widget, the period range or the missing-data reason.
+    """
+    text = (text or "").strip()[:500]
+    dash, ctx = await _ctx_for_dashboard(dashboard_id)
+    intent = interpret(text, ctx)
+    out: dict[str, Any] = {"kind": intent.kind, "reply": "", "spec": None, "widget_id": None, "missing": None,
+                           "time_range": None, "dashboard": None}
+    tool: dict[str, Any] | None = None
+
+    if intent.kind == "time_range":
+        tr = {"last_months": intent.last_months} if intent.last_months else None
+        d = await set_time_range(dashboard_id, tr, None)
+        out.update(dashboard=d, time_range=d["time_range"])
+        out["reply"] = (f"Zoomed every chart to {d['time_range']['label']}." if d["time_range"]
+                        else "Showing the full range on every chart.")
+        tool = {"name": "set_time_range", "input": tr}
+    elif intent.kind == "widget" and intent.spec is not None:
+        spec = intent.spec
+        out["spec"] = spec_json(spec)
+        ev = evaluate_widget(spec, ctx)
+        if ev.status == "missing" and ev.missing is not None:
+            out.update(kind="missing", missing=ev.missing.model_dump(mode="json"), reply=ev.missing.reason)
+        elif ev.status != "ok":
+            out.update(kind="error", reply=f"I couldn't build “{spec.title}”: {ev.error}")
+        else:
+            h = spec_hash(spec)
+            existing = await db.fetchval("select id::text from widgets where dashboard_id = $1 and spec_hash = $2",
+                                         dash["id"], h)
+            if existing:
+                out.update(kind="exists", widget_id=existing, reply=f"“{spec.title}” is already on your dashboard.")
+            else:
+                d = await add_widget(dashboard_id, out["spec"], None, created_by="vicky")
+                wid = next((w["id"] for w in d["widgets"] if w["evaluated"].get("spec_hash") == h), None)
+                out.update(kind="widget_added", widget_id=wid, dashboard=d, reply=f"Added “{spec.title}”.")
+                tool = {"name": "add_widget", "input": out["spec"], "widget_id": wid}
+    elif intent.kind == "question":
+        out["reply"] = FOR_THE_PANEL
+    else:
+        out["reply"] = NOT_UNDERSTOOD
+
+    await _log(dashboard_id, "founder", text)
+    await _log(dashboard_id, "vicky", out["reply"], [tool] if tool else [])
     return out

@@ -319,6 +319,25 @@ async def layout(did: str, body: LayoutIn) -> dict:
     return await dashboards.set_layout(did, body.layout, body.version)
 
 
+class TimeRangeIn(BaseModel):
+    time_range: dict | None = None
+    version: int | None = None
+
+
+@api.patch("/dashboards/{did}/time-range")
+async def time_range(did: str, body: TimeRangeIn) -> dict:
+    return await dashboards.set_time_range(did, body.time_range, body.version)
+
+
+class ChatIn(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+
+
+@api.post("/dashboards/{did}/chat")
+async def dashboard_chat(did: str, body: ChatIn) -> dict:
+    return await dashboards.chat(did, body.text)
+
+
 # ---------------------------------------------------------------- areopagus
 
 @api.get("/areopagus")
