@@ -1,0 +1,202 @@
+# The 15 seed-investor questions from Appendix D of the Catalyst Team 18 supporting pack
+# (pp.16-20), with the pack's weak and strong answers. Used as Judge rubric anchors.
+#
+# Placeholders: {company} = the company, {top_customer} = its largest customer,
+# {competitors} = the competitors the founders name.
+#
+# The weak/strong answers are worked examples written for the pack's sample company. Their
+# figures illustrate what a strong answer looks like; they are NOT facts about any other
+# company and must never be quoted to a founder as their numbers. `strong_pattern` is the
+# company-neutral shape of the strong answer, for scoring.
+#
+# Pack rule for every strong answer (p.16): "A strong answer gives the number, says how it was
+# calculated, admits the weak spot and says what the founders are doing about it."
+#
+# figures: metric ids (engine) or fact names (pack_facts) the question relies on.
+# typical_personas: the Appendix E investor types whose 'Typical questions' list it (pp.21-23):
+# lead seed fund 1,2,3,4,6,7,10; angel operator 3,8,13; strategic 9,13,14; the skeptical
+# partner's example questions map to 2, 9 and 13. The government-backed fund lists none.
+# An empty list means Appendix E assigns the question to no type.
+
+questions:
+  - id: q01
+    lens: claims
+    section: Traction and revenue
+    question: "What is your ARR, and how do you calculate it?"
+    why_asked: "To see if the founder knows the difference between recurring and one-time revenue."
+    weak_answer: "\"$1.37M.\" (September's total revenue times 12, which includes $7,200 of one-time onboarding fees.)"
+    strong_answer: "\"$1.29M. That's September MRR of $107,189 times 12. We leave out onboarding fees because they don't repeat. They were $108,600 over the last 12 months.\""
+    strong_pattern: "States ARR as latest-month recurring revenue x 12, names the month, excludes one-time fees and says how large they were."
+    figures: [arr, mrr, revenue.one_time]
+    typical_personas: [lead_seed_fund]
+    ref: "Appendix D q1, p.16"
+
+  - id: q02
+    lens: claims
+    section: Traction and revenue
+    question: "How fast are you growing?"
+    why_asked: "Growth rate drives almost every other question, including how much the round is worth to them."
+    weak_answer: "\"10% month over month.\""
+    strong_answer: "\"MRR went from $38K to $107K in the 12 months to September, about 9% a month compounded. About $10K of that is one customer, {top_customer}, signed in March. Without them it's about 8%. Growth slowed to about 5% a month from July to September, and here is why we think that happened.\""
+    strong_pattern: "Gives compound monthly growth over a named 12-month window, strips out the largest customer, gives the recent (last 3 months) rate and explains the change."
+    figures: [cmgr_12m, cmgr_12m_ex_top_customer, cmgr_recent, top_customer_share]
+    typical_personas: [lead_seed_fund, skeptical_partner]
+    ref: "Appendix D q2, p.16"
+
+  - id: q03
+    lens: retention
+    section: Traction and revenue
+    question: "What is your churn?"
+    why_asked: "SMB software lives or dies on churn. High churn means growth has to work harder every month just to stand still."
+    weak_answer: "\"Around 1%. Most of it was early customers on the old product.\""
+    strong_answer: "\"We lost 2.0% of customers a month over the last 12 months, about a fifth of the base a year. The last six months were better, at 1.6%. Most churn happens early: customers on monthly plans churn at about 3.3% a month in their first six months and about 1.4% after. So we're putting our onboarding effort into the first 90 days.\""
+    strong_pattern: "Gives monthly logo churn over 12 months and the annual equivalent, the recent 6-month rate without calling it a trend, where in the lifecycle churn happens, and the fix."
+    figures: [logo_churn_rate, logo_churn_rate_6m, churn.monthly_plan_first_6m, churn.monthly_plan_after_6m]
+    typical_personas: [lead_seed_fund, angel_operator]
+    ref: "Appendix D q3, pp.16-17"
+
+  - id: q04
+    lens: retention
+    section: Traction and revenue
+    question: "What is your net revenue retention?"
+    why_asked: "NRR shows whether existing customers grow or shrink over time, which tells an investor how much growth comes for free."
+    weak_answer: "\"Above 110%.\""
+    strong_answer: "\"Customers who were paying us $38.0K a month in September 2025 pay $33.3K today, so NRR is about 88% and gross retention about 81%. Seat expansion is small because our customers hire technicians slowly. That's the number we most want to improve, and the price increase plan is part of it.\""
+    strong_pattern: "Defines the cohort and window, gives the cohort's starting and current MRR, NRR and GRR, explains why expansion is low and what will change it."
+    figures: [nrr, grr, nrr_cohort.mrr_start, nrr_cohort.mrr_end, expansion_rate_monthly]
+    typical_personas: [lead_seed_fund]
+    ref: "Appendix D q4, p.17"
+
+  - id: q05
+    lens: unit_economics
+    section: Unit economics
+    question: "What is your gross margin?"
+    why_asked: "Margin decides how much of each dollar of revenue can pay for growth."
+    weak_answer: "\"92%.\""
+    strong_answer: "\"92% if you only count hosting, SMS and card fees. Most SaaS investors also count customer support, and on that basis it's 74% over the last 12 months. Our three customer success staff cost $17,000 a month against $114,000 of September revenue.\""
+    strong_pattern: "Gives margin as booked and with customer support in cost of revenue, names what is in each, and the window."
+    figures: [gross_margin, gross_margin_incl_cs, gross_margin_incl_cs_l12m]
+    typical_personas: []
+    ref: "Appendix D q5, p.17"
+
+  - id: q06
+    lens: unit_economics
+    section: Unit economics
+    question: "What does it cost you to win a customer, and how long to earn it back?"
+    why_asked: "CAC and payback show whether more sales and marketing money turns into profitable growth."
+    weak_answer: "\"$970, paid back in under 3 months.\" (Marketing programs only, divided by new customers.)"
+    strong_answer: "\"Fully loaded, about $3,200 per customer. That's $491,000 of sales and marketing salaries, commissions and programs over 153 new customers in the last 12 months. A new customer brings about $458 of MRR, so payback is about 9 to 10 months on a margin that includes support.\""
+    strong_pattern: "Gives fully loaded CAC (all sales and marketing salaries, commissions and programs / new customers, same window), new-customer MRR, and payback on a margin that includes support."
+    figures: [cac, cac_payback_months, customers.new, s_and_m_spend_l12m, new_customer_mrr_avg, gross_margin_incl_cs_l12m]
+    typical_personas: [lead_seed_fund]
+    ref: "Appendix D q6, p.17"
+
+  - id: q07
+    lens: forecast
+    section: The forecast
+    question: "Your forecast assumes churn drops to 1% and a 20% price increase with no extra churn. Why?"
+    why_asked: "A forecast is only as credible as its weakest assumption. Investors test the ones that move the result most."
+    weak_answer: "\"We're confident in the product.\""
+    strong_answer: "\"Fair challenge. Churn has been 2.0% a month, and 1.6% recently, so 1% is a target, not a trend. We have a version at 2% churn. On price, our annual customers can't be repriced until renewal, and 59 customers are still on the legacy $39 price. We'd phase it in and expect some churn. Here's what the plan looks like if both go against us.\""
+    strong_pattern: "Concedes the gap between the assumption and history, shows a downside case using historical rates, names contractual limits on the price change, and shows the plan if both assumptions miss."
+    figures: [logo_churn_rate, logo_churn_rate_6m, plan.logo_churn_monthly, plan.price_increase_existing, customers.legacy_price, customers.annual_prepay]
+    typical_personas: [lead_seed_fund]
+    ref: "Appendix D q7, p.18"
+
+  - id: q08
+    lens: forecast
+    section: The forecast
+    question: "How fast do new account executives ramp, and how many deals will they close?"
+    why_asked: "The hiring plan only works if new reps produce. Ramp time is where most seed forecasts break."
+    weak_answer: "\"One month. The product is easy to demo.\""
+    strong_answer: "\"Our two reps took about three months to get to 4 or 5 new customers a month. The plan assumes 5 a month after one month. We should move that to a three-month ramp, and we'll show you the revised numbers.\""
+    strong_pattern: "Gives the historical ramp and productivity of existing reps, compares them with the plan's assumptions, and commits to revising the plan to history."
+    figures: [ae_ramp_months_historical, ae_new_customers_per_month_historical, plan.ae_ramp_months, plan.new_customers_per_ae_month]
+    typical_personas: [angel_operator]
+    ref: "Appendix D q8, p.18"
+
+  - id: q09
+    lens: concentration
+    section: The forecast
+    question: "How dependent are you on {top_customer}?"
+    why_asked: "One customer can make a small company look bigger than it is, and a renewal can go either way."
+    weak_answer: "\"They're expanding to 600 seats next year.\""
+    strong_answer: "\"They're about 10% of MRR. They renew in March 2027. Their COO has said they want every location on {company}, but nothing is signed, so the base plan should keep them at 260 seats and show the expansion as upside.\""
+    strong_pattern: "Gives the customer's share of MRR and renewal date, separates signed from verbal, keeps the base plan at today's contract and shows expansion as upside."
+    figures: [top_customer_share, top_customer.seats, plan.top_customer.seats]
+    typical_personas: [strategic_investor, skeptical_partner]
+    ref: "Appendix D q9, p.18"
+
+  - id: q10
+    lens: runway
+    section: Cash and the raise
+    question: "Why $4M, and how long does it last?"
+    why_asked: "To judge whether the founders understand their burn and have planned for the next round."
+    weak_answer: "\"24 months of runway.\""
+    strong_answer: "\"On our plan, cash lasts to about November 2028, so roughly 22 months after a January close. If growth stays at the rates we've actually achieved, it's closer to 17 months, which means we'd start raising again in late 2027. Here are the milestones we'd need to hit and where we'd slow hiring if we miss them.\""
+    strong_pattern: "Gives runway on the plan and on historical drivers, dates the next raise, and names milestones and the spending triggers if they are missed."
+    figures: [round_size, plan.runway_after_close_months, plan.runway_after_close_historical_drivers_months, plan.cash_balance]
+    typical_personas: [lead_seed_fund]
+    ref: "Appendix D q10, pp.18-19"
+
+  - id: q11
+    lens: runway
+    section: Cash and the raise
+    question: "What happens if the round takes longer than you expect?"
+    why_asked: "Founders who run out of money mid-raise lose their negotiating position."
+    weak_answer: "\"It won't. We have strong interest.\""
+    strong_answer: "\"We have $483K and have been burning about $58K a month, so about 8 months. Our plan raises marketing spend from October, before the money lands. If the round slipped to April, that plan runs out of cash in March. So we're holding spending at today's level until a term sheet is signed.\""
+    strong_pattern: "Gives cash, current burn (excluding one-off credits) and runway, tests the plan against a delayed close, and commits to holding spend until terms are signed."
+    figures: [cash_balance, burn, runway_months, plan.marketing_programs_month]
+    typical_personas: []
+    ref: "Appendix D q11, p.19"
+
+  - id: q12
+    lens: market
+    section: Cash and the raise
+    question: "Your deck says $2B TAM. Where does that come from?"
+    why_asked: "A large unsourced number tells an investor the founder hasn't done the work."
+    weak_answer: "\"Industry reports.\""
+    strong_answer: "\"We haven't built it bottom-up yet, so we've taken that number off the slide. Our method is the number of trades businesses with 3 to 30 technicians in Canada and the US, times average seats, times our price. We'll source the business counts from Statistics Canada and the US Census Bureau.\""
+    strong_pattern: "Admits the number is unsourced, withdraws it, and gives a bottom-up method (target businesses x units per business x price) with named public data sources."
+    figures: []
+    typical_personas: []
+    ref: "Appendix D q12, p.19"
+
+  - id: q13
+    lens: market
+    section: Strategy
+    question: "Why will you win against {competitors}?"
+    why_asked: "To see whether the founder knows why customers choose them."
+    weak_answer: "\"Our product is better.\""
+    strong_answer: "\"We don't track win and loss reasons in a system yet, which we're fixing. What we hear from customers is X and Y. Here are three customers who switched from a competitor and what they told us.\""
+    strong_pattern: "Admits there is no win/loss data, gives specific customer evidence instead of a superlative, and says how it will be tracked."
+    agent_note: "The data pack does not include competitor or win/loss data. A good agent says so and helps the founder find evidence rather than inventing it."
+    figures: []
+    typical_personas: [angel_operator, strategic_investor, skeptical_partner]
+    ref: "Appendix D q13, p.19"
+
+  - id: q14
+    lens: forecast
+    section: Strategy
+    question: "What will this round get you to, and what is the biggest risk?"
+    why_asked: "Investors fund a path to the next round, not a budget."
+    weak_answer: "\"Series A at $5M ARR.\""
+    strong_answer: "\"Our plan gets to about $5.1M ARR by March 2028. The milestones that matter for a Series A are churn under a stated target, a repeatable rep ramp, and {top_customer} renewed. The biggest risk is that growth stays near 5% a month while we triple the team. If churn or rep productivity miss for two quarters, we slow hiring.\""
+    strong_pattern: "Gives the plan's end-point with its date, the milestones a next-round investor will test, the single biggest risk in numbers, and the trigger for cutting spend."
+    figures: [plan.arr, cmgr_recent, plan.headcount.total]
+    typical_personas: [strategic_investor]
+    ref: "Appendix D q14, pp.19-20"
+
+  - id: q15
+    lens: terms_cap_table
+    section: Strategy
+    question: "What valuation are you looking for?"
+    why_asked: "To see whether the founder's expectations are realistic, and sometimes to anchor the negotiation."
+    weak_answer: "Naming a number with no reasoning, or \"whatever the market says\" with no preparation."
+    strong_answer: "\"We'd like the lead to propose terms. Here is what we know: our metrics, the round size, and the two SAFEs that convert at this round with $10M and $15M caps.\""
+    strong_pattern: "Lets the lead propose terms, and shows command of the inputs: metrics, round size, and the convertible instruments and caps that will convert."
+    agent_note: "The agent can explain how valuation and dilution work and how the SAFEs convert. It must not recommend a valuation (challenge brief requirement)."
+    figures: [round_size, safe.preseed_amount, safe.preseed_cap, safe.extension_amount, safe.extension_cap, cap_table.option_pool]
+    typical_personas: []
+    ref: "Appendix D q15, p.20"
