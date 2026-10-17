@@ -68,6 +68,7 @@ ROUTES: dict[str, Route] = {
     "mapper": Route("fast", "medium", 8000),
     "doc_facts": Route("deep", "medium", 16000),
     "doc_parse": Route("deep", "medium", 16000),
+    "qa": Route("fast", "medium", 3000),
 }
 
 # USD per million tokens: input, output, cache read, cache write (5-minute TTL). List prices.

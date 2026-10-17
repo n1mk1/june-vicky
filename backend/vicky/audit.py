@@ -100,7 +100,11 @@ def _spans_overlap(a: tuple[int, int], spans: list[tuple[int, int]]) -> bool:
 def _ignorable_plain(text: str, start: int, end: int, value: float) -> bool:
     before = text[max(0, start - 12):start].lower()
     after = text[end:end + 12].lower()
-    if 1900 <= value <= 2100 and float(value).is_integer() and "," not in text[start:end]:
+    if 1900 <= value <= 2100 and float(value).is_integer() and "," not in text[start:end].rstrip(","):
+        return True
+    # Period labels with a two-digit year: "Sep 26", "Mar '25", "Q3 26".
+    if value < 100 and float(value).is_integer() and re.search(
+            r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*'?$|\bq[1-4]\s*'?$", before):
         return True
     if re.search(r"(slide|page|p\.|q|question|step|round|#|section|appendix|no\.)\s*$", before):
         return True
@@ -200,7 +204,7 @@ def metric_context(text: str, start: int, end: int) -> list[str]:
 
 def match_figure(value: float, unit: str, figures: list[Figure], prefer: list[str] | None = None) -> Figure | None:
     if prefer:
-        named = [f for f in figures if f.id in prefer and _compatible(f, unit)]
+        named = [f for f in figures if (f.id in prefer or f.group == "answer") and _compatible(f, unit)]  # answer figures are built for this very reply
         if named:
             # The sentence names a metric: the number must be that metric, not any figure that happens to match.
             return match_figure(value, unit, named)

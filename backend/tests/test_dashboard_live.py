@@ -97,8 +97,12 @@ async def test_chat_missing_data_answers_with_the_reason_and_adds_nothing(api_cl
     assert r["kind"] == "missing" and r["missing"]["reason"] and r["reply"] == r["missing"]["reason"]
     assert r["widget_id"] is None and r["dashboard"] is None
     assert len((await api_client.get(f"/dashboards/{d['id']}")).json()["widgets"]) == before
+    # Questions about the data are answered in place, with every number footnoted; nothing is added.
     q = (await api_client.post(f"/dashboards/{d['id']}/chat", json={"text": "why is burn falling?"})).json()
-    assert q["kind"] == "question" and q["dashboard"] is None
+    assert q["kind"] == "answer" and q["dashboard"] is None and q["citations"]
+    assert len((await api_client.get(f"/dashboards/{d['id']}")).json()["widgets"]) == before
+    v = (await api_client.post(f"/dashboards/{d['id']}/chat", json={"text": "what valuation should we raise at?"})).json()
+    assert v["kind"] == "answer" and "won't put a number" in v["reply"]
     assert (await api_client.post(f"/dashboards/{d['id']}/chat", json={"text": ""})).status_code == 422
 
 

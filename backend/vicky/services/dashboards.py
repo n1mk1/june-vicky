@@ -12,7 +12,7 @@ the spec is evaluated by code before it is added, and missing data answers with 
 import re
 from typing import Any
 
-from vicky import db
+from vicky import db, qa
 from vicky.model.context import TruthContext
 from vicky.model.metrics import label_period
 from vicky.realtime import publish
@@ -20,7 +20,7 @@ from vicky.services import engagements
 from vicky.viz import WidgetSpec, build_option, default_dashboard, evaluate_widget, spec_hash
 from vicky.viz.defaults import RESERVED
 from vicky.viz.evaluate import period_bounds
-from vicky.viz.phrases import interpret
+from vicky.viz.phrases import _CHART_VERB, interpret, normalise
 from vicky.viz.spec import spec_json
 
 THEMES = ("vicky-dark", "vicky-light")
@@ -225,7 +225,9 @@ async def set_time_range(dashboard_id: str, time_range: dict[str, Any] | None, v
 
 NOT_UNDERSTOOD = ("I can chart a metric from your data or zoom the dashboard. Try “burn excluding credits as % of "
                   "revenue by quarter” or “zoom to the last 6 months”.")
-FOR_THE_PANEL = "That's a question for the panel. Ask it in Preparation, where every answer is checked against your data."
+_GROUPED = re.compile(r"\b(?:by|per|each|every) (?:month|quarter|year)s?\b|\b(?:monthly|quarterly) (?:chart|trend|view)\b")
+_ASKING = re.compile(r"^(?:what|whats|what's|which|how|when|where|who|why|is|are|was|were|did|does|do|can|could|tell me|"
+                     r"give me the|list|explain|compare|summari[sz]e|show me how)\b")
 
 
 async def _log(dashboard_id: str, role: str, content: str, tool_calls: list[dict] | None = None) -> None:
@@ -242,10 +244,22 @@ async def chat(dashboard_id: str, text: str) -> dict:
     dash, ctx = await _ctx_for_dashboard(dashboard_id)
     intent = interpret(text, ctx)
     out: dict[str, Any] = {"kind": intent.kind, "reply": "", "spec": None, "widget_id": None, "missing": None,
-                           "time_range": None, "dashboard": None}
+                           "time_range": None, "dashboard": None, "citations": [], "suggestions": [], "chart": None}
     tool: dict[str, Any] | None = None
+    t = normalise(text)
+    # A widget needs an explicit ask: a chart verb ("show", "plot", "add") or a grouping ("by quarter").
+    # Everything else ("total revenue over the last 12 months", "runway?") is a question to answer.
+    asks_for_chart = bool(_CHART_VERB.search(t)) or bool(_GROUPED.search(t))
+    is_question = text.rstrip().endswith("?") or bool(_ASKING.match(t))
+    if intent.kind in ("question", "none") or (intent.kind == "widget" and (is_question or not asks_for_chart)):
+        intent = intent.model_copy(update={"kind": "answer"})
 
-    if intent.kind == "time_range":
+    if intent.kind == "answer":
+        a = await qa.answer_any(text, ctx)
+        out.update(kind="answer", reply=a["reply"], citations=a["citations"], suggestions=a["suggestions"],
+                   chart=a["chart"])
+        tool = {"name": "answer", "input": {"topic": a.get("topic")}}
+    elif intent.kind == "time_range":
         tr = {"last_months": intent.last_months} if intent.last_months else None
         d = await set_time_range(dashboard_id, tr, None)
         out.update(dashboard=d, time_range=d["time_range"])
@@ -271,8 +285,6 @@ async def chat(dashboard_id: str, text: str) -> dict:
                 wid = next((w["id"] for w in d["widgets"] if w["evaluated"].get("spec_hash") == h), None)
                 out.update(kind="widget_added", widget_id=wid, dashboard=d, reply=f"Added “{spec.title}”.")
                 tool = {"name": "add_widget", "input": out["spec"], "widget_id": wid}
-    elif intent.kind == "question":
-        out["reply"] = FOR_THE_PANEL
     else:
         out["reply"] = NOT_UNDERSTOOD
 
