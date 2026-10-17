@@ -1,16 +1,19 @@
 "use client";
 
-import { GitFork, Trash2 } from "lucide-react";
+import { GitFork, Pencil, Plus, Trash2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { CornerMarks } from "@/components/ui/Panel";
 import { PillButton } from "@/components/ui/Pill";
 import { ErrorNote, Loading } from "@/components/ui/States";
+import { MAX_PANEL } from "@/components/app/VcRoster";
 import { VcGlyph } from "@/components/ui/VcGlyph";
 import { apiDelete, apiPost } from "@/lib/api";
 import { humanize } from "@/lib/format";
 import type { PersonaSummary } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
+import { PersonaBuilder } from "./PersonaBuilder";
 
 const LENS_LABEL: Record<string, string> = {
   claims: "Claims",
@@ -50,12 +53,14 @@ function PersonaCard({
   fresh,
   busy,
   onFork,
+  onEdit,
   onDelete,
 }: {
   p: PersonaSummary;
   fresh: boolean;
   busy: boolean;
   onFork: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const [up, setUp] = useState(false);
@@ -177,13 +182,16 @@ function PersonaCard({
                   title="Make an editable copy that keeps this investor's method"
                 />
               ) : (
-                <PillButton
-                  label={busy ? "Deleting" : "Delete"}
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={onDelete}
-                  icon={<Trash2 className="size-3.5" strokeWidth={1.5} />}
-                />
+                <span className="flex items-center gap-1">
+                  <PillButton label="Edit" variant="outline" disabled={busy} onClick={onEdit} icon={<Pencil className="size-3.5" strokeWidth={1.5} />} />
+                  <PillButton
+                    label={busy ? "Deleting" : "Delete"}
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={onDelete}
+                    icon={<Trash2 className="size-3.5" strokeWidth={1.5} />}
+                  />
+                </span>
               )}
             </footer>
           </div>
@@ -193,10 +201,20 @@ function PersonaCard({
   );
 }
 
-/** The Areopagus: every investor persona the panel can seat (UI doc §3.7). */
+/**
+ * The Areopagus: every investor persona the panel can seat (UI doc §3.7), and the builder.
+ * The URL opens the builder: `?build=1` (new) or `?edit=<id>`. `return=preparation&panel=a,b` marks
+ * a trip from the Preparation roster's "+": saving goes back there with the new investor seated.
+ */
 export function AreopagusView() {
   const guard = useAccessGuard();
+  const router = useRouter();
+  const params = useSearchParams();
   const list = useApi<PersonaSummary[]>("areopagus");
+  const editId = params.get("edit");
+  const building = params.get("build") === "1" || !!editId;
+  const fromPrep = params.get("return") === "preparation";
+  const panel = (params.get("panel") ?? "").split(",").filter(Boolean).slice(0, MAX_PANEL);
   const [busy, setBusy] = useState<string | null>(null);
   const [fresh, setFresh] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -229,6 +247,29 @@ export function AreopagusView() {
     }
   };
 
+  const prepUrl = (ids: string[], added?: string) => {
+    const q = new URLSearchParams();
+    if (ids.length) q.set("panel", ids.join(","));
+    if (added) q.set("added", added);
+    const qs = q.toString();
+    return qs ? `/preparation?${qs}` : "/preparation";
+  };
+
+  const closeBuilder = () => {
+    if (fromPrep) router.push(prepUrl(panel));
+    else router.replace("/areopagus", { scroll: false });
+  };
+
+  const onSaved = (id: string) => {
+    if (fromPrep) {
+      router.push(prepUrl(panel.length < MAX_PANEL ? [...panel, id] : panel, id));
+      return;
+    }
+    setFresh(id);
+    list.reload();
+    router.replace("/areopagus", { scroll: false });
+  };
+
   const items = list.data ?? [];
   const builtins = items.filter((p) => p.builtin).length;
 
@@ -242,10 +283,18 @@ export function AreopagusView() {
             </span>
             <h1 className="display text-[clamp(34px,3.8vw,60px)]">The Areopagus</h1>
           </div>
-          <p className="max-w-[58ch] text-[13px] leading-snug text-ink-2 lg:pb-1.5">
-            Every investor who can sit on your panel reads your numbers through their own lenses. Hover or tap a card for their method;
-            fork a built-in to make a copy you can tune.
-          </p>
+          <div className="flex flex-col items-start gap-3 lg:items-end lg:pb-1.5">
+            <p className="max-w-[58ch] text-[13px] leading-snug text-ink-2 lg:text-right">
+              Every investor who can sit on your panel reads your numbers through their own lenses. Hover or tap a card for their method;
+              describe a new one, or fork a built-in to make a copy you can tune.
+            </p>
+            <PillButton
+              label="New investor"
+              variant="solid"
+              onClick={() => router.replace("/areopagus?build=1", { scroll: false })}
+              icon={<Plus className="size-3.5" strokeWidth={1.75} />}
+            />
+          </div>
         </header>
         {error && <ErrorNote message={error} />}
         {list.loading && !list.data ? (
@@ -255,11 +304,22 @@ export function AreopagusView() {
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" aria-label="Investors">
             {items.map((p) => (
-              <PersonaCard key={p.id} p={p} fresh={p.id === fresh} busy={busy === p.id} onFork={() => void fork(p)} onDelete={() => void remove(p)} />
+              <PersonaCard
+                key={p.id}
+                p={p}
+                fresh={p.id === fresh}
+                busy={busy === p.id}
+                onFork={() => void fork(p)}
+                onEdit={() => router.replace(`/areopagus?edit=${encodeURIComponent(p.id)}`, { scroll: false })}
+                onDelete={() => void remove(p)}
+              />
             ))}
           </ul>
         )}
       </div>
+      {building && (
+        <PersonaBuilder key={editId ?? "new"} mode={editId ? "edit" : "create"} personaId={editId ?? undefined} onSaved={onSaved} onClose={closeBuilder} />
+      )}
     </div>
   );
 }

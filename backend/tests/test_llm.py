@@ -20,7 +20,7 @@ from tests.llm_fakes import (
     tool_use_reply,
 )
 from vicky import auth, llm
-from vicky.areopagus import registry
+from vicky.areopagus import builder, registry
 from vicky.audit import audit_text
 from vicky.config import get_settings
 from vicky.court import minds as offline
@@ -360,6 +360,51 @@ async def test_mapper_without_a_key_is_the_heuristic():
     ds = parse_upload(CSV, "numbers.csv")[0]
     out, proposer = await mapper.propose(ds, "cad")
     assert proposer == "heuristic" and out == propose_heuristic(ds, "cad")
+
+
+# ---------------------------------------------------------------- FR-13 Areopagus builder
+
+DRAFT = {
+    "name": "Rhea", "firm": "Seed fund", "archetype": "NRR obsessed SaaS partner", "cheque_role": "leads_round",
+    "bio": "Former operator who backs SaaS companies with sticky revenue.",
+    "priorities": [{"lens": "retention", "weight": 1.7}, {"lens": "runway", "weight": 0.8},
+                   {"lens": "team", "weight": -0.3}],
+    "tone": "Blunt", "interrupt_tendency": 1.4, "follow_up_depth": 7, "aggression": 0.6,
+    "signature_move": "Cohort by cohort", "method": "Opens on retention. I recommend you raise at $12M. Then burn.",
+    "question_seeds": ["Which cohort expanded most?", "Is a valuation of $20M fair?",
+                       "Which cohort expanded most?"],
+    "dealbreakers": ["Services revenue dressed up as recurring"],
+}
+
+
+async def test_builder_drafts_a_persona_with_claude(live_llm):
+    rec = live_llm.install(by_task(persona=[json_reply(DRAFT)]))
+    p, source = await builder.generate("A blunt SaaS partner obsessed with NRR who hates services revenue")
+    assert source == "claude" and rec.calls[0]["body"]["model"] == "claude-sonnet-5-5"
+    assert p.id == "draft" and p.name == "Rhea" and p.archetype == "nrr_obsessed_saas_partner"
+    assert p.priorities["retention"] == 1.0 and p.priorities["team"] == 0.0 and p.priorities["market"] == 0.2
+    assert p.style.interrupt_tendency == 1.0 and p.style.follow_up_depth == 3 and p.style.tone == "blunt"
+    assert p.question_seeds == ["Which cohort expanded most?"]  # money talk and duplicates dropped
+    assert p.method == "Opens on retention. Then burn."  # the advice sentence is gone
+    assert p.glyph == "custom" and p.kits == []
+
+
+async def test_builder_falls_back_to_keywords_on_failure(live_llm):
+    live_llm.install(by_task(persona=[json_reply({"name": "only a name"})]))  # fails validation
+    p, source = await builder.generate("A tough partner named Rhea, obsessed with NRR and churn, hates high burn")
+    assert source == "heuristic" and p.name == "Rhea"
+
+
+async def test_builder_without_a_key_uses_keywords():
+    p, source = await builder.generate("A tough partner obsessed with NRR and churn who hates high burn")
+    assert source == "heuristic" and p.name == "New investor"
+    assert p.priorities["retention"] > 0.6 and p.priorities["runway"] > 0.6 and p.priorities["market"] == 0.2
+    assert p.style.aggression > 0.4 and p.question_seeds
+
+
+def test_builder_options_cover_every_lens_and_role():
+    o = builder.options()
+    assert len(o["lenses"]) == 12 and "custom" in o["glyphs"] and "lender" in o["cheque_roles"]
 
 
 # ---------------------------------------------------------------- FR-7 document facts

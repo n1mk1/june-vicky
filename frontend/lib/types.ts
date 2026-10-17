@@ -365,9 +365,44 @@ export interface PersonaSummary {
   priorities: Record<string, number>;
   style: { tone?: string; interrupt_tendency?: number; follow_up_depth?: number; aggression?: number; [k: string]: unknown };
   kits: string[];
+  cheque_role?: string;
   builtin: boolean;
   base_archetype: string | null;
   version: number;
+}
+
+/** The full persona spec (`VCPersona` in backend/vicky/areopagus/schema.py). A type alias so it's a `Json` body. */
+export type VCPersonaSpec = {
+  id: string;
+  name: string;
+  firm: string;
+  archetype: string;
+  glyph: string;
+  bio: string;
+  cheque_role: string;
+  priorities: Record<string, number>;
+  style: { tone: string; interrupt_tendency: number; follow_up_depth: number; aggression: number };
+  signature_move: string;
+  method: string;
+  question_seeds: string[];
+  dealbreakers: string[];
+  kits: string[];
+  base_archetype: string | null;
+  builtin: boolean;
+  version: number;
+};
+
+/** What the builder form offers (GET /areopagus/options). */
+export interface PersonaOptions {
+  lenses: { id: string; label: string }[];
+  glyphs: string[];
+  cheque_roles: string[];
+}
+
+/** A draft from a description (POST /areopagus/generate); `id` is "draft" until saved. */
+export interface GenerateResult {
+  persona: VCPersonaSpec;
+  source: "claude" | "heuristic";
 }
 
 // ---------------------------------------------------------------- court

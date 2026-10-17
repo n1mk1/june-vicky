@@ -99,14 +99,18 @@ async def fork(pid: str) -> VCPersona:
     return await create(data, base_archetype=src.archetype if src.builtin else src.base_archetype or src.archetype)
 
 
-async def panel(ids: list[str] | None) -> list[VCPersona]:
+async def panel(ids: list[str] | None, strict: bool = True) -> list[VCPersona]:
+    """The investors for these ids. Not strict: skip ids that no longer exist (a custom investor
+    deleted after a session seated them), so the session can still be viewed and ended."""
     ids = [i for i in (ids or DEFAULT_PANEL) if i][:MAX_PANEL]
     out = []
     for i in dict.fromkeys(ids):
         p = await get(i)
         if p is None:
+            if not strict:
+                continue
             raise PersonaError(f"Unknown investor {i!r}")
         out.append(p)
-    if not out:
+    if not out and strict:
         raise PersonaError("Pick at least one investor")
     return out

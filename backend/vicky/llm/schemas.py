@@ -115,3 +115,29 @@ class DocFact(BaseModel):
 
 class DocFactList(BaseModel):
     facts: list[DocFact]
+
+
+# ---------------------------------------------------------------- Areopagus builder (FR-13)
+
+class LensWeight(BaseModel):
+    lens: Lens
+    weight: float = Field(description="0-1: how hard this investor presses on the lens")
+
+
+class PersonaDraft(BaseModel):
+    """A custom investor drafted from a founder's description. Code clamps every range and caps
+    every list before it becomes a `VCPersona`; nothing here is a figure about the company."""
+    name: str = Field(description="first name only, as the description gives it, or a plausible one")
+    firm: str = Field(description="fund or role label, e.g. 'Seed fund' or 'Angel operator'; no real firm names")
+    archetype: str = Field(description="snake_case archetype, e.g. nrr_obsessed_saas_partner")
+    cheque_role: str = Field(description="one of the cheque roles listed")
+    bio: str = Field(description="two or three sentences: who they are, what they optimise for, how they come across")
+    priorities: list[LensWeight] = Field(description="a weight for every lens; the lenses the description stresses high")
+    tone: str = Field(description="snake_case tone, e.g. blunt or warm_rigorous")
+    interrupt_tendency: float = Field(description="0-1")
+    follow_up_depth: int = Field(description="1-3: how many follow-ups before moving on")
+    aggression: float = Field(description="0-1")
+    signature_move: str = Field(description="their signature move in under eight words")
+    method: str = Field(description="how they run a pitch meeting, three or four sentences")
+    question_seeds: list[str] = Field(description="four to six questions in their voice, no numbers")
+    dealbreakers: list[str] = Field(description="two to four things that end their interest")

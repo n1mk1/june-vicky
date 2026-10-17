@@ -278,7 +278,7 @@ async def end(sid: str) -> str:
     if existing:
         return existing
     ctx = await engagements.context(str(sess["engagement_id"]))
-    panel = {p.id: p for p in await registry.panel(sess["panel"])}
+    panel = {p.id: p for p in await registry.panel(sess["panel"], strict=False)}
     async with db.pool().acquire() as conn, conn.transaction():
         await _add_turn(conn, sid, "vicky", "debrief",
                         "That's time. Your report is ready: every question, how each answer scored, the strong answer "
@@ -293,7 +293,7 @@ async def view(sid: str) -> dict:
     sess = await db.fetchrow("select * from sessions where id::text = $1", sid)
     if sess is None:
         raise engagements.NotFound("session")
-    panel_list = await registry.panel(sess["panel"])
+    panel_list = await registry.panel(sess["panel"], strict=False)
     panel = {p.id: p for p in panel_list}
     turns = await db.fetch("select * from turns where session_id = $1 order by seq", sess["id"])
     seq_of = {str(t["id"]): t["seq"] for t in turns}

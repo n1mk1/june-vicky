@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useActiveEngagement } from "@/components/app/EngagementProvider";
 import { PromptBar } from "@/components/app/PromptBar";
 import { MAX_PANEL, VcRoster } from "@/components/app/VcRoster";
@@ -45,7 +45,18 @@ export function PrepView() {
   const session = live && live.id === sid ? live : fetched.data && fetched.data.id === sid ? fetched.data : null;
 
   const pending = useSyncExternalStore(noSubscribe, readPending, () => null);
-  const [chosen, setChosen] = useState<string[] | null>(null);
+  // Back from the Areopagus builder: `?panel=` carries the seats (new investor included), `?added=` who was built.
+  // The page's state survives navigation (cacheComponents keeps it), so take each new hand-off as it arrives.
+  const panelParam = () => params.get("panel")?.split(",").filter(Boolean).slice(0, MAX_PANEL) ?? null;
+  const handoff = params.get("added");
+  const [chosen, setChosen] = useState<string[] | null>(panelParam);
+  const [added, setAdded] = useState(handoff);
+  const [taken, setTaken] = useState(handoff);
+  if (handoff && handoff !== taken) {
+    setTaken(handoff);
+    setAdded(handoff);
+    setChosen(panelParam());
+  }
   const [setup, setSetup] = useState<Omit<SetupValue, "focus"> & { focus: string | null }>({ cap: 8, coaching: "coached", focus: null });
   const [filter, setFilter] = useState<FeedFilter>("all");
   const [busy, setBusy] = useState<"start" | "answer" | "end" | null>(null);
@@ -59,6 +70,12 @@ export function PrepView() {
     ? session.panel.map((p) => p.id)
     : (chosen ?? DEFAULT_PANEL).filter((id) => !known || known.includes(id));
   const seatedNames = selected.map((id) => personas.data?.find((p) => p.id === id)?.name ?? id);
+  const addedName = added ? personas.data?.find((p) => p.id === added)?.name : undefined;
+
+  // Drop the builder's hand-off params once they're in state, so a reload starts clean.
+  useEffect(() => {
+    if (!sid && (params.has("panel") || params.has("added"))) router.replace("/preparation", { scroll: false });
+  }, [sid, params, router]);
 
   const feed: FeedItem[] = useMemo(() => {
     if (!session) return [];
@@ -250,6 +267,16 @@ export function PrepView() {
         >
           {body}
         </Panel>
+        {addedName && !session && (
+          <p role="status" className="flex items-center justify-between gap-3 px-2 text-[12px] text-ink-2" data-testid="added-note">
+            <span>
+              {selected.includes(added!) ? `Built ${addedName} and seated them on the panel.` : `Built ${addedName}. The panel is full; swap someone out to seat them.`}
+            </span>
+            <button type="button" onClick={() => setAdded(null)} className="text-ink underline underline-offset-2 hover:text-ember">
+              Dismiss
+            </button>
+          </p>
+        )}
         {error && <ErrorNote message={error} className="px-2" />}
         <PromptBar
           label="Your answer"

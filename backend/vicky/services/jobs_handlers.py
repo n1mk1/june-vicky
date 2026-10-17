@@ -17,7 +17,7 @@ async def report_job(payload: dict) -> dict:
     if sess is None:
         raise ValueError(f"no session {sid}")
     ctx = await engagements.context(str(sess["engagement_id"]))
-    panel = {p.id: p for p in await registry.panel(sess["panel"])}
+    panel = {p.id: p for p in await registry.panel(sess["panel"], strict=False)}
     rid = await report.build(sid, ctx, panel)
     return {"report_id": rid}
 

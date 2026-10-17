@@ -98,6 +98,31 @@ async def test_areopagus_builtins_and_fork(api_client):
     assert any(p["id"] == fork["id"] for p in (await api_client.get("/areopagus")).json())
 
 
+async def test_fr13_builder_generate_create_edit(api_client):
+    o = (await api_client.get("/areopagus/options")).json()
+    assert len(o["lenses"]) == 12 and o["glyphs"] and o["cheque_roles"]
+    assert (await api_client.post("/areopagus/generate", json={"description": "x" * 2001})).status_code == 422
+    r = (await api_client.post("/areopagus/generate",
+                               json={"description": "A skeptical partner named Rhea who is obsessed with NRR"})).json()
+    assert r["source"] == "heuristic" and r["persona"]["name"] == "Rhea"
+    made = (await api_client.post("/areopagus", json=r["persona"])).json()
+    assert made["id"].startswith("rhea-") and made["builtin"] is False
+    assert any(p["id"] == made["id"] for p in (await api_client.get("/areopagus")).json())
+    edited = (await api_client.put(f"/areopagus/{made['id']}",
+                                   json={"signature_move": "Cohorts first", "question_seeds": ["Only this one?"]})).json()
+    assert edited["version"] == 2 and edited["question_seeds"] == ["Only this one?"]
+    assert edited["signature_move"] == "Cohorts first" and edited["name"] == "Rhea"
+
+
+async def test_session_survives_a_deleted_custom_investor(api_client):
+    made = (await api_client.post("/areopagus", json={"name": "Temp"})).json()
+    s = (await api_client.post("/court/start", json={"panel": ["james", made["id"]], "question_cap": 4})).json()
+    assert (await api_client.delete(f"/areopagus/{made['id']}")).status_code == 200
+    view = await api_client.get(f"/court/{s['id']}")
+    assert view.status_code == 200 and [p["id"] for p in view.json()["panel"]] == ["james"]
+    assert (await api_client.post(f"/court/{s['id']}/end")).status_code == 200
+
+
 async def test_prepare_court_round_trip(api_client):
     s = (await api_client.post("/court/start", json={"panel": ["james", "alex", "mark"], "question_cap": 5,
                                                          "coaching": "coached"})).json()

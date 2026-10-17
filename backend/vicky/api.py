@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from vicky import auth, db, jobs, kv, migrate, realtime
-from vicky.areopagus import registry
+from vicky.areopagus import builder, registry
 from vicky.areopagus.registry import PersonaError
 from vicky.config import get_settings
 from vicky.court import session as court
@@ -348,6 +348,22 @@ async def personas() -> list[dict]:
 @api.get("/areopagus/templates")
 async def persona_templates() -> list[dict]:
     return [t.model_dump(mode="json") for t in registry.templates()]
+
+
+@api.get("/areopagus/options")
+async def persona_options() -> dict:
+    return builder.options()
+
+
+class PersonaDescribe(BaseModel):
+    description: str = Field(min_length=10, max_length=2000)
+
+
+@api.post("/areopagus/generate")
+async def persona_generate(body: PersonaDescribe) -> dict:
+    """A draft persona from a description (Claude, or the keyword heuristic offline). Not saved."""
+    p, source = await builder.generate(body.description)
+    return {"persona": p.model_dump(mode="json"), "source": source}
 
 
 @api.get("/areopagus/{pid}")

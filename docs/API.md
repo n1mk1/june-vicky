@@ -103,6 +103,8 @@ type PersonaSummary = { id: string; name: string; firm: string; archetype: strin
 |---|---|---|
 | GET | `/areopagus` | `PersonaSummary[]` (built-ins first) |
 | GET | `/areopagus/templates` | builder templates |
+| GET | `/areopagus/options` | `{lenses: [{id, label}], glyphs, cheque_roles}` for the builder form |
+| POST | `/areopagus/generate` | body `{description}` (10–2000 chars) → `{persona: VCPersona, source: "claude"\|"heuristic"}`; a draft with `id: "draft"`, not saved. Claude drafts it (Sonnet); without a key, over budget or on failure a keyword heuristic does |
 | GET | `/areopagus/{id}` | full `VCPersona` |
 | POST | `/areopagus` | create custom (body `VCPersona` without `id`/`builtin`) |
 | PUT / DELETE | `/areopagus/{id}` | custom only; built-ins return 403 |

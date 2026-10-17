@@ -132,7 +132,10 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
 
       {!collapsed && (
         <Link
-          href="/areopagus"
+          // Seats can't change mid-session, so a live session's "+" only builds; otherwise the builder
+          // brings you back here with the new investor seated next to the current panel.
+          href={locked ? "/areopagus?build=1" : `/areopagus?build=1&return=preparation&panel=${encodeURIComponent(selected.join(","))}`}
+          data-testid="roster-add"
           className="mx-auto mt-3 hidden size-10 items-center justify-center rounded-full border border-line-strong text-ink-2 transition-colors hover:border-ink hover:text-ink lg:flex"
           aria-label="Add or build an investor in the Areopagus"
           title="Build an investor in the Areopagus"
