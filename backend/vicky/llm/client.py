@@ -63,12 +63,18 @@ ROUTES: dict[str, Route] = {
     "update_bid": Route("fast", "low", 4000),
     "speak": Route("fast", "medium", 4000),
     "chair": Route("fast", "low", 1024, thinking_off=True),
-    "judge": Route("deep", "high", 8000),
+    "judge": Route("deep", "high", 8000),       # Vicky scores the answer
+    "review": Route("tiny", "low", 2000),       # Vicky reviews an investor's draft line before it is spoken
+    "probes": Route("fast", "medium", 6000),    # knowledge questions from the founder's notes, at session start
+    "ask_knowledge": Route("fast", "low", 2000),
+    "verify": Route("tiny", "low", 2000),       # Vicky checks a knowledge answer against the notes
     "claims": Route("tiny", "low", 4000),
     "mapper": Route("fast", "medium", 8000),
     "doc_facts": Route("deep", "medium", 16000),
     "doc_parse": Route("deep", "medium", 16000),
     "qa": Route("fast", "medium", 3000),
+    "qa_rag": Route("tiny", "low", 3000),     # Ask Vicky from retrieved chunks (docs/08-RAG.md)
+    "qa_full": Route("tiny", "medium", 4000),  # the catch-all over the whole vault, only after the user accepts
     "persona": Route("fast", "medium", 8000),
     "kb_organize": Route("fast", "medium", 16000),
     "kb_hubs": Route("fast", "medium", 12000),

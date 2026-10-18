@@ -94,9 +94,11 @@ def queue(*responses: Any) -> Callable[[dict], Any]:
 
 
 TASK_MARKERS = [("memo", "pre-meeting memo"), ("speak", "say your next line"), ("bid", "update your confidence"),
-                ("chair", "chairing the panel"), ("judge", "independent judge"), ("claims", "quantitative claim"),
+                ("chair", "chairing the panel"), ("judge", "score the founder's answer"), ("claims", "quantitative claim"),
                 ("mapper", "map the columns"), ("doc_parse", "cited fact list"), ("doc_facts", "extract facts"),
-                ("persona", "investor persona card")]
+                ("persona", "investor persona card"), ("review", "review the investor's draft line"),
+                ("probes", "draft recall questions"), ("ask_knowledge", "ask the founder to recall"),
+                ("verify", "verify the founder's recall")]
 
 
 def task_of(body: Any) -> str:

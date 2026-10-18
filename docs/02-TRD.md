@@ -148,7 +148,7 @@ Curated entries `{id, claim, url, publisher, as_of, business_model, stage, topic
 
 ### 3.7 Country-aware rules
 
-`data/playbooks/geo/{CA,US,UK,generic}.md` selected by `company_profile.country`. Canada: SR&ED, CCPC status; US: R&D credit, SBIR; UK: R&D relief. Everything marked "verify with an advisor". Claire's kit reads these.
+`data/playbooks/geo/{CA,US,UK,generic}.md` selected by `company_profile.country`. Canada: SR&ED, CCPC status; US: R&D credit, SBIR; UK: R&D relief. Everything marked "verify with an advisor". Plato's kit (Governance) reads these.
 
 ## 4. Citation pipeline
 
@@ -177,14 +177,17 @@ Curated entries `{id, claim, url, publisher, as_of, business_model, stage, topic
 | VC memo | Opus 5.5, high | tool_runner with read-only kit tools, then parse | `Memo{thesis, hypotheses[{id, claim, lens, evidence[figure_id], severity, confidence}], mind_changers[], opening_question}` |
 | VC update + bid | Sonnet 5.5, low | one parse per VC per answer, all parallel | `BeliefUpdate{deltas[{hyp_id, new_confidence, why}], bid, intent: follow_up|new_topic|jump_in|pass, target_hyp}` |
 | VC speak | Sonnet 5.5, medium | streaming, tools `get_metric`, `check_claim`, `cite_source`, `read_playbook`, `recall` | question text in persona style |
-| Vicky chair | Sonnet 5.5, low | parse ≤ 1.5 s | `ChairDecision{action: call_on|interject|end_session, vc_id?, intent, hypothesis_id?, note?}` |
+| Vicky chair | Sonnet 5.5, low | parse ≤ 1.5 s | `ChairDecision{action: call_on|interject|end_session, vc_id?, intent (incl. `knowledge`), hypothesis_id?, note?}` |
+| Vicky line review | Haiku 5.5, low | parse; code's checks always count | `LineReview{verdict: approve|revise, issues[], note}`; one rewrite by the VC when sent back |
+| Knowledge probes | Sonnet 5.5, medium | parse, at session start, over retrieved note passages | `ProbeList{probes[{vc_id, passage_id, question, answer_quote}]}`; the quote must be verbatim |
+| Knowledge question / verification | Sonnet 5.5 low / Haiku 5.5 low | text / parse | the VC's wording; `KnowledgeVerdict{verdict, explanation}` audited against the notes |
 | Vicky chat / debrief / builder / report synthesis | Opus 5.5, medium–high | tool_runner (dashboard tools, `create_vc`, `recall`) over AG-UI | streamed messages + state deltas |
 | Claim extractor | Haiku 5.5, low | parse | `Claim[]{text, metric, value, unit, period, is_forecast}` |
 | Intent router | Haiku 5.5, low | parse | `data|dashboard|practice|other` |
 | Column mapper | Sonnet 5.5, medium | parse | `ColumnMapping[]` |
 | Deck reader (pre-scan) | Opus 5.5, medium | `document` block + slide text + TruthPack summary | `SlideFinding[]{slide, claims[], visual_issues[], omissions[]}` |
 | Doc fact extractor | Opus 5.5, medium | two-pass citations | `Fact[]` |
-| Judge | Opus 5.5, high | parse, independent of VCs | scores dims 2–5, rationale, good/missing, strong-answer rewrite |
+| Vicky scoring (route `judge`) | Opus 5.5, high | parse, independent of VCs | scores dims 2–5, rationale, good/missing, strong-answer rewrite; on a knowledge check, uses Vicky's verdict |
 | Report writer | Opus 5.5, high | streaming + parse | `Report` (10 sections) |
 | Auditor (LLM half) | Sonnet 5.5, low | parse; reports + persona generation only | `AuditFinding[]` |
 | Persona generator | Sonnet 5.5, medium | parse | `VCPersona` |
@@ -198,17 +201,17 @@ Curated entries `{id, claim, url, publisher, as_of, business_model, stage, topic
 - `schema.py` `VCPersona{id, name, archetype, bio, cheque_role, priorities{lens: weight} over 12 lenses, style{tone, interrupt_tendency, follow_up_depth, aggression}, signature_move, question_seeds[], dealbreakers[], scoring_weights, voice_id, base_archetype?, kits[], builtin}`.
 - `kits/` deterministic analyses returning Figures: QuantAudit, Customer, Channel, Governance, RedTeam, Market, Terms (dilution/waterfall math only, never valuation), Milestone, Benchmark, Cash (default-alive, fatal-pinch date), Product.
 - `mind.py` `VCMind.write_memo() / update_and_bid(answer) / speak(intent)` with override hooks `memo_method`, `choose_target`, `follow_up_policy`, `on_answer`. **No-concession rule** in `update_and_bid`: confidence on a hypothesis can only drop when the answer cites a Figure matching it.
-- `builtin/<archetype>.py` one subclass per archetype (James lines-not-dots, Mark pre-mortem chain, Priya benchmark comparison, Dana live cash model, Alex stories-before-numbers, Kenji trap terms, Claire mandate audit, Victor aggressive-term, Sam hardest-feature, Olivia how-big). Default panel James, Alex, Mark; max 5 seated.
+- Built-ins (`areopagus/builtin/*.yaml`), named for Greek philosophers: Aristotle (Lead Seed Fund, lines-not-dots), Thales (Angel Operator, stories-before-numbers), Xenophon (Strategic Investor, trap terms), Plato (Government-Backed Fund, mandate audit) and Socrates (Skeptical Partner, pre-mortem chain). The other archetypes (Series A readiness, capital efficiency, term sheets, technical diligence, market) remain as builder templates and question banks. Default panel James, Alex, Mark; max 5 seated.
 - `custom.py` `SpecMind` driven by the spec; kits chosen from lenses; `base_archetype` inherits hooks.
 - Guardrails: persona text inside a delimited block treated as character description; field caps; audit on every VC.
 
 ### 5.5 Court turn loop
 
 1. Session start: memos in parallel (one arq job per VC; inline on free tier); snippets over pub/sub; gap ownership assigns attack-list items by lens weight (severity ≥ 0.8 may be shared).
-2. Founder answer stored → parallel: claim extraction + `check_claim` (accuracy score), Judge, every VC `update_and_bid`.
-3. Referee (pure code): candidates ranked by `bid × lane_fit × fairness_decay(turns_since_spoke)`; follow-up bonus when the answer was weak; depth cap 3; jump-in margin 0.2; cooldowns.
+2. Founder answer stored → parallel: claim extraction + `check_claim` (accuracy score) beside retrieval; then Vicky's score (after her knowledge verification when the question was a knowledge check) and every VC `update_and_bid`.
+3. Referee (pure code): candidates ranked by `bid × lane_fit × fairness_decay(turns_since_spoke)`; follow-up bonus when the answer was weak; depth cap 3; jump-in margin 0.2; cooldowns. When a knowledge check is due (`court/knowledge.py`: from the second question, then every third, never after a weak answer, at most cap ÷ 3), Vicky puts it at the top of the list.
 4. Chair step: Sonnet low over bids, open hypotheses, ledger, goals, budgets and the candidate list → `ChairDecision`; referee validates; invalid or > 1.5 s → top code candidate. Every decision logged.
-5. Speak: streamed over AG-UI (chat tab) and WebSocket (other tabs); sentence chunker → deterministic audit → TTS (optional in Prepare). Audit failure → regenerate once with feedback → fallback to memo `opening_question`.
+5. Speak: the VC drafts the line → deterministic audit (failure → regenerate once → offline line) → **Vicky reviews it** (`court/review.py` + `LineReview`): sent back → one rewrite, kept if it passes code's checks → stored with the review in `turns.audit.review` → streamed / TTS.
 6. Coaching: Coached mode time-out after two weak answers on one hypothesis (names the gap, points at the Figure, adds no figure).
 7. End conditions: question cap (6–20), time cap, all hypotheses resolved (< 0.2 or > 0.8), founder ends. Then report job + LLM audit.
 
@@ -290,6 +293,8 @@ Reconnect: client resumes with `since_version`; server replays from Postgres (tu
 | `WEB_ORIGIN` | api | CORS + cookie domain |
 | `DAILY_USD_BUDGET` | api, worker | default 5 |
 | `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ACCESS_CODE`, `COOKIE_SECRET` | api, worker | `sync: false` |
+| `VOYAGE_API_KEY` | api, worker | `sync: false`; knowledge-base embeddings and reranking ([08-RAG](08-RAG.md)); unset = BM25 only |
+| `EMBED_MODEL`, `RERANK_MODEL`, `RERANK_MODEL_FAST`, `RAG_CONF_MIN`, `RAG_FULL_MAX_TOKENS`, `RAG_REUSE_EMBEDDINGS` | api, worker | defaults in `vicky/config.py` |
 | `API_INTERNAL_URL`, `API_PUBLIC_WS_URL` | web | read at request time, never baked at build |
 
 ## 12. Testing and evals

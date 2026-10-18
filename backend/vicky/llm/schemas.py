@@ -53,9 +53,35 @@ class BeliefUpdate(BaseModel):
 class ChairDecision(BaseModel):
     action: Literal["call_on", "interject", "end_session"]
     vc_id: str | None
-    intent: Intent | None
-    hypothesis_id: str | None
+    intent: Literal["follow_up", "new_topic", "jump_in", "pass", "knowledge"] | None
+    hypothesis_id: str | None = Field(description="the candidate's hypothesis id, or its probe id for a knowledge check")
     note: str | None
+
+
+class LineReview(BaseModel):
+    """Vicky's review of an investor's drafted line, before it is spoken."""
+    verdict: Literal["approve", "revise"]
+    issues: list[str] = Field(description="short phrases naming what is wrong; empty when approved")
+    note: str = Field(description="one sentence to the investor on how to fix the line; empty when approved")
+
+
+# ---------------------------------------------------------------- knowledge checks
+
+class ProbeDraft(BaseModel):
+    vc_id: str = Field(description="the investor who will ask it")
+    passage_id: str = Field(description="id of the passage the question is written from")
+    question: str = Field(description="one question, no numbers, that the founder can answer only if they know the passage")
+    answer_quote: str = Field(description="the span of the passage that answers it, copied word for word")
+
+
+class ProbeList(BaseModel):
+    probes: list[ProbeDraft]
+
+
+class KnowledgeVerdict(BaseModel):
+    verdict: Literal["knows", "partial", "contradicts", "missed"]
+    explanation: str = Field(description="one or two sentences to the founder; quote the note word for word in double "
+                                         "quotes followed by its [kb:path] token")
 
 
 # ---------------------------------------------------------------- claims
@@ -90,6 +116,13 @@ class JudgeScore(BaseModel):
 class QAReply(BaseModel):
     reply: str = Field(description="the answer: at most four short sentences of plain prose; note quotes keep "
                                    "their [kb:path] token")
+
+
+class RagReply(BaseModel):
+    """Ask Vicky from retrieved passages (docs/08-RAG.md). Every sentence of `reply` carries a citation."""
+    answerable: bool = Field(description="false when the data and the passages given don't answer the question")
+    reply: str = Field(description="at most four short sentences; each one states a figure from <data> exactly "
+                                   "or quotes a passage word for word in double quotes followed by its [kb:path]")
 
 
 # ---------------------------------------------------------------- column mapper

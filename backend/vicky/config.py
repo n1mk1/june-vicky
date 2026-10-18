@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # OCR: tesseract binary (blank = on PATH) and the most pages one PDF may send through it.
     tesseract_cmd: str | None = None
     ocr_max_pages: int = 80
+    # Retrieval over the knowledge base (docs/08-RAG.md). Without a Voyage key search is BM25 only.
+    voyage_api_key: str | None = None
+    voyage_base_url: str = "https://api.voyageai.com/v1"
+    embed_model: str = "voyage-4"
+    rerank_model: str = "rerank-2.5"
+    rerank_model_fast: str = "rerank-2.5-lite"
+    rag_conf_min: float = 0.55
+    rag_full_max_tokens: int = 300_000
+    rag_reuse_embeddings: bool = True
     chair_timeout_s: float = 1.5
     interrupt_veto_timeout_s: float = 1.0
 

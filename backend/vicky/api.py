@@ -7,13 +7,14 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from vicky import auth, db, jobs, kv, migrate, realtime, report
+from vicky import auth, db, jobs, kv, memory, migrate, realtime, report
 from vicky.areopagus import builder, registry
 from vicky.areopagus.registry import PersonaError
 from vicky.config import get_settings
@@ -327,6 +328,26 @@ async def dashboard_chat(did: str, body: ChatIn, currency: str | None = None) ->
     return await dashboards.chat(did, body.text, currency)
 
 
+class CatchAllIn(BaseModel):
+    offer_id: str = Field(min_length=1, max_length=64)
+    accept: bool
+
+
+@api.post("/dashboards/{did}/chat/catch-all", response_model=None)
+async def dashboard_catch_all(did: str, body: CatchAllIn, currency: str | None = None) -> dict | PlainTextResponse:
+    """The user's answer to a catch-all offer (docs/08-RAG.md §Asking permission): accept runs the
+    whole-vault call once; decline runs nothing (204); an expired, used or foreign offer is 410."""
+    from vicky.kb.ask import OfferGone
+
+    try:
+        out = await dashboards.catch_all(did, body.offer_id, body.accept, currency)
+    except OfferGone as e:
+        raise HTTPException(410, str(e)) from e
+    if out is None:
+        return PlainTextResponse("", status_code=204)
+    return out
+
+
 # ---------------------------------------------------------------- areopagus
 
 @api.get("/areopagus")
@@ -404,6 +425,17 @@ class CourtStart(BaseModel):
     question_cap: int | None = Field(default=None, ge=4, le=20)
     coaching: str | None = None
     focus: str | None = Field(default=None, max_length=500)
+    knowledge: bool = True  # knowledge checks from the founder's notes (needs the search index)
+    drills: list[str] | None = Field(default=None, max_length=20)  # founder_memory drill ids; default: every pending one
+
+
+class DrillItem(BaseModel):
+    seq: int = Field(ge=1)
+    mark: Literal["repeat", "study"]
+
+
+class DrillsIn(BaseModel):
+    items: list[DrillItem] = Field(min_length=1, max_length=20)
 
 
 class AnswerIn(BaseModel):
@@ -417,7 +449,7 @@ async def court_start(body: CourtStart) -> dict:
     except NotFound as e:
         raise HTTPException(409, str(e)) from e
     try:
-        sid = await court.start(body.panel, body.question_cap, body.coaching, body.focus)
+        sid = await court.start(body.panel, body.question_cap, body.coaching, body.focus, body.knowledge, body.drills)
     except (PersonaError, CourtError) as e:
         raise HTTPException(422, str(e)) from e
     return await court.view(sid)
@@ -435,6 +467,18 @@ async def court_answer(sid: str, body: AnswerIn) -> dict:
     except CourtError as e:
         raise HTTPException(409, str(e)) from e
     return await court.view(sid)
+
+
+@api.post("/court/{sid}/drills")
+async def court_drills(sid: str, body: DrillsIn) -> dict:
+    """Save the questions marked Repeat / Study as drills (`founder_memory`); the next session starts with them."""
+    try:
+        saved = await memory.save_drills(sid, [i.model_dump() for i in body.items])
+    except KeyError as e:
+        raise NotFound("No such session") from e
+    if not saved:
+        raise HTTPException(422, "None of those questions are in this session")
+    return {"drills": saved}
 
 
 @api.post("/court/{sid}/end")

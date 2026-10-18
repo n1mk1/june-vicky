@@ -62,8 +62,12 @@ test.describe("Areopagus builder", () => {
   test("the Preparation “+” builds an investor and seats them", async ({ page }) => {
     await page.goto("/preparation");
     const count = page.getByText(/^Panel · \d\/5$/);
+    // All five built-ins sit by default: free a seat first.
+    if ((await count.textContent())?.includes("5/5")) {
+      await page.getByText("Socrates", { exact: true }).click();
+      await expect(count).toHaveText("Panel · 4/5");
+    }
     const seated = Number((await count.textContent())?.match(/(\d)\/5/)?.[1] ?? 0);
-    test.skip(seated >= 5, "the panel is already full");
     await page.getByTestId("roster-add").click();
     await expect(page).toHaveURL(/\/areopagus\?build=1&return=preparation/);
     const dialog = await draft(page, "A blunt growth investor who grills founders on the forecast and the burn.");

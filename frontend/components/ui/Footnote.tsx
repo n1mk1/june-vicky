@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { sourceLabel } from "@/lib/format";
+import { kbNotePath, sourceLabel } from "@/lib/format";
 import type { Citation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +45,11 @@ export function Footnote({ citation, className }: { citation: Citation; classNam
           </span>
           {citation.formula && <span>{citation.formula}</span>}
           <span className="font-mono text-[9.5px] uppercase tracking-[-0.04em] text-dim">{sourceLabel(citation.source)}</span>
+          {kbNotePath(citation.source) && (
+            <span className="text-[11px] text-ink-2" data-testid="footnote-kb-note">
+              From your knowledge base · {kbNotePath(citation.source)}
+            </span>
+          )}
           {citation.url && (
             <a href={citation.url} target="_blank" rel="noreferrer" className="text-[11.5px] text-ink underline underline-offset-2">
               Open source

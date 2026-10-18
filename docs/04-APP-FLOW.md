@@ -37,7 +37,7 @@ Failure: wrong code → inline error; 5 failures in a minute → 429 for 60 s.
 | 1 | Attaches CSV/XLSX/PDF/DOCX/MD in the prompt bar | `POST /uploads` (≤ 10 MB) stores bytes; CSV/XLSX parsed inline into `datasets` with column profiles; PDF/DOCX enqueue an extraction job | `uploads`, `datasets`, `jobs` |
 | 2 | Lands in the TruthPack flow, step 01 | If no engagement is active or the upload clearly belongs to a new company (name mismatch), Vicky asks for the **company profile**; values inferred from the file are prefilled as "inferred" | `engagements` (draft), `company_profiles` |
 | 3 | Confirms the profile | — | `company_profiles` |
-| 4 | Step 02 **Mapping** (CSV/XLSX only): reviews the proposed mapping, fixes low-confidence rows, keeps extras as raw columns | Sonnet proposes `ColumnMapping[]`; on confirm the loader applies it and normalizes signs/currency; wide layouts transposed | `dataset_mappings` |
+| 4 | Step 02 **Mapping** (CSV/XLSX only): reviews the proposed mapping, fixes low-confidence rows, keeps extras as raw columns; one **Save and continue** saves every table | The loader already found the header under any title rows, the date axis (any date format, Year + Month columns, Excel serials), scaled "$000" values, rolled daily rows and ledgers up to the period and transposed wide layouts; Sonnet proposes `ColumnMapping[]`; choosing another date column re-reads the table | `dataset_mappings`, `datasets` |
 | 5 | Step 03 **Facts**: reviews extracted facts (documents) and typed facts; edits/removes rows; unverifiable citations flagged | Two-pass citation extraction job; pypdf verification; facts merged with dataset-derived fields | `truthpacks.facts` (pending) |
 | 6 | Step 04 **Confirm**: reads the coverage checklist, confirms | Code computes all metrics (`Figure` / `MissingFigure`), the attack list over 12 lenses, the coverage checklist and the **default dashboard**. If a TruthPack was already confirmed for a different company, this **starts a new engagement**; the previous stays under Reports | `truthpacks.confirmed_at`, `dashboards`, `widgets`, `engagements.status` |
 | 7 | Redirected to `/dashboard` | Status pill shows `{Company} · confirmed` | — |
@@ -73,14 +73,14 @@ Conflict: two tabs edit layout at once → the second `PATCH` gets 409 with the 
 
 | Step | User | System | Persisted |
 |---|---|---|---|
-| 1 | Opens `/preparation`; seats VCs (default James, Alex, Mark; max 5); sets question cap and coaching mode; optionally adds a custom VC via "+" | Roster from `GET /areopagus`; Chair card fixed | — |
+| 1 | Opens `/preparation`; seats VCs (default all five: Aristotle, Thales, Xenophon, Plato, Socrates; max 5); sets question cap, coaching mode and knowledge checks; optionally adds a custom VC via "+" | Roster from `GET /areopagus`; Chair card fixed | — |
 | 2 | Sends the first answer or presses Start | `POST /court/start` → `sessions` row; gap ownership computed; **memo jobs** for each VC (parallel; inline on free tier); memo progress snippets streamed | `sessions`, `memos`, `jobs` |
 | 3 | Watches the opening | Vicky (chair) sets the agenda from the attack list + founder goals, introduces the panel, calls the first VC with an intent; the VC's opening question streams (audited sentence by sentence) | `turns`, `chair_decisions` |
 | 4 | Answers (typed or mic) | `POST /court/{id}/answer` stores the turn; in parallel: Haiku claims + `check_claim` → accuracy; Judge scores dims 2–5; every VC `update_and_bid` (no-concession rule) | `turns`, `claims`, `scores`, `beliefs` |
 | 5 | — | Referee ranks candidates (bid × lane_fit × fairness; follow-up bonus; depth cap 3; jump-in margin 0.2; cooldowns) → **Chair step** (Sonnet low, ≤ 1.5 s) → validated decision or code fallback → chosen VC speaks | `chair_decisions`, `turns` |
 | 6 | Sees a score card appear under the answer (Coached) or only the temperature glyph move (Realistic) | Score cards gated by coaching mode | — |
 | 7 | Gives a second weak answer on the same hypothesis (Coached) | Vicky interjects with a time-out card naming the gap and pointing to the Figure, no new numbers; next question resumes | `turns` (kind `coach`) |
-| 8 | Marks questions Repeat / Study in the right column | Local marks → `founder_memory.drills` on "Drill N selected" | `founder_memory` |
+| 8 | Marks questions Repeat / Study in the right column, presses "Drill N selected" | `POST /court/{id}/drills` saves the marks (kind `drill`); a live session ends (its report keeps the weak spots); `POST /court/start` with `drills[]` opens a session on the same panel whose first questions are the drilled topics (repeat before study; Vicky puts each at the top of the ranked list until asked, never ahead of a weak-answer follow-up). The right column shows which came back | `founder_memory` |
 | 9 | Ends the session (or cap/time/resolution reached) | Vicky debriefs; report job runs (Report writer → LLM audit → deterministic audit); "Report ready" card | `reports`, `founder_memory` (weakness ledger, answers, rewrites) |
 | 10 | Opens the report | `/report/{id}` | — |
 
@@ -127,7 +127,8 @@ Guardrails on save: field caps, delimited persona block, audit applied to the te
 ## 8. Founder memory across sessions
 
 - After every session the report job writes: weakness ledger by lens (severity, last seen), answers + scores, rewrites seen, drills done.
-- During sessions VCs and Vicky call `recall(topic)` ("Last session you said 10%"); James's `on_answer` compares with earlier answers across sessions.
+- At session start (`vicky.memory`): pending drills (or the `drills[]` given) are matched to the new memos by attack item (else by doubt) and seated with the best-lens investor if nobody owns them; they gain severity and lead `sessions.agenda`. The weak spots of the last 3 reports raise their doubt's severity and keep its confidence (never lowered: no-concession rule). Used drills are marked `used_by` the new session.
+- During sessions VCs and Vicky call `recall(topic)` ("Last session you said 10%"); Aristotle's `on_answer` compares with earlier answers across sessions.
 - Readiness orb score = latest report's overall; the trend compares to the previous session of the same engagement.
 
 ## 9. Realtime and recovery
@@ -147,6 +148,6 @@ Guardrails on save: field caps, delimited persona block, audit applied to the te
 1. Enter the access code. Knowledge base → import the **Harbor Labs** CSVs (renamed as unfamiliar files) → **Fill dashboard** → check the profile → mapping screen → confirm → dashboard with footnoted figures.
 2. Import the Tidewell files and fill again → second engagement; the first appears under Reports.
 3. Two tabs: ask Vicky for "burn excluding SR&ED as % of revenue by quarter" → widget in both; click a bar → formula + source rows; "zoom to the last 6 months".
-4. Preparation with James, Alex, Mark → memos stream → Vicky chairs → a weak growth answer gets a follow-up and a Coached time-out → end → report with Sources.
+4. Preparation with the five philosophers → memos stream → Vicky chairs (reviews each line) → a knowledge check is verified against a cited note → a weak growth answer gets a follow-up and a Coached time-out → end → report with Sources.
 5. Simulation Live: 3-slide deck, say "growing 10% a month" → interruption in a VC voice; ledger `contradicts`. After mode → Q&A + report.
 6. Ask "what valuation should we raise at?" → declined with an explanation.

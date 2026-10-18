@@ -18,11 +18,13 @@ interface PromptBarProps {
   /** Shows a thin progress line under the bar (upload, waiting for the panel). */
   busy?: boolean;
   disabled?: boolean;
+  /** The longest message the API takes. */
+  maxLength?: number;
   className?: string;
 }
 
 /** Glass input bar with a tool button on the left and send on the right, as in the wireframe. */
-export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hint, busy, disabled, className }: PromptBarProps) {
+export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hint, busy, disabled, maxLength, className }: PromptBarProps) {
   const [value, setValue] = useState("");
   const id = useId();
   const file = useRef<HTMLInputElement>(null);
@@ -76,6 +78,7 @@ export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hin
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
           autoComplete="off"
+          maxLength={maxLength}
           disabled={disabled}
           className="h-8 min-w-0 flex-1 bg-transparent px-1 text-[14px] text-ink placeholder:text-dim focus:outline-none disabled:cursor-not-allowed"
         />

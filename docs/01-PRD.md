@@ -113,13 +113,14 @@ Navigation: **Dashboard · Preparation · Simulation · Areopagus · Reports**, 
 - Source chips on every figure; "summary"/"founder said" badges on non-historical figures.
 
 ### 6.4 Preparation (Prepare the Founder) — the court
-- **Roster** (left column): a fixed, non-deselectable **Chair** card for Vicky, then the built-in VCs (James, Alex and Mark seated by default; up to 5 seated), custom VCs, and a "+" to describe a new investor. Each card shows the glyph, firm, interest temperature (warming/steady/cooling) and a speaking dot.
-- **Memos:** at session start every seated VC writes a private memo (thesis, 3–5 weakness hypotheses with Figure evidence, mind-changers, opening question); summarized-thinking snippets stream while the founder waits ("Mark is stress-testing growth…").
-- **Chair:** Vicky sets the agenda from the attack list and the founder's goals, seats and introduces the panel, decides who speaks with what intent after each answer, can interject (end a thread, switch topic, coaching time-out), and closes with a debrief.
-- **Turn loop:** founder answers (typed, optional mic) → claim extraction + `check_claim` → Judge scores → all VCs update beliefs and bid in parallel → referee computes candidates → Vicky's chair decision (validated by code; falls back to the code pick) → chosen VC speaks (streamed, audited). Follow-ups up to 3 deep; a VC may jump in when its bid beats the current speaker's by a margin.
+- **Roster** (left column): a fixed, non-deselectable **Chair** card for Vicky, then the five built-in VCs (all five seated by default; up to 5 seated), custom VCs, and a "+" to describe a new investor. Each card shows the glyph, firm, interest temperature (warming/steady/cooling) and a speaking dot.
+- **Memos:** at session start every seated VC writes a private memo (thesis, 3–5 weakness hypotheses with Figure evidence, mind-changers, opening question); summarized-thinking snippets stream while the founder waits ("Socrates is stress-testing growth…").
+- **Chair:** Vicky orchestrates, reviews, validates and scores. She sets the agenda from the attack list and the founder's goals, seats and introduces the panel, decides who speaks with what intent after each answer, can interject (end a thread, switch topic, coaching time-out), and closes with a debrief. She **reviews every drafted VC line before it is spoken** (one question, in the VC's lane, not a repeat, not giving a knowledge answer away; code's checks always count) and sends a failing line back once for a rewrite. She **scores every answer** (the dimension bars; accuracy stays code's claim check).
+- **Knowledge checks** (on by default, needs the search index from Fill dashboard): at session start, retrieval finds passages of the founder's own notes in each seated VC's lenses, and a recall question is written from each (its answer key is a verbatim span of the passage; tables and hub notes are skipped). Vicky schedules one every few questions (never right after a weak answer, at most a third of the cap); the VC asks it in their voice. Vicky verifies the answer against the key and a fresh retrieval over the answer: **Knew it · Partly · Contradicts notes · Missed · Not checked**, with the note quoted word for word and cited.
+- **Turn loop:** founder answers (typed, optional mic) → claim extraction + `check_claim` (+ Vicky's knowledge verification on a knowledge check) → Vicky scores → all VCs update beliefs and bid in parallel → referee computes candidates → Vicky's chair decision (validated by code; falls back to the code pick) → chosen VC drafts the line (audited) → Vicky reviews it (one rewrite if sent back) → it is spoken. Follow-ups up to 3 deep; a VC may jump in when its bid beats the current speaker's by a margin.
 - **No-concession rule:** a VC's concern only drops when the answer cites a matching Figure.
 - **Coaching mode:** Coached (default in Prepare): after two weak answers on one hypothesis, a short time-out names the gap and points at the Figure without answering. Realistic: silent until debrief.
-- **Feed** (centre): chat with filters Everything · Feedback & scoring · Slide design · Knowledge; score cards with five dimension bars and a claim chip; knowledge cards with glossary definitions and sources; inline footnotes on every number.
+- **Feed** (centre): chat with filters Everything · Feedback & scoring · Slide design · Knowledge; score cards (by Vicky) with five dimension bars and a claim chip; knowledge-check cards with Vicky's verdict and the cited note; a line Vicky sent back shows her note; inline footnotes on every number.
 - **Questions & answers** (right): every question asked, the answer, score, claim status; mark to Repeat or Study; "Drill N selected" launches a targeted session.
 - Session ends at the question cap (6–20, founder-set), time cap, when every hypothesis resolves, or when the founder ends it. Then the report runs.
 
@@ -132,8 +133,8 @@ Navigation: **Dashboard · Preparation · Simulation · Areopagus · Reports**, 
 - **Views:** Slide view (rendered deck, claim check per slide, slide strip with status bars) or Performance feedback (feed). Right column: scoring and metrics (overall, five dimensions, claims ledger counts, talk time, filler words, seconds per slide).
 
 ### 6.6 Areopagus (the investor registry)
-- Cards for the 10 built-in archetypes (name, archetype, main lens, signature move, kits, voice preview) and every custom VC in the workspace.
-- **Built-in roster:** James (lead seed partner), Mark (skeptical IC partner), Priya (Series A readiness), Dana (capital-efficiency hawk), Alex (operator angel), Kenji (corporate/strategic), Claire (government-backed / mandate-driven, country-aware), Victor (term-sheet tactician), Sam (technical/product diligence), Olivia (market/power-law visionary).
+- Cards for the 5 built-in investors (name, archetype, main lens, signature move, kits, voice preview) and every custom VC in the workspace.
+- **Built-in roster**, named for Greek philosophers: Aristotle (Lead Seed Fund), Thales (Angel Operator), Xenophon (Strategic Investor), Plato (Government-Backed Fund, country-aware) and Socrates (Skeptical Partner). The other archetypes live on as builder templates and question banks.
 - **No-code builder:** describe an investor in natural language → structured `VCPersona` preview → edit form (name/archetype/cheque role; lens-weight sliders that pick kits; tone/interrupt/depth sliders; dealbreaker and seed chips; signature move; voice picker) → "How would they open?" test memo on the current TruthPack → save (shared in the workspace). Edit, duplicate, delete custom; built-ins read-only but forkable (a fork keeps the archetype's method). YAML/JSON import/export.
 - Guardrails: persona text is character description, never instructions; field caps; audit applies to every VC.
 
@@ -179,12 +180,12 @@ Anchors: Appendix D's 15 weak/strong answer pairs. Scores stay hidden during a s
 | FR-5 | Claim checking | `check_claim("churn", 1%)` → `contradicts` with the Figure |
 | FR-6 | Audit | Flags "NRR is 115%", "raise at a $20M valuation", and any uncited benchmark; the turn is regenerated once |
 | FR-7 | Citations | PDF stating "MRR $107,189 Sep 2026" yields a fact with page 1 and verified `cited_text` |
-| FR-8 | Court distinctness | 5 seated VCs' first questions hit 5 different lenses; James challenges a contradicting answer; Kenji records a missed ROFR; Victor's valuation reply is blocked and regenerated |
+| FR-8 | Court distinctness | 5 seated VCs' first questions hit 5 different lenses; Aristotle challenges a contradicting answer; Xenophon records a missed ROFR; a valuation line is blocked and regenerated; Vicky sends back a repeated question; a knowledge answer is verified against the cited note |
 | FR-9 | Chair | A `ChairDecision` breaking a cooldown or arriving after 1.5 s falls back to the code pick; Coached time-out contains no new figure |
 | FR-10 | Simulation gate | `/pitch/start` returns 409 without a confirmed TruthPack |
 | FR-11 | Live interrupt | Say "growing 10% a month" on a 3-slide deck → interruption in a VC voice; ledger shows `contradicts` |
 | FR-12 | Dashboards | Vicky's "burn excluding SR&ED as % of revenue by quarter" adds a widget in two tabs; clicking a bar shows formula and source rows; "zoom to the last 6 months" moves every chart; layout persists |
-| FR-13 | Builder | Description → valid persona → test question → saved and visible in another browser; forking Mark keeps the pre-mortem |
+| FR-13 | Builder | Description → valid persona → test question → saved and visible in another browser; forking Socrates keeps the pre-mortem |
 | FR-14 | Access | `/api/v1/*` returns 401 without the access cookie |
 | FR-15 | Responsible AI | "What valuation should we raise at?" is declined with an explanation of how valuation and SAFE conversion work |
 | FR-16 | Resilience | Redeploy mid-session → WebSocket reconnects, session intact |

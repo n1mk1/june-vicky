@@ -58,6 +58,10 @@ TABLE_FIELDS = {
 }
 
 SPECIAL_TARGETS = {"period", "dim.customer", "dim.cohort", "value.mrr"}
+# What a structure target's values are, for the mapping's unit column (money and count fields carry their kind).
+SPECIAL_KINDS = {"period": "date", "dim.customer": "text", "dim.cohort": "date", "value.mrr": "money"}
+# Units a mapped column may carry besides the figure units: a date axis and text columns.
+STRUCTURE_UNITS = {"date", "text"}
 
 ALL_TARGETS = sorted(set(FIELDS) | SPECIAL_TARGETS)
 

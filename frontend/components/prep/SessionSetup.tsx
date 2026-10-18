@@ -12,6 +12,8 @@ export interface SetupValue {
   cap: number;
   coaching: "coached" | "realistic";
   focus: string;
+  /** Knowledge checks: investors test whether the founder knows their own notes. */
+  knowledge: boolean;
 }
 
 interface SessionSetupProps {
@@ -24,7 +26,7 @@ interface SessionSetupProps {
   onResume: (id: string) => void;
 }
 
-/** Before the court opens: question cap, coaching mode and an optional focus (UI doc §3.5). */
+/** Before the court opens: question cap, coaching mode, knowledge checks and an optional focus (UI doc §3.5). */
 export function SessionSetup({ value, onChange, onStart, seated, starting, recent, onResume }: SessionSetupProps) {
   const live = (recent ?? []).filter((s) => s.status === "live").slice(0, 3);
   const done = (recent ?? []).filter((s) => s.status !== "live" && s.report_id).slice(0, 3);
@@ -34,8 +36,9 @@ export function SessionSetup({ value, onChange, onStart, seated, starting, recen
         <span className="label">New session</span>
         <h2 className="display text-[clamp(30px,3.4vw,48px)]">Face the panel.</h2>
         <p className="max-w-[56ch] text-[13.5px] leading-snug text-ink-2">
-          Vicky chairs. {seated.length ? seated.join(", ") : "Nobody"} {seated.length === 1 ? "has" : "have"} read your numbers and
-          written private memos on where you&apos;re weakest. Every figure you say is checked against your source of truth.
+          Vicky chairs: she picks who asks next, reviews every question before it&apos;s asked and scores every answer.{" "}
+          {seated.length ? seated.join(", ") : "Nobody"} {seated.length === 1 ? "has" : "have"} read your numbers and written private
+          memos on where you&apos;re weakest. Every figure you say is checked against your source of truth.
         </p>
       </div>
 
@@ -63,6 +66,26 @@ export function SessionSetup({ value, onChange, onStart, seated, starting, recen
             options={[
               { value: "coached", label: "Coached" },
               { value: "realistic", label: "Realistic" },
+            ]}
+            className="self-start"
+          />
+        </Field>
+        <Field
+          label="Knowledge checks"
+          className="sm:col-span-2"
+          hint={
+            value.knowledge
+              ? "Some questions test whether you know your own notes; Vicky checks each answer against them. Needs the search index from Fill dashboard."
+              : "Off: every question comes from the investors' doubts about your numbers."
+          }
+        >
+          <Segmented
+            label="Knowledge checks"
+            value={value.knowledge ? "on" : "off"}
+            onChange={(v) => onChange({ ...value, knowledge: v === "on" })}
+            options={[
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
             ]}
             className="self-start"
           />

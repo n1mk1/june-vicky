@@ -79,6 +79,15 @@ def _clean(m: re.Match | None) -> str:
 _Q = re.compile(r"^###\s+(\d+)\.\s+(.+?)\s*$", re.M)
 
 
+# Search order for strong-answer anchors: the seated investors' banks first, then the archetype banks
+# kept only as a source of anchors (their investors are no longer in the roster).
+BANK_ORDER = ("aristotle", "socrates", "thales", "priya", "dana", "xenophon", "plato", "victor", "sam", "olivia")
+
+
+def bank_ids() -> tuple[str, ...]:
+    return tuple(i for i in BANK_ORDER if (PLAYBOOKS / f"questions-{i}.md").exists())
+
+
 @lru_cache
 def question_bank(persona_id: str) -> list[BankQuestion]:
     path = PLAYBOOKS / f"questions-{persona_id}.md"

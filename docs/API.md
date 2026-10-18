@@ -39,13 +39,13 @@ type CoverageItem = { group: string; metric_id: string; label: string; available
 | GET | `/engagements/{id}` | — | `Engagement` |
 | PUT | `/engagements/{id}/profile` | `Partial<Profile>` | `Engagement` |
 | POST | `/uploads` | multipart `file`, `engagement_id` (optional: creates a draft engagement) | `Engagement`; 413 over 10 MB; 415 unsupported type |
-| GET | `/datasets/{id}/mapping` | — | `{dataset: DatasetSummary, proposed: ColumnMapping[], confirmed: ColumnMapping[]\|null, targets: {id, label, group}[]}` |
-| PUT | `/datasets/{id}/mapping` | `{mapping: ColumnMapping[]}` | same as GET |
+| GET | `/datasets/{id}/mapping` | — | `{dataset: DatasetSummary, proposed: ColumnMapping[], confirmed: ColumnMapping[]\|null, targets: {id, label, group, kind}[]}` (`kind`: money · count · date · text) |
+| PUT | `/datasets/{id}/mapping` | `{mapping: ColumnMapping[]}` | same as GET. One date axis per table (422 otherwise); a new axis column re-reads the table from its upload (422 when that column doesn't read as dates). The unit follows the field: `date` for the axis, a currency for money, a count unit for counts |
 | POST | `/engagements/{id}/facts` | `{name, label?, value, unit, period?, kind?}` (founder-typed → `founder_stated`) | `Engagement` |
 | DELETE | `/engagements/{id}/facts/{fact_id}` | — | `Engagement` |
 | POST | `/engagements/{id}/confirm` | — | `Engagement` (now `active`; any previous active engagement is archived; default dashboard built) |
 
-`ColumnMapping = {source_column, canonical_field: string|null, unit, confidence, note}`.
+`ColumnMapping = {source_column, canonical_field: string|null, unit, confidence, note}`; `unit` is a figure unit (a currency, `pct`, `count`, `months`, `ratio`, `x`), `date` or `text`. Dataset columns carry `unit_hint` (`pct` · `date` · `text`) and `scale` (1000 when the header or a title row says the values are in thousands).
 
 ## Figures (active engagement unless `?engagement_id=`)
 
@@ -84,7 +84,8 @@ type ChatResult = { kind: "widget_added"|"exists"|"missing"|"error"|"time_range"
 | DELETE | `/dashboards/{id}/widgets/{widget_id}` | — | `Dashboard` |
 | PATCH | `/dashboards/{id}/layout` | `{layout, version}` | `Dashboard`; 409 stale version |
 | PATCH | `/dashboards/{id}/time-range` | `{time_range: {last_months} \| {from, to} (YYYY-MM) \| null, version?}` | `Dashboard` (range resolved against the latest period); 409 stale version; 422 invalid range |
-| POST | `/dashboards/{id}/chat` | `{text}` (1–500 chars) | `ChatResult`. Routing: “zoom to …”/“reset zoom” → `kind: time_range`; an explicit chart request (a verb such as show/chart/plot/add, or a grouping such as “by quarter”) → a widget evaluated by code and added as `created_by: vicky` (`widget_added` / `exists`; missing data → `missing` with the reason, nothing added); everything else, including any question about the data and valuation questions, → `kind: answer` from `vicky/qa.py`: `reply` (every number is a computed Figure, checked by the citation audit), `citations[]` (footnotes with formula and source rows), `suggestions[]` (follow-up questions) and `chart` (a request that would chart it). With an API key Claude phrases the answer from the same figures and is held to the same audit; otherwise, or on any failure, the deterministic answer is returned. When the knowledge base has notes, Claude can also call `kb_search` / `kb_read` and quote notes; offline, a question the data can't answer is looked up in the notes by keyword (`topic: notes`). A note is quoted word for word and followed by `[kb:path]`; its citation has `kind: "note"`, `display` = the path and `source: {kind: "note", ref: path, note_id}`. Numbers outside such a quote still need a Figure ([07 §Agents](07-KNOWLEDGE-BASE.md#agents-read-the-vault)) |
+| POST | `/dashboards/{id}/chat` | `{text}` (1–500 chars) | `ChatResult`. Routing: “zoom to …”/“reset zoom” → `kind: time_range`; an explicit chart request (a verb such as show/chart/plot/add, or a grouping such as “by quarter”) → a widget evaluated by code and added as `created_by: vicky` (`widget_added` / `exists`; missing data → `missing` with the reason, nothing added); everything else, including any question about the data and valuation questions, → `kind: answer` from `vicky/qa.py`: `reply` (every number is a computed Figure, checked by the citation audit), `citations[]` (footnotes with formula and source rows), `suggestions[]` (follow-up questions) and `chart` (a request that would chart it). With an API key Claude phrases the answer from the same figures and is held to the same audit; otherwise, or on any failure, the deterministic answer is returned. When the knowledge base has notes, Claude can also call `kb_search` / `kb_read` and quote notes; offline, a question the data can't answer is looked up in the notes by keyword (`topic: notes`). A note is quoted word for word and followed by `[kb:path]`; its citation has `kind: "note"`, `display` = the path and `source: {kind: "note", ref: path, note_id}`. Numbers outside such a quote still need a Figure ([07 §Agents](07-KNOWLEDGE-BASE.md#agents-read-the-vault)). Once Fill dashboard has built the search index, notes come from hybrid retrieval and every model-written sentence must cite a figure or quote a note; a figure's citation names its note in `source.kb_note: {id, path}`. When the notes are needed but not found, the answer carries `offer: {kind: "catch_all", id, prompt, notes, expires_at}` and nothing more runs until the user answers it ([08-RAG.md §Ask Vicky](08-RAG.md#ask-vicky)) |
+| POST | `/dashboards/{id}/chat/catch-all` | `{offer_id, accept: boolean}` | The user's answer to a catch-all offer. `accept: true` runs Haiku over the whole vault once and returns a `ChatResult` answer (audited, cached); `accept: false` runs nothing (**204**). An expired (15 min), used or other dashboard's offer is **410** |
 | GET | `/realtime/token` | — | `{token}` signed for one hour, for the WebSocket |
 | WS | `/ws?token=…&channels=dashboard:{id},session:{id}` | client sends `{type: subscribe\|unsubscribe, channel}`, `{type: ping}` | `{type: hello, versions}` then envelopes `{type, channel, version, ts, payload}`; `widget.diff` (`{version, op, widget_id?, title?, by?}`), `layout.diff`, `time_range.diff` carry the dashboard `version` |
 
@@ -124,9 +125,10 @@ type Session = { id: string; status: "live"|"ended"; mode: "prepare"; panel: Per
 ```
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| POST | `/court/start` | `{panel?: string[] (≤5, default james/alex/mark), question_cap?: 6–20 (default 8), coaching?: "coached"\|"realistic", focus?: string}` | `Session` (Vicky intro + first question); 409 without a confirmed TruthPack |
+| POST | `/court/start` | `{panel?: string[] (≤5, default james/alex/mark), question_cap?: 6–20 (default 8), coaching?: "coached"\|"realistic", focus?: string, drills?: string[] (founder_memory drill ids; default every pending drill)}` | `Session` (Vicky intro + first question; drilled questions open the agenda, the last 3 reports' weak spots start with raised severity; `carried[]` lists what came back and where it was asked); 409 without a confirmed TruthPack |
 | GET | `/court/{id}` | — | `Session` |
 | POST | `/court/{id}/answer` | `{text}` | `Session` (founder answer, claim checks, score, chair pick, next VC question or coach card; ends at the cap) |
+| POST | `/court/{id}/drills` | `{items: [{seq, mark: "repeat"\|"study"}]}` (1–20) | `{drills: [{id, seq, mark, topic, lens}]}` saved to `founder_memory` (kind `drill`); 422 when none of the seqs is a question of that session |
 | POST | `/court/{id}/end` | — | `Session` with `report_id` |
 | GET | `/sessions` | — | recent sessions `{id, mode, status, started_at, question_count, report_id}[]` |
 
@@ -159,7 +161,8 @@ type KbLinkRef = { id: string|null; path: string|null; title: string };   // id 
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| GET | `/kb/status` | — | `{notes, hubs, tables, documents, unorganized, organized_at, files, failed, bytes, jobs: Job[], running, failures: {id, filename, error}[], ocr: boolean, llm: boolean}` |
+| GET | `/kb/status` | — | `{notes, hubs, tables, documents, unorganized, organized_at, files, failed, bytes, jobs: Job[], running, failures: {id, filename, error}[], ocr: boolean, llm: boolean, index: {status: "none"\|"building"\|"ready"\|"failed", build_id, built_at, notes, chunks, vectors, changed_since, latest}, rag: {…counters, offer_rate, accept_rate}}`; `index` is the search index Fill dashboard builds ([08-RAG.md](08-RAG.md)); `changed_since` counts notes edited or added after it |
+| POST | `/kb/index` | — | `{build_id, status: "queued"}`: rebuild the search index from the vault as it is now (Retry after a failed build); **422** when the vault is empty |
 | GET | `/kb/notes` | — | `KbNote[]` (no content) |
 | GET | `/kb/notes/{id}` | — | `KbNote & {content, backlinks: KbLinkRef[], outlinks: KbLinkRef[], file?: {id, filename, kind, size, status}}` |
 | POST | `/kb/notes` | `{title, content?, path?, format?: "md"\|"csv", tags?, summary?, links?}` | the note (author `founder`) |
@@ -171,7 +174,7 @@ type KbLinkRef = { id: string|null; path: string|null; title: string };   // id 
 | POST | `/kb/organize` | `{full?: boolean}` | `{job_id}`; `full` re-organizes every note, otherwise only new ones |
 | GET | `/kb/export?originals=` | — | `application/zip`: the vault (`.md` with frontmatter, `.csv`, `.vicky/meta.json`), plus `_originals/` when asked |
 | GET | `/kb/files/{id}` | — | the original file as uploaded |
-| POST | `/kb/autofill` | — | `{engagement: Engagement, by: "claude"\|"heuristic", profile: {field, value, evidence}[], added: {note, as}[], skipped: {note, reason}[]}`; a new **draft** engagement for the intake flow; **422** when the vault is empty |
+| POST | `/kb/autofill` | — | `{engagement: Engagement, by: "claude"\|"heuristic", profile: {field, value, evidence}[], added: {note, as}[], skipped: {note, reason}[], index: {build_id, status}}`; a new **draft** engagement for the intake flow, and a full rebuild of the search index in the background ([08-RAG.md §Indexing](08-RAG.md#indexing)); **422** when the vault is empty |
 
 `Engagement` also carries `profile_sources: Record<field, string>`: where each autofilled profile value came from (`From [[path]]: “quote”`).
 

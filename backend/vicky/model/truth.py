@@ -78,8 +78,11 @@ def resolve_metric(metric: str) -> list[str]:
     return [metric]
 
 
+ROUND_NUMBER_CAP = 0.05  # a round figure ("$1M") is never read as looser than ±5%
+
+
 def _tolerance(claimed: float, unit: str, rel: float) -> float:
-    """Absolute tolerance: ±rel of the value, or half the precision the founder stated."""
+    """Absolute tolerance: ±rel of the value, or half the precision the founder stated (at most ±5%)."""
     scaled = claimed * 100 if unit == "pct" else claimed
     if scaled == 0:
         precision = 1.0
@@ -93,7 +96,7 @@ def _tolerance(claimed: float, unit: str, rel: float) -> float:
         if digits == 0 and mag >= 1000:
             s = f"{int(round(mag))}"
             trailing = len(s) - len(s.rstrip("0"))
-            precision = 10 ** trailing
+            precision = min(10 ** trailing, 2 * mag * ROUND_NUMBER_CAP)
     half = precision / 2
     if unit == "pct":
         half /= 100
@@ -101,8 +104,8 @@ def _tolerance(claimed: float, unit: str, rel: float) -> float:
 
 
 def _same_unit(figure_unit: str, claim_unit: str) -> bool:
-    money = CURRENCY_UNITS | {"money", "$"}
-    if figure_unit in money and claim_unit in money:
+    """"money" and "$" are the reporting currency; an explicit code must be the figure's own currency."""
+    if figure_unit in CURRENCY_UNITS and claim_unit in ("money", "$"):
         return True
     return figure_unit == claim_unit or not claim_unit
 
@@ -143,6 +146,10 @@ def check_claim(metric: str, value: float, unit: str, figures: dict[str, Figure 
                     return ClaimCheck(status="forecast_as_fact", metric=metric, value=value, unit=unit,
                                       figure_id=ids[0], explanation=f"{fmt_value(fact.value, fact.unit)} is the plan, not an actual ({fact.source.ref}).")
     if best is None:
+        if unit in CURRENCY_UNITS and any(f.unit in CURRENCY_UNITS for f in candidates):
+            have = next(f.unit for f in candidates if f.unit in CURRENCY_UNITS)
+            return ClaimCheck(status="unsupported", metric=metric, value=value, unit=unit,
+                              explanation=f"The claim is in {unit.upper()}; {metric} is measured in {have.upper()}.")
         return ClaimCheck(status="unsupported", metric=metric, value=value, unit=unit,
                           explanation=f"The claim's unit ({unit}) doesn't match how {metric} is measured.")
     f = best[1]

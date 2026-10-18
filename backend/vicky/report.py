@@ -1,7 +1,8 @@
 """Session report (deterministic path): verdict, per-VC view, every question with its score and
 strong answer, the claim ledger, knowledge gaps, an action plan and numbered sources.
 
-Scores come from the judge and the code accuracy check; the synthesis here adds no figure that
+Scores come from Vicky and the code accuracy check; knowledge checks are her verdicts on what the founder
+recalled of their own notes; the synthesis here adds no figure that
 isn't a Figure. The whole Markdown is audited before it is stored.
 """
 
@@ -26,6 +27,7 @@ async def build(sid: str, ctx: TruthContext, panel: dict[str, VCPersona]) -> str
     scores = {str(s["turn_id"]): s for s in await db.fetch(
         "select * from scores where turn_id = any($1::uuid[])", [t["id"] for t in turns])}
     claims = await db.fetch("select * from claims where session_id = $1 order by created_at", sess["id"])
+    kchecks = await db.fetch("select * from knowledge_checks where session_id = $1 order by created_at", sess["id"])
     state = sess["state"]
     hyps = {h["id"]: (vc, h) for vc, s in state["vcs"].items() for h in s["hyps"]}
 
@@ -94,6 +96,15 @@ async def build(sid: str, ctx: TruthContext, panel: dict[str, VCPersona]) -> str
     action_plan = [{"priority": i + 1, "text": f"Prepare a cited answer on {h['claim'].lower()}: the figure, its window, "
                                                f"the weak spot and the fix.", "drill_lens": h["lens"]}
                    for i, (_, h) in enumerate(open_all[:5])]
+    knowledge = [{"vc_id": k["vc_id"], "vc_name": panel[k["vc_id"]].name if k["vc_id"] in panel else k["vc_id"],
+                  "question": next((t["text"] for t in turns if t["id"] == k["question_turn_id"]), ""),
+                  "answer": next((t["text"] for t in turns if t["id"] == k["turn_id"]), ""),
+                  "verdict": k["verdict"], "explanation": k["explanation"], "path": (k["expected"] or {}).get("path"),
+                  "citations": k["citations"] or []} for k in kchecks]
+    to_reread = sorted({k["path"] for k in knowledge if k["verdict"] in ("missed", "contradicts", "partial") and k["path"]})
+    if to_reread:
+        action_plan.insert(0, {"priority": 0, "text": "Re-read your notes before the meeting: " + ", ".join(to_reread)
+                               + ". You didn't recall what they say.", "drill_lens": "knowledge"})
     if any(c["status"] == "contradicts" for c in claims):
         action_plan.insert(0, {"priority": 0, "text": "Fix the numbers you stated that disagree with your own data (see the ledger).",
                                "drill_lens": "claims"})
@@ -116,7 +127,7 @@ async def build(sid: str, ctx: TruthContext, panel: dict[str, VCPersona]) -> str
            "verdict": {"readiness": _readiness(overall), "overall": overall, "dims": dims, "delta": delta,
                        "questions": n},
            "per_vc": per_vc, "questions": questions, "ledger": ledger, "slides": [], "delivery": None,
-           "knowledge_gaps": gaps, "action_plan": action_plan, "audit_notes": [], "sources": sources,
+           "knowledge_gaps": gaps, "knowledge": knowledge, "action_plan": action_plan, "audit_notes": [], "sources": sources,
            "memos": [{"vc_id": r["vc_id"], **r["memo"]} for r in await db.fetch(
                "select vc_id, memo from memos where session_id = $1", sess["id"])]}
     md = to_markdown(rep)
@@ -133,7 +144,8 @@ async def build(sid: str, ctx: TruthContext, panel: dict[str, VCPersona]) -> str
         await db.execute(
             """insert into founder_memory (engagement_id, kind, lens, topic, payload, severity)
                values ($1, 'weakness', $2, $3, $4, $5)""",
-            sess["engagement_id"], h["lens"], h["claim"], {"session_id": sid, "vc_id": vc, "confidence": h["confidence"]},
+            sess["engagement_id"], h["lens"], h["claim"], {"session_id": sid, "vc_id": vc, "confidence": h["confidence"],
+                                                       "attack_id": h["attack_id"], "hypothesis_id": h["id"]},
             h["severity"])
     return rid
 
@@ -162,6 +174,12 @@ def to_markdown(r: dict) -> str:
     if r["ledger"]:
         lines += ["## Claim ledger", "", "| You said | Status |", "|---|---|"]
         lines += [f"| {c['text']} | {c['status'].replace('_', ' ')} |" for c in r["ledger"]] + [""]
+    if r.get("knowledge"):
+        lines += ["## Knowledge checks", ""]
+        for k in r["knowledge"]:
+            lines += [f"- **{k['vc_name']}**: {k['question']}", f"  - You said: {k['answer']}",
+                      f"  - {k['verdict'].replace('_', ' ').capitalize()}: {k['explanation']}"]
+        lines.append("")
     if r["knowledge_gaps"]:
         lines += ["## Terms to know", ""] + [f"- **{g['term']}**: {g['text']}" for g in r["knowledge_gaps"]] + [""]
     lines += ["## Action plan", ""] + [f"{a['priority'] + 1 if a['priority'] == 0 else a['priority']}. {a['text']}"

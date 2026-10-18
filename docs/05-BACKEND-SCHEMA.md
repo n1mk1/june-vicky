@@ -141,13 +141,13 @@ session_id FK, vc_id text, persona_version int, truthpack_version int, memo json
 | seq | int | unique per session; append-only |
 | speaker | text | `founder`, `vicky`, or vc_id |
 | kind | enum `question \| answer \| interject \| coach \| debrief \| segment \| interrupt` | |
-| intent | text | chair intent for VC turns |
-| hypothesis_id | text | |
+| intent | text | chair intent for VC turns (`follow_up`, `new_topic`, `jump_in`, `knowledge`) |
+| hypothesis_id | text | the hypothesis asked about; a probe id (`k:<vc>.<n>`) on a knowledge check |
 | text | text | final audited text |
 | citations | jsonb | `[{marker, figure_id?, source_id?, formula, source}]` |
 | slide | int | simulation |
 | t_offset_ms | int | simulation |
-| audit | jsonb | `{passed, regenerated, findings[]}` |
+| audit | jsonb | `{passed, regenerated, findings[], review?}`; `review` is Vicky's review of the drafted line: `{verdict: approve\|revise, issues[], note, source: code\|llm, revised, final?}` |
 | usage | jsonb | |
 
 ### 2.12 `beliefs`
@@ -160,7 +160,7 @@ id, session_id, after_turn_seq, candidates jsonb (referee-ranked), decision json
 id, session_id, turn_id FK, slide int, t_offset_ms int, text, metric text, value numeric, unit text, period text, is_forecast bool, status enum `matches | contradicts | unsupported | forecast_as_fact`, figure_id text, severity numeric. Index (session_id, status).
 
 ### 2.15 `scores`
-turn_id PK/FK (the founder answer), accuracy numeric (code), dims jsonb (`{evidence, clarity, composure, investor_fit}` 0–5), rationale jsonb (`{good, missing, correct_figure, strong_answer, why_asked}`), judge_usage jsonb.
+Written by Vicky. turn_id PK/FK (the founder answer), accuracy numeric (code), dims jsonb (`{evidence, clarity, composure, investor_fit}` 0–5), rationale jsonb (`{good, missing, correct_figure, strong_answer, why_asked}`), judge_usage jsonb.
 
 ### 2.16 `reports`
 id, session_id FK unique, engagement_id, report jsonb (`Report`, §4), markdown text, overall numeric, dims jsonb, delta_vs_previous numeric, audit_notes jsonb, sources jsonb (numbered), created_at.
@@ -173,7 +173,7 @@ id, session_id FK unique, engagement_id, report jsonb (`Report`, §4), markdown 
 | kind | enum `weakness \| answer \| rewrite \| drill` | |
 | lens | text | |
 | topic | text | |
-| payload | jsonb | e.g. `{session_id, question, answer, score, figure_id}` |
+| payload | jsonb | e.g. `{session_id, question, answer, score, figure_id}`; weakness `{session_id, vc_id, confidence, attack_id, hypothesis_id}`; drill `{session_id, turn_id, seq, mark: repeat\|study, question, vc_id, intent, hypothesis_id, attack_id, note_path, used_by?}` |
 | severity | numeric | weaknesses |
 | last_seen_at | timestamptz | |
 
@@ -193,6 +193,20 @@ id, filename (path inside a dropped folder or zip), mime, bytes bytea, size, sha
 
 ### 2.22 `kb_notes` (migration 0003)
 id, path text unique (`folder/name.md|csv`), title, kind (`table | document | note | hub`), format (`md | csv`), content text, file_id? → kb_files (set null), tags text[], summary, links text[] (related-note paths set by the organizer or the founder; `[[wikilinks]]` in content are parsed on read), meta jsonb (provenance: source, pages, ocr_pages, unread_pages, rows, columns, sheet, slides, charts), author (`import | ai | founder`), organized_at, version int (optimistic concurrency on PUT), created_at, updated_at. Hubs with `author = ai` are rewritten after each import. `jobs.kind` gains `kb_ingest` and `kb_organize` (both with no engagement).
+
+### 2.23 Knowledge-base search index (migration 0006, [08-RAG.md](08-RAG.md))
+- **`kb_meta`**: one row, `version bigint`, bumped by a statement trigger on every insert, update or delete in `kb_notes`. Cache keys include it.
+- **`kb_index_builds`**: one row per Fill dashboard (or `scripts/kb_reindex.py`): id, engagement_id? (the draft the Fill created), job_id, status (`queued → building → active → superseded | failed | cancelled`; partial unique index: one `active`), notes, chunks, embedded, reused, embed_model, error, started_at, finished_at, created_at.
+- **`kb_chunks`**: id, build_id → kb_index_builds (cascade), note_id → kb_notes (cascade), note_md5 (`md5(content)` when cut; a mismatch means the note changed since the Fill and the chunk is skipped), ord, heading, start_char, end_char (`text = content[start:end]`), text, text_sha256, sha256 (of the embedded text, for vector reuse), embed_model, created_at; with pgvector also `embedding halfvec(1024)` (HNSW, cosine). Unique `(build_id, note_id, ord)`: two builds coexist only while a new one is made.
+- **`qa_cache`**: semantic answer cache: id, build_id (cascade), kb_version, truthpack_id, truthpack_version, question, question_norm, guard, answer jsonb, created_at; with pgvector `embedding halfvec(1024)`. Rows older than 24 h are deleted on write.
+- **`rag_misses`**: every catch-all offer: id, build_id? (set null), kb_version, surface, dashboard_id, question, retrieved jsonb (both passes), decision (`pending | accepted | declined | expired`), decided_at, passed, cited_notes text[], reviewed, created_at.
+- **`uploads.kb_note_id`** → kb_notes (set null): the note Fill dashboard sent to intake, so a figure's citation names its note (`source.kb_note`).
+- `jobs.kind` gains `kb_index`.
+
+### 2.24 `knowledge_checks` (migration 0007)
+One row per knowledge question answered: id, session_id (cascade), turn_id (the answer, cascade), question_turn_id (set null), probe_id, vc_id, lens, verdict (`knows | partial | contradicts | missed | unverified`), explanation (audited; quotes the note word for word with its `[kb:path]`), expected jsonb (`{cite, path, heading, title, quote}`: the passage the question was written from and its verbatim answer key), citations jsonb, retrieval jsonb (`{confidence, build_id, passages, ms}`: Vicky's own search over the answer), source (`offline | llm`), created_at. Index (session_id, created_at).
+
+`sessions.state` gains `probes[]` (`{id, vc, lens, topic, question, expected, asked, source}`), `asked_lines[]` (texts Vicky reviews new lines against), `last_knowledge_q` and `knowledge_on`; `sessions.settings` gains `knowledge` (bool).
 
 ## 3. Indexes and constraints
 
@@ -225,7 +239,7 @@ id, path text unique (`folder/name.md|csv`), title, kind (`table | document | no
  "presentation":{"stack":false,"smooth":false,"dual_axis":false,"labels":true,"mark_lines":[],"sort":null,"unit":"pct"}}
 
 // VCPersona
-{"id":"mark","name":"Mark","archetype":"skeptical_ic_partner","bio":"…","cheque_role":"votes_in_ic",
+{"id":"socrates","name":"Socrates","archetype":"skeptical_ic_partner","bio":"…","cheque_role":"votes_in_ic",
  "priorities":{"concentration":0.9,"claims":0.9,"forecast":0.6,"retention":0.5},
  "style":{"tone":"blunt","interrupt_tendency":0.8,"follow_up_depth":3,"aggression":0.8},
  "signature_move":"Pre-mortem chain","question_seeds":["…"],"dealbreakers":["…"],
@@ -273,6 +287,12 @@ id, path text unique (`folder/name.md|csv`), title, kind (`table | document | no
 | `vicky:rl:{ip}` | counter | 60 s | rate limit |
 | `vicky:spend:{YYYY-MM-DD}` | float | 48 h | daily USD estimate |
 | `vicky:lock:migrate` | — | — | not used; Postgres advisory lock instead |
+| `rag:ret:{build}:{kb_v}:{mode}:{k}:{sha}` | string (json) | 1 h | retrieval result (chunk ids, scores, confidence) |
+| `rag:rr:{build}:{model}:{sha}:{sha}` | string (json) | 1 h | rerank scores |
+| `rag:ans:{build}:{kb_v}:{tp_id}:{tp_v}:{sha}` | string (json) | 24 h | audited Ask Vicky answer |
+| `rag:emb:{model}:{sha}` | string (json) | 30 d | query embedding (kept across builds) |
+| `rag:offer:{id}` | string (json) | 15 min | pending catch-all offer; deleted when used |
+| `rag:stats:{YYYYMMDD}` | hash | 8 d | cache hits and misses, answer paths, offers made / accepted / declined |
 
 Losing all Redis data is harmless: queued jobs become `stale` and retryable; everything else recomputes.
 
@@ -294,9 +314,9 @@ Losing all Redis data is harmless: queued jobs become `stale` and retryable; eve
 WebSocket and pub/sub share one envelope:
 
 ```jsonc
-{"type":"vc.turn.delta","session_id":"…","version":812,"ts":"…","payload":{"turn_seq":12,"speaker":"mark","text":"…"}}
+{"type":"vc.turn.delta","session_id":"…","version":812,"ts":"…","payload":{"turn_seq":12,"speaker":"socrates","text":"…"}}
 ```
 
-Types: `memo.snippet`, `chair.decision`, `vc.turn.delta`, `vc.turn.done`, `coach.timeout`, `score.ready` (coached only), `ledger.update`, `interrupt`, `widget.diff`, `layout.diff`, `job.status`, `session.ended`, `budget.exceeded`. `version` is monotonically increasing per session or dashboard and is what clients use to dedupe and to resume (`since_version`).
+Types: `memo.snippet`, `chair.decision`, `vc.turn.delta`, `vc.turn.done`, `coach.timeout`, `score.ready` (coached only), `knowledge.checked`, `ledger.update`, `interrupt`, `widget.diff`, `layout.diff`, `job.status`, `session.ended`, `budget.exceeded`. `version` is monotonically increasing per session or dashboard and is what clients use to dedupe and to resume (`since_version`).
 
 AG-UI runs emit the standard event set; VC messages carry `metadata.speaker = vc_id`; chair decisions and widget diffs are `STATE_DELTA` patches against `{agenda, speaking, widgets, time_range}`.

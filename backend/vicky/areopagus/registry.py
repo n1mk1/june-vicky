@@ -11,7 +11,7 @@ from vicky import db
 from vicky.areopagus.schema import VCPersona
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_PANEL = ["james", "alex", "mark"]
+DEFAULT_PANEL = ["aristotle", "thales", "xenophon", "plato", "socrates"]
 MAX_PANEL = 5
 
 

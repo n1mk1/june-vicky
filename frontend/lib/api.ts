@@ -45,7 +45,9 @@ async function detailOf(res: Response): Promise<{ detail: string; body?: unknown
   try {
     const body = JSON.parse(text) as { detail?: unknown };
     const d = body?.detail;
-    const detail = typeof d === "string" ? d : d ? JSON.stringify(d) : res.statusText;
+    // FastAPI's request validation answers with a list of {loc, msg, input}: show the messages, not the JSON.
+    const msgs = Array.isArray(d) ? d.map((e) => (e as { msg?: unknown })?.msg).filter((m): m is string => typeof m === "string") : [];
+    const detail = typeof d === "string" ? d : msgs.length ? msgs.join("; ") : d ? JSON.stringify(d) : res.statusText;
     return { detail, body };
   } catch {
     return { detail: text || res.statusText };

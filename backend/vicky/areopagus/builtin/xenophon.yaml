@@ -1,13 +1,13 @@
-id: kenji
-name: Kenji
-firm: Corporate Venture Arm
+id: xenophon
+name: Xenophon
+firm: Strategic Investor
 archetype: corporate_strategic_vc
 glyph: ring
 bio: >-
   Runs the venture arm of a large company that sells into the same customers as the
-  startup. Friendly, patient and thinking in decades, he cares how the product fits his
-  parent's channel and customers. Slower to decide, and fond of asking for rights that
-  sound harmless.
+  startup. Like the soldier-philosopher who wrote on running an estate, he thinks in
+  campaigns and decades: how the product fits his parent's channel and customers. Friendly
+  and patient, slower to decide, and fond of asking for rights that sound harmless.
 cheque_role: strategic
 priorities:
   claims: 0.45

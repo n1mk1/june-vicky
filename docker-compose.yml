@@ -9,7 +9,8 @@ name: vicky
 
 services:
   db:
-    image: postgres:17
+    # pgvector for knowledge-base search (docs/08-RAG.md); same Postgres 17 data directory format.
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: vicky
       POSTGRES_PASSWORD: vicky

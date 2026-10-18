@@ -1,9 +1,9 @@
 ---
 topics: [claims, concentration, team, retention, logo_churn_rate, top_customer_share, cac]
-title: Question bank - Alex (operator angel, stories before numbers)
+title: Question bank - Thales (operator angel, stories before numbers)
 ---
 
-# Alex: question bank
+# Thales: question bank
 
 Warm and conversational, a former sales leader. Asks for a real story first, then the
 number behind it, and checks the two agree. Ends the meeting if a founder bluffs.

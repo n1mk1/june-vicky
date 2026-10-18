@@ -1,0 +1,142 @@
+# A fictional company's knowledge base for the retrieval eval (backend/evals/rag/run.py, docs/08-RAG.md
+# §Testing and evals). Fifteen notes written the way founders write: headings, slides, a board pack, a table.
+- path: company/Board update September.md
+  title: Board update, September
+  tags: [board, governance]
+  content: |
+    # Board update, September
+
+    ## Page 1: Highlights
+
+    The board approved the Ashgrove partnership pilot with 40 stores and a minimum commitment of 250 thousand.
+    Two directors asked for a monthly view of store-level sell-through before the pilot expands.
+
+    ## Page 2: Risks discussed
+
+    The board flagged supplier concentration: one dairy supplier provides most of our fresh volume.
+    Next review is in December, after the holiday quarter.
+- path: team/Hiring plan.md
+  title: Hiring plan
+  tags: [team, hiring]
+  content: |
+    # Hiring plan
+
+    We will hire two backend engineers and one account executive before the next round.
+    A head of operations joins in the first quarter of next year to run store onboarding.
+    Contractors cover data labelling until then.
+- path: product/Pricing.md
+  title: Pricing
+  tags: [pricing, product]
+  content: |
+    # Pricing
+
+    Stores pay a monthly subscription per location, with three tiers: Starter, Growth and Chain.
+    Chain customers get a volume discount once they pass 25 locations.
+    Annual prepayment earns two free months.
+- path: market/Competitors.md
+  title: Competitors
+  tags: [market, competition]
+  content: |
+    # Competitive landscape
+
+    Freshlytics sells shrink reporting but has no ordering automation.
+    Large point-of-sale vendors bundle basic forecasting, which smaller grocers rarely trust.
+    Our edge is per-item spoilage forecasting tied to automatic reorders.
+- path: product/Roadmap.md
+  title: Product roadmap
+  tags: [product, roadmap]
+  content: |
+    # Roadmap
+
+    ## Now
+    Supplier portal so vendors confirm orders without email.
+
+    ## Next
+    Markdown suggestions: discount items before they spoil.
+
+    ## Later
+    A mobile app for store managers to approve orders on the floor.
+- path: fundraising/Use of funds.md
+  title: Use of funds
+  tags: [fundraising]
+  content: |
+    # Use of funds
+
+    The seed extension goes mostly to engineering and to onboarding new store chains.
+    About a fifth is reserved for working capital in case pilots pay late.
+    We are raising on a SAFE with a valuation cap agreed with the lead investor.
+- path: customers/Churn review.md
+  title: Churn review
+  tags: [customers, churn]
+  content: |
+    # Why stores cancel
+
+    Most cancellations came from single-location stores that never connected their point-of-sale data.
+    Stores that finished onboarding in the first two weeks almost never cancelled.
+    We now require a data connection call before the first invoice.
+- path: customers/Customer interviews.md
+  title: Customer interviews
+  tags: [customers, research]
+  content: |
+    # Customer interviews
+
+    Store managers said the biggest pain is ordering produce on gut feel every morning.
+    Owners care most about waste in dairy and bakery.
+    Several asked for a weekly email summary instead of another dashboard.
+- path: operations/Onboarding playbook.md
+  title: Onboarding playbook
+  tags: [operations, onboarding]
+  content: |
+    # Onboarding a new store
+
+    Day one: connect the point-of-sale export and the supplier list.
+    Week one: the system learns sell-through per item; orders stay manual.
+    Week two: automatic reorders switch on for produce, then dairy.
+- path: company/Mission.md
+  title: Mission
+  tags: [company]
+  content: |
+    # Mission
+
+    We help independent grocers stop throwing away fresh food by ordering exactly what will sell.
+    The company was founded by a former store manager and a supply-chain data scientist.
+- path: legal/Data processing.md
+  title: Data processing
+  tags: [legal, privacy]
+  content: |
+    # Data processing
+
+    We process only sales and inventory data, never shopper identities.
+    Data is stored in Canada and deleted ninety days after a store cancels.
+- path: market/Market sizing.md
+  title: Market sizing
+  tags: [market]
+  content: |
+    # Market sizing
+
+    Our addressable market is independent and regional grocery chains in North America.
+    We start with chains of five to fifty stores, where ordering is still manual.
+- path: operations/Supplier relationships.md
+  title: Supplier relationships
+  tags: [operations, suppliers]
+  content: |
+    # Suppliers
+
+    Three regional distributors carry most of our customers' fresh volume.
+    We signed a data-sharing agreement with the largest one, so delivery windows update automatically.
+- path: team/Founders.md
+  title: Founders
+  tags: [team]
+  content: |
+    # Founders
+
+    The chief executive ran a grocery store for eight years before starting the company.
+    The chief technology officer built demand forecasting models at a logistics firm.
+- path: company/Go to market.md
+  title: Go to market
+  tags: [sales, marketing]
+  content: |
+    # Go to market
+
+    We sell through grocery buying groups, which introduce us to their member stores.
+    Each buying group gets a referral fee for the first year of every store it brings.

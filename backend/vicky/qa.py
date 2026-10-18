@@ -247,7 +247,8 @@ def vocabulary(ctx: TruthContext, series: dict[str, Series]) -> dict[str, Target
             vocab.setdefault(phrase[:-1], vocab[phrase])  # "hosting costs" → "hosting cost"
     # The headline field and metric of the same name answer together ("revenue" → series + figure).
     if "revenue" in ctx.figures and norm("revenue") in vocab:
-        vocab[norm("revenue")].figure_ids.insert(0, "revenue")
+        ids = vocab[norm("revenue")].figure_ids
+        ids[:] = ["revenue", *(i for i in ids if i != "revenue")]
     return vocab
 
 
@@ -290,6 +291,7 @@ class When:
 
 def parse_when(t: str, model_periods: list[str]) -> When:
     found: list[str] = []
+    t = re.sub(rf"\b{_MONTH_RE}\s+\d{{1,2}}(?:st|nd|rd|th)?\s+(\d{{4}})\b", r"\1 \2", t)  # "march 15 2026" → "march 2026"
     for m in re.finditer(rf"\b{_MONTH_RE}\s*'?(\d{{4}}|\d{{2}})\b", t):
         y = int(m.group(2))
         y = y + 2000 if y < 100 else y
@@ -455,8 +457,12 @@ def answer(question: str, ctx: TruthContext) -> dict[str, Any]:
             if a.figures else "I couldn't answer that reliably from your data."
         a = Answer(reply=safe, figures=a.figures, suggestions=a.suggestions, chart=a.chart, topic=a.topic)
         res = audit_text(a.reply, ctx.available() + a.figures)
+        if not res.passed:  # not even the plain figures check out: say so rather than show them uncited
+            a = Answer(reply="I couldn't answer that reliably from your data.", suggestions=a.suggestions,
+                       chart=a.chart, topic=a.topic)
+            res = audit_text(a.reply, [])
     return {"kind": "answer", "reply": a.reply, "citations": [c.model_dump(mode="json") for c in res.citations],
-            "suggestions": a.suggestions[:4], "chart": a.chart, "topic": a.topic,
+            "suggestions": a.suggestions[:4], "chart": drawable(a.chart, ctx), "topic": a.topic,
             "audit": {"passed": res.passed, "findings": [f.model_dump() for f in res.findings]}}
 
 
@@ -550,7 +556,8 @@ def _value(f: Figure, ctx: TruthContext) -> Answer:
     kind = {"founder_claim": " That figure rests on a founder statement, not a record.",
             "forecast": " That's a forecast, not an actual."}.get(f.kind, "")
     reply = f"{f.label} is {f.display}{when}. It's {_first_lower(f.formula)}.{kind}"
-    return Answer(reply, [], [i.value for i in f.inputs if i.value is not None], suggestions=[f"How is {f.label.lower()} calculated?"],
+    allowed = [i.value for i in f.inputs if i.value is not None] + _nums(f.formula)  # "(172,512) ÷ (127,308)"
+    return Answer(reply, [], allowed, suggestions=[f"How is {f.label.lower()} calculated?"],
                   chart=_chart_request(f.id, ctx), topic=f.id)
 
 
@@ -579,7 +586,7 @@ def _explain(f: Figure | MissingFigure, ctx: TruthContext) -> Answer:
     gloss = str((g or {}).get("text") or (g or {}).get("definition") or "").strip()
     if gloss:
         parts.append(gloss)
-    extra = _nums(src.ref) + _nums(gloss)
+    extra = _nums(src.ref) + _nums(gloss) + _nums(f.formula)
     return Answer(" ".join(parts), allowed=extra + [i.value for i in f.inputs if i.value is not None],
                   chart=_chart_request(f.id, ctx), topic=f.id)
 
@@ -653,6 +660,8 @@ def _series_answer(s: Series, op: Op, when: When, fig: Figure | None) -> Answer:
         return Answer(_agg_reply(s, f, how, span), [f], [i.value for i in f.inputs if i.value is not None],
                       chart=chart, topic=s.key)
     if op == "change":
+        if len(ps) == 1 and not when.periods:  # "revenue vs last month": the latest month against the one before
+            ps = s.periods()[-2:]
         a, b = ps[0], ps[-1]
         c = change_figure(s, a, b) if a != b else None
         fa, fb = point_figure(s, a), point_figure(s, b)
@@ -689,6 +698,24 @@ def _agg_reply(s: Series, f: Figure, how: str, span: str) -> str:
     if how == "avg":
         return f"{s.label} averaged {f.display} a {s.granularity} over {span}."
     return f"{s.label} was {f.display} at the end of {pl(f.period.split('..')[-1]) if f.period else span} (it's a balance, so it isn't summed)."
+
+
+def drawable(chart: str | None, ctx: TruthContext) -> str | None:
+    """The "Chart it" request, only if the dashboard's phrase mapper turns it into one chart of one measure
+    that the data can draw. Labels such as "Burn (net loss excluding credits)" or "Gross margin, as booked"
+    name other measures, so the label is also tried without its parenthesis and qualifier."""
+    from vicky.viz import evaluate_widget
+    from vicky.viz.phrases import interpret
+
+    if not chart:
+        return None
+    short = re.sub(r"\s*\([^)]*\)", "", chart).split(",")[0].strip()
+    for text in dict.fromkeys((chart, short)):
+        it = interpret(text, ctx)
+        if it.kind == "widget" and it.spec is not None and len(it.spec.series) == 1 \
+                and evaluate_widget(it.spec, ctx).status == "ok":
+            return text
+    return None
 
 
 def _chart_request(fid: str, ctx: TruthContext) -> str | None:
@@ -822,17 +849,25 @@ may appear only inside such a quote: never restate, round, convert or compute it
 only from the <data> block. Return the answer as `reply`."""
 
 
-async def answer_any(question: str, ctx: TruthContext) -> dict[str, Any]:
+async def answer_any(question: str, ctx: TruthContext, dashboard_id: str | None = None) -> dict[str, Any]:
     """The offline answer, or Claude's phrasing of the same data when a key is set and its answer passes the audit.
 
-    With notes in the knowledge base, Claude also gets `kb_search` / `kb_read` and may quote notes (cited by
-    path). Offline, a question the data can't answer is looked up in the notes by keyword instead.
+    Once Fill dashboard has built the knowledge-base index, the notes come from hybrid retrieval and the answer
+    goes through the ladder in `vicky.kb.ask` (docs/08-RAG.md §Ask Vicky): every model-written statement cites
+    a figure or quotes a note, and the whole-vault catch-all is only offered (`offer`), never run unasked.
+    Before the first Fill, Claude gets `kb_search` / `kb_read` as before, and offline a question the data
+    can't answer is looked up in the notes by keyword.
     """
     offline = answer(question, ctx)
     from vicky import llm
 
     if offline["topic"] in ("valuation", "help") or (not llm.enabled() and offline["topic"] != "not_found"):
         return offline
+    from vicky.kb import ask
+    from vicky.kb.index import active_build_id
+
+    if await active_build_id():
+        return await ask.answer(question, ctx, offline, dashboard_id=dashboard_id)
     from vicky.kb.tools import vault_for_agents
 
     vault = await vault_for_agents()

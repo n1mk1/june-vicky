@@ -60,7 +60,8 @@ def squash(s: str) -> str:
     return re.sub(r"[\s\-*_`|]+", "", s)
 
 
-def number_in(value: float, text: str) -> bool:
+def number_in(value: float, text: str) -> float | None:
+    """The amount as the text prints it when the text prints exactly `value` (2.5M = 2,500,000), else None."""
     raw = re.findall(r"\d[\d,]*(?:\.\d+)?\s*(?:k|m|mm|bn|b|million|thousand|billion)?\b", text, flags=re.I)
     for r in raw:
         m = re.match(r"([\d,.]+)\s*([a-z]*)", r.strip(), flags=re.I)
@@ -69,9 +70,9 @@ def number_in(value: float, text: str) -> bool:
         base = float(m.group(1).replace(",", "") or 0)
         mult = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mm": 1e6, "million": 1e6, "b": 1e9, "bn": 1e9,
                 "billion": 1e9}.get(m.group(2).lower(), 1.0)
-        if abs(base * mult - value) <= max(abs(value) * 0.005, 0.5):
-            return True
-    return False
+        if abs(base * mult - value) <= 1e-6 * max(abs(value), 1.0):
+            return base * mult
+    return None
 
 
 def money_value(s: str) -> float | None:
@@ -106,9 +107,10 @@ def verify(field: str, ev: Evidence, notes: dict[str, dict]) -> tuple[object, st
     v = ev.value.strip()
     if field == "round_size":
         amount = money_value(v)
-        if amount is None or not number_in(amount, quote):
+        quoted = None if amount is None else number_in(amount, quote)
+        if quoted is None:
             return None
-        value: object = amount
+        value: object = quoted  # the amount the note prints, never the model's restatement of it
     elif field == "name":
         if squash(v) not in squash(quote):
             return None
@@ -290,11 +292,35 @@ async def _upload_for(n: dict) -> tuple[str, bytes, str] | None:
     return f"{stem}.md", n["content"].encode("utf-8"), "text/markdown"
 
 
+async def _granularity_from_tables(eid: str, found: dict[str, tuple[object, str]], added: list[dict]) -> None:
+    """How often the data reports is read by code from the tables as uploaded (the table with the most periods
+    wins), not from a note: it overrides whatever the profile step proposed."""
+    rows = await db.fetch(
+        """select d.name, d.granularity::text as g, jsonb_array_length(d.rows) as n, u.filename from datasets d
+           join uploads u on u.id = d.upload_id
+           where d.engagement_id = $1 and d.table_kind = 'series' and d.granularity::text in ('month', 'quarter')""", eid)
+    if not rows:
+        return
+    best = max(rows, key=lambda r: r["n"])
+    note = next((a["note"] for a in added if a["as"] == best["filename"]), None)
+    src = f"From [[{note}]]" if note else f"From the table {best['name']}"
+    why = f"{src}: its {best['n']} periods are {best['g']}s"
+    found["granularity"] = (best["g"], why)
+    await db.execute("update company_profiles set granularity = $2::period_granularity, "
+                     "inferred = coalesce(inferred, '{}'::jsonb) || jsonb_build_object('granularity', $3::text) "
+                     "where engagement_id = $1", eid, best["g"], why)
+
+
 async def autofill() -> dict:
     notes = await db.fetch("select id::text, path, title, kind, format, content, meta, file_id::text, author "
                            "from kb_notes where kind <> 'hub' order by path")
     if not notes:
         raise Invalid("The knowledge base is empty. Import some files first.")
+    # Fill means the founder is done adding knowledge: rebuild the search index from the vault as it is now,
+    # alongside the profile and uploads (docs/08-RAG.md §Indexing).
+    from vicky.kb import index
+
+    build = await index.start_build()
     found, by = await propose_profile(notes)
     found["currency"] = ("CAD", "The default reporting currency; tables in another currency convert at Bank of Canada rates")
     profile = {f: v for f, (v, _) in found.items()}
@@ -311,7 +337,7 @@ async def autofill() -> dict:
             return
         async with sem:
             try:
-                await engagements.add_upload(eid, *up)
+                await engagements.add_upload(eid, *up, kb_note_id=n["id"])
                 added.append({"note": n["path"], "as": up[0]})
             except Invalid as e:
                 skipped.append({"note": n["path"], "reason": str(e)})
@@ -322,6 +348,8 @@ async def autofill() -> dict:
     # Tables first: the column mapper and the profile's granularity come from them.
     await asyncio.gather(*(send(n) for n in notes if n["format"] == "csv"))
     await asyncio.gather(*(send(n) for n in notes if n["format"] != "csv"))
-    return {"engagement": await engagements.detail(eid), "by": by,
+    await _granularity_from_tables(eid, found, added)
+    await db.execute("update kb_index_builds set engagement_id = $2 where id = $1::uuid", build["build_id"], eid)
+    return {"engagement": await engagements.detail(eid), "by": by, "index": build,
             "profile": [{"field": f, "value": v, "evidence": why} for f, (v, why) in found.items()],
             "added": added, "skipped": skipped}

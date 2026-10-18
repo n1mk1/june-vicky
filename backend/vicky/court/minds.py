@@ -14,7 +14,7 @@ from vicky.audit import audit_text
 from vicky.model.context import TruthContext
 from vicky.model.figures import Figure
 from vicky.model.truth import AttackItem, _lc
-from vicky.playbooks import BankQuestion, fill, question_bank
+from vicky.playbooks import BankQuestion, bank_ids, fill, question_bank
 
 MAX_HYPS = 4
 SHARE_SEVERITY = 0.8
@@ -59,25 +59,26 @@ def build_memos(panel: list[VCPersona], ctx: TruthContext, focus: str | None = N
     soft = [a for a in items if a.id.startswith("soft_")]
 
     def assign(a: AttackItem) -> None:
-        ranked = sorted(panel, key=lambda p: (-p.weight(a.lens), len(hyps[p.id])))
-        owners = [ranked[0]]
+        # Owners are the best-weighted investors with room left, so a full memo hands the gap on.
+        ranked = [p for p in sorted(panel, key=lambda p: (-p.weight(a.lens), len(hyps[p.id])))
+                  if len(hyps[p.id]) < MAX_HYPS and p.weight(a.lens) > 0.15]
+        owners = ranked[:1]
         if a.severity >= SHARE_SEVERITY and len(ranked) > 1 and ranked[1].weight(a.lens) >= 0.5:
             owners.append(ranked[1])
         for k, p in enumerate(owners):
-            if len(hyps[p.id]) < MAX_HYPS and p.weight(a.lens) > 0.15:
-                h = _hyp(a, p, len(hyps[p.id]) + 1)
-                h["shared"] = k > 0  # second owner of a severe gap: never their opener
-                hyps[p.id].append(h)
+            h = _hyp(a, p, len(hyps[p.id]) + 1)
+            h["shared"] = k > 0  # second owner of a severe gap: never their opener
+            hyps[p.id].append(h)
 
     for a in real:
         assign(a)
-    for p in panel:  # everyone gets at least one thread in their own lane
-        if not hyps[p.id]:
+    for p in panel:  # everyone gets at least one thread of their own (a shared one is never an opener)
+        if not any(not h.get("shared") for h in hyps[p.id]):
             taken = {h["attack_id"] for hs in hyps.values() for h in hs}
             pool = [a for a in soft + real if a.id not in taken] or soft + real
             mine = sorted(pool, key=lambda a: -(p.weight(a.lens) * (0.5 + a.severity)))
             if mine:
-                hyps[p.id].append(_hyp(mine[0], p, 1))
+                hyps[p.id].append(_hyp(mine[0], p, len(hyps[p.id]) + 1))
     memos = {}
     for p in panel:
         hs = sorted(hyps[p.id], key=lambda h: (h.get("shared", False), -h["severity"] * (0.5 + p.weight(h["lens"]))))
@@ -214,12 +215,15 @@ def coach_card(hyp: dict, ctx: TruthContext) -> str:
             f"covers and how it's calculated, admit the weak spot, then say what you're doing about it.")
 
 
-def intro(panel: list[VCPersona], ctx: TruthContext, coaching: str, cap: int) -> str:
+def intro(panel: list[VCPersona], ctx: TruthContext, coaching: str, cap: int, knowledge: bool = False) -> str:
     names = ", ".join(p.name for p in panel[:-1]) + (f" and {panel[-1].name}" if len(panel) > 1 else panel[0].name)
     mode = ("I'll call a time-out if an answer misses twice." if coaching == "coached"
             else "No time-outs: this one runs like the real meeting.")
+    notes = (" Some questions test whether you know your own notes; I check those answers against what you wrote."
+             if knowledge else "")
     return (f"I'm Vicky, chairing today. {names} have read {ctx.company}'s numbers and written private memos. "
-            f"Each of them owns different weak spots, so expect different questions. {mode} "
+            f"Each of them owns different weak spots, so expect different questions. I review every question before "
+            f"it's asked and score every answer. {mode}{notes} "
             f"Answer with your own figures; every number is checked against your data.")
 
 
@@ -277,7 +281,7 @@ def judge(answer: str, hyp: dict | None, checks: list[dict], ctx: TruthContext, 
 
 def strong_answer(hyp: dict, ctx: TruthContext) -> str:
     figs = _figs(ctx)
-    for vc in ("james", "mark", "alex", "priya", "dana", "kenji", "claire", "victor", "sam", "olivia"):
+    for vc in bank_ids():
         for q in question_bank(vc):
             if not q.strong or not any("{" + e + "}" in q.strong for e in hyp["evidence"]):
                 continue

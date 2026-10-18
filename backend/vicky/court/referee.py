@@ -4,13 +4,14 @@ score = bid × lane_fit × fairness_decay(turns since the VC last spoke)
 - follow-ups get a bonus when the last answer was weak, but stop at the depth cap (≤ 3);
 - a jump-in must beat the best non-jump-in candidate by `JUMP_MARGIN`;
 - a VC that just spoke is cooled down unless it is following up.
-The chair (Vicky) picks from this list; any invalid or late pick falls back to `ranked[0]`.
+The chair (Vicky) picks from this list; any invalid or late pick falls back to `ranked[0]`. Vicky may
+put a `knowledge` candidate at the top when a knowledge check is due (`vicky.court.knowledge.candidate`).
 """
 
 from dataclasses import dataclass, field
 from typing import Literal
 
-Intent = Literal["follow_up", "new_topic", "jump_in", "pass"]
+Intent = Literal["follow_up", "new_topic", "jump_in", "pass", "knowledge"]
 DEPTH_CAP = 3
 JUMP_MARGIN = 0.2
 FOLLOW_UP_BONUS = 0.25
@@ -87,9 +88,18 @@ def validate(decision: dict, ranked: list[Candidate]) -> tuple[bool, str]:
     if decision.get("action") == "end_session":
         return True, "end"
     vc = decision.get("vc_id")
-    cand = next((c for c in ranked if c.vc_id == vc), None)
+    cand = pick(decision, ranked)
     if cand is None:
+        if decision.get("intent") == "knowledge" and any(c.vc_id == vc for c in ranked):
+            return False, "no knowledge check is due for that investor"
         return False, f"{vc!r} is not an eligible speaker"
     if decision.get("intent") == "follow_up" and cand.intent != "follow_up":
         return False, "follow-up not allowed (depth cap or not the thread owner)"
     return True, "ok"
+
+
+def pick(decision: dict, ranked: list[Candidate]) -> Candidate | None:
+    """The candidate a chair decision names: a knowledge check only when one is on offer for that
+    investor, otherwise the investor's ordinary candidate."""
+    vc, want_k = decision.get("vc_id"), decision.get("intent") == "knowledge"
+    return next((c for c in ranked if c.vc_id == vc and (c.intent == "knowledge") == want_k), None)

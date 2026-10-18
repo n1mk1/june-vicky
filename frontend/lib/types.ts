@@ -85,6 +85,10 @@ export interface DatasetColumn {
   null_rate: number;
   /** The currency the column's header or cells name, read from the file. */
   currency?: string | null;
+  /** What the values are when the file shows it: "pct", "date" or "text". */
+  unit_hint?: string | null;
+  /** The values were multiplied by this because the header or title said "$000" or "in millions". */
+  scale?: number;
 }
 
 export interface DatasetSummary {
@@ -135,6 +139,8 @@ export interface Engagement {
   facts: Fact[];
   truthpack: { id: string; version: number; confirmed_at: string | null } | null;
   coverage: CoverageItem[];
+  /** Reading facts out of documents (and tables with no dates); each lands in step 03 when its job is done. */
+  extract_jobs?: { id: string; upload_id: string; status: string; error: string | null }[];
 }
 
 export interface ColumnMapping {
@@ -149,6 +155,8 @@ export interface MappingTarget {
   id: string;
   label: string;
   group: string;
+  /** What a column mapped to it holds, which sets the column's unit. */
+  kind?: "money" | "count" | "date" | "text";
 }
 
 export interface MappingResponse {
@@ -348,6 +356,17 @@ export interface ChatResult {
   suggestions?: string[];
   /** Answers: a chat request that would chart what was asked about, e.g. "show total revenue by month". */
   chart?: string | null;
+  /** Answers: retrieval couldn't find it in the notes. Searching every note with AI runs only if the user
+   *  accepts (POST /dashboards/{id}/chat/catch-all); see docs/08-RAG.md §Asking permission. */
+  offer?: CatchAllOffer | null;
+}
+
+export interface CatchAllOffer {
+  kind: "catch_all";
+  id: string;
+  prompt: string;
+  notes: number;
+  expires_at: string;
 }
 
 // ---------------------------------------------------------------- the Areopagus
@@ -443,7 +462,34 @@ export interface Turn {
   hypothesis_id: string | null;
   intent: string | null;
   citations: Citation[];
+  /** Vicky's review of the drafted line, before it was spoken (questions only). */
+  review?: LineReview | null;
   created_at: string;
+}
+
+export interface LineReview {
+  verdict: "approve" | "revise";
+  issues: string[];
+  note: string;
+  /** True when Vicky sent the draft back and the investor rewrote it. */
+  revised: boolean;
+  source: "code" | "llm";
+}
+
+export type KnowledgeVerdict = "knows" | "partial" | "contradicts" | "missed" | "unverified";
+
+/** Vicky's check of a knowledge answer against the founder's own notes (via retrieval). */
+export interface KnowledgeCheck {
+  turn_seq: number | null;
+  question_seq: number | null;
+  vc_id: string;
+  lens: string | null;
+  verdict: KnowledgeVerdict;
+  label: string;
+  explanation: string;
+  citations: Citation[];
+  expected: { cite?: string; path?: string; heading?: string | null; title?: string; quote?: string };
+  retrieval: { confidence: number | null; build_id: string | null; passages: number } | null;
 }
 
 export interface ScoreDims {
@@ -482,15 +528,47 @@ export interface Session {
   status: "live" | "ended";
   mode: "prepare";
   panel: PersonaSummary[];
-  settings: { question_cap: number; coaching: "coached" | "realistic"; focus?: string | null };
+  settings: { question_cap: number; coaching: "coached" | "realistic"; focus?: string | null; knowledge?: boolean };
   turns: Turn[];
   scores: Score[];
   claims: Claim[];
+  knowledge?: KnowledgeCheck[];
+  /** Knowledge questions written from the notes at start (0 when there's no search index), and how many are left. */
+  knowledge_ready?: { on: boolean; probes: number; left: number };
+  /** What came back from founder memory: drilled questions and the last reports' weak spots, and where each was asked. */
+  carried?: Carried[];
   question_count: number;
   awaiting: "founder" | "panel" | null;
   next_speaker: string | null;
   report_id: string | null;
   started_at?: string;
+}
+
+export type DrillMark = "repeat" | "study";
+
+export interface Carried {
+  memory_id: string;
+  kind: "drill" | "weakness";
+  mark: DrillMark | null;
+  topic: string | null;
+  lens: string | null;
+  /** The question as it was asked last time (drills only). */
+  question: string | null;
+  vc_id: string | null;
+  hypothesis_id: string | null;
+  probe_id: string | null;
+  /** asked: a question this session covered it; queued: still to come; not_reached: the session ended first;
+   * unmatched: nothing in this session's data or panel covers it any more. */
+  status: "asked" | "queued" | "not_reached" | "unmatched";
+  asked_seq: number | null;
+}
+
+export interface SavedDrill {
+  id: string;
+  seq: number;
+  mark: DrillMark;
+  topic: string | null;
+  lens: string | null;
 }
 
 export interface SessionSummary {
@@ -568,6 +646,9 @@ export interface Report {
   slides?: { slide: number; note: string; reword?: string }[];
   delivery?: { talk_time_s?: number; fillers?: number; slide_seconds?: number[]; dodged?: unknown[] } | null;
   knowledge_gaps?: { term: string; text: string; source_id?: string | null }[];
+  /** Knowledge checks: what the founder recalled of their own notes, and Vicky's verdict. */
+  knowledge?: { vc_id: string; vc_name: string; question: string; answer: string; verdict: KnowledgeVerdict;
+    explanation: string; path?: string | null; citations: Citation[] }[];
   action_plan: { priority: number; text: string; drill_lens?: string | null }[];
   audit_notes?: { changed: string; why: string }[];
   sources: ReportSource[];
@@ -652,6 +733,20 @@ export interface KbStatus {
   failures: { id: string; filename: string; error: string | null }[];
   ocr: boolean;
   llm: boolean;
+  /** The search index built by Fill dashboard (docs/08-RAG.md §Indexing). */
+  index?: KbIndexStatus;
+}
+
+export interface KbIndexStatus {
+  status: "none" | "building" | "ready" | "failed";
+  build_id: string | null;
+  built_at: string | null;
+  notes: number;
+  chunks: number;
+  vectors: boolean;
+  /** Notes edited or added since the last Fill: search doesn't reflect them until the next one. */
+  changed_since: number;
+  latest?: { id: string; status: string; error: string | null } | null;
 }
 
 export interface KbImportResult {
@@ -665,4 +760,6 @@ export interface KbAutofill {
   profile: { field: string; value: unknown; evidence: string }[];
   added: { note: string; as: string }[];
   skipped: { note: string; reason: string }[];
+  /** The search index rebuild this Fill started. */
+  index?: { build_id: string; status: string };
 }

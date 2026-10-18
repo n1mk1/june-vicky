@@ -54,6 +54,13 @@ async def kb_ingest_job(payload: dict) -> dict:
     return await ingest_job(payload)
 
 
+@job("kb_index")
+async def kb_index_job(payload: dict) -> dict:
+    from vicky.kb.index import build
+
+    return await build(str(payload["build_id"]))
+
+
 @job("kb_organize")
 async def kb_organize_job(payload: dict) -> dict:
     from vicky.kb.organize import organize

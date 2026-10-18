@@ -1,13 +1,13 @@
-id: mark
-name: Mark
+id: socrates
+name: Socrates
 firm: Skeptical Partner
 archetype: skeptical_ic_partner
 glyph: slash
 bio: >-
   The partner whose job in the investment committee is to argue against the deal. He
-  writes no cheque of his own but his vote counts, and he is looking for the one
-  weakness that breaks the story. Blunt, interrupts, and says "so what?" after almost
-  every answer.
+  writes no cheque of his own but his vote counts. Like his namesake he claims to know
+  nothing and questions until the founder's story either holds or contradicts itself.
+  Blunt, interrupts, and says "so what?" after almost every answer.
 cheque_role: votes_in_ic
 priorities:
   claims: 0.9

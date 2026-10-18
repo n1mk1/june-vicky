@@ -11,14 +11,14 @@ import { EmptyState, ErrorNote, Loading } from "@/components/ui/States";
 import { ApiError, apiGet, apiPost } from "@/lib/api";
 import { useChannel } from "@/lib/socket";
 import { lastSpeaker, questionCounts, sessionFeed, sessionQuestions } from "@/lib/court";
-import type { PersonaSummary, Session, SessionSummary } from "@/lib/types";
+import type { PersonaSummary, SavedDrill, Session, SessionSummary } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { ChatFeed, type FeedFilter, type FeedItem } from "./ChatFeed";
 import { FeedTabs } from "./FeedTabs";
-import { QuestionList } from "./QuestionList";
+import { type DrillPick, QuestionList } from "./QuestionList";
 import { SessionSetup, type SetupValue } from "./SessionSetup";
 
-const DEFAULT_PANEL = ["james", "alex", "mark"];
+const DEFAULT_PANEL = ["aristotle", "thales", "xenophon", "plato", "socrates"];
 const QUESTION_KEY = "vicky-question";
 
 // A question typed on the landing page or dashboard waits in sessionStorage until the next session starts.
@@ -57,9 +57,14 @@ export function PrepView() {
     setAdded(handoff);
     setChosen(panelParam());
   }
-  const [setup, setSetup] = useState<Omit<SetupValue, "focus"> & { focus: string | null }>({ cap: 8, coaching: "coached", focus: null });
+  const [setup, setSetup] = useState<Omit<SetupValue, "focus"> & { focus: string | null }>({
+    cap: 8,
+    coaching: "coached",
+    focus: null,
+    knowledge: true,
+  });
   const [filter, setFilter] = useState<FeedFilter>("all");
-  const [busy, setBusy] = useState<"start" | "answer" | "end" | null>(null);
+  const [busy, setBusy] = useState<"start" | "answer" | "end" | "drill" | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gate, setGate] = useState<string | null>(null);
@@ -88,8 +93,15 @@ export function PrepView() {
 
   const fail = (err: unknown) => {
     if (guard(err)) return;
-    if (err instanceof ApiError && err.status === 409) setGate(err.detail || "Confirm a source of truth first.");
+    // A 409 before a session opens is the source-of-truth gate; during one it's the court refusing a turn.
+    if (err instanceof ApiError && err.status === 409 && !session) setGate(err.detail || "Confirm a source of truth first.");
     else setError(errorText(err));
+  };
+
+  const opened = (s: Session) => {
+    setFreshFrom(0);
+    setLive(s);
+    router.replace(`/preparation?s=${encodeURIComponent(s.id)}`, { scroll: false });
   };
 
   const start = async (focusOverride?: string) => {
@@ -102,14 +114,38 @@ export function PrepView() {
         panel: selected.slice(0, MAX_PANEL),
         question_cap: setup.cap,
         coaching: setup.coaching,
+        knowledge: setup.knowledge,
         ...(focus ? { focus } : {}),
       });
       try {
         sessionStorage.removeItem(QUESTION_KEY);
       } catch {}
-      setFreshFrom(0);
-      setLive(s);
-      router.replace(`/preparation?s=${encodeURIComponent(s.id)}`, { scroll: false });
+      opened(s);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // "Drill N selected": the marks go to founder memory, a live session ends (its report keeps the weak spots),
+  // and a new session with the same panel and settings opens on the drilled questions.
+  const drill = async (picks: DrillPick[]) => {
+    if (!session || !picks.length) return;
+    setBusy("drill");
+    setError(null);
+    try {
+      const { drills } = await apiPost<{ drills: SavedDrill[] }>(`court/${session.id}/drills`, { items: [...picks] });
+      if (session.status === "live") await apiPost<Session>(`court/${session.id}/end`);
+      opened(
+        await apiPost<Session>("court/start", {
+          panel: session.panel.map((p) => p.id),
+          question_cap: session.settings.question_cap,
+          coaching: session.settings.coaching,
+          knowledge: session.settings.knowledge ?? true,
+          drills: drills.map((d) => d.id),
+        }),
+      );
     } catch (err) {
       fail(err);
     } finally {
@@ -169,7 +205,7 @@ export function PrepView() {
 
   const awaitingFounder = session?.status === "live" && session.awaiting !== "panel";
   const typingName =
-    busy === "answer" || busy === "start"
+    busy === "answer" || busy === "start" || busy === "drill"
       ? (personas.data?.find((p) => p.id === session?.next_speaker)?.name ?? "The panel")
       : undefined;
   const speaking = busy === "answer" ? session?.next_speaker : session?.status === "live" ? lastSpeaker(session) : null;
@@ -202,7 +238,7 @@ export function PrepView() {
   } else if (!session) {
     body = (
       <SessionSetup
-        value={{ cap: setup.cap, coaching: setup.coaching, focus: setup.focus ?? pending ?? "" }}
+        value={{ cap: setup.cap, coaching: setup.coaching, knowledge: setup.knowledge, focus: setup.focus ?? pending ?? "" }}
         onChange={(v) => setSetup(v)}
         onStart={() => void start()}
         seated={seatedNames}
@@ -277,23 +313,37 @@ export function PrepView() {
             </button>
           </p>
         )}
+        {session?.status === "live" && session.knowledge_ready?.on && session.knowledge_ready.probes === 0 && (
+          <p role="status" className="px-2 text-[12px] text-ink-2" data-testid="no-knowledge-checks">
+            No knowledge checks this session: the search found none of your own notes to test you on. Add notes in the
+            knowledge base and press Fill dashboard.
+          </p>
+        )}
         {error && <ErrorNote message={error} className="px-2" />}
         <PromptBar
           label="Your answer"
           placeholder={placeholder}
           onSubmit={(text) => void answer(text)}
           disabled={!!busy || ended || (!session && selected.length === 0) || (!!session && !awaitingFounder)}
-          busy={busy === "answer" || busy === "start"}
+          busy={busy === "answer" || busy === "start" || busy === "drill"}
           hint={
             session?.settings.coaching === "realistic"
-              ? "Realistic mode: scores arrive with the report."
-              : "Scores are written by an independent judge after each answer."
+              ? "Realistic mode: Vicky's scores arrive with the report."
+              : "Vicky scores each answer and checks what you say against your data and notes."
           }
         />
       </div>
 
       <div className="flex min-h-[420px] lg:min-h-0 [&>*]:flex-1">
-        <QuestionList key={session?.id ?? "none"} items={questions} empty={session ? undefined : "Start a session and the panel's questions collect here."} />
+        <QuestionList
+          key={session?.id ?? "none"}
+          items={questions}
+          empty={session ? undefined : "Start a session and the panel's questions collect here."}
+          carried={session?.carried}
+          onDrill={session ? (picks) => void drill(picks) : undefined}
+          drilling={busy === "drill"}
+          endsSession={session?.status === "live"}
+        />
       </div>
     </div>
   );

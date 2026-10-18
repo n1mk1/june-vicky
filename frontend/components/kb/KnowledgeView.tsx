@@ -3,6 +3,7 @@
 import { Download, FilePlus2, FolderUp, LayoutDashboard, Sparkles, Upload } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SearchIndexStatus } from "@/components/kb/SearchIndexStatus";
 import { CornerMarks, Panel } from "@/components/ui/Panel";
 import { PillButton } from "@/components/ui/Pill";
 import { ErrorNote, Loading } from "@/components/ui/States";
@@ -321,6 +322,7 @@ export function KnowledgeView() {
               <span>Organizer: {s.llm ? "Claude" : "offline rules"}</span>
             </p>
           )}
+          {s && <SearchIndexStatus banner key={`${s.organized_at ?? ""}-${s.notes}`} />}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PillButton label="Import" icon={<Upload className="size-3.5" strokeWidth={1.5} />} onClick={() => fileInput.current?.click()} />

@@ -48,8 +48,35 @@ async def status() -> dict:
            where kind in ('kb_ingest', 'kb_organize') order by enqueued_at desc limit 8""")
     failures = await db.fetch("select id::text, filename, error from kb_files where status = 'failed' "
                               "order by created_at desc limit 20")
+    from vicky.kb import index
+
+    try:
+        idx = await index.status()
+    except Exception as e:  # no index tables yet
+        idx = {"status": "none", "error": str(e)[:200]}
+    try:
+        from vicky import kv
+
+        raw = await kv.client().hgetall(f"rag:stats:{kv.today().replace('-', '')}")
+        stats = {k: int(v) for k, v in raw.items()}
+    except Exception:
+        stats = {}
+    asked = sum(stats.get(k, 0) for k in ("path_chunks", "path_recover", "path_figures", "path_offline", "offer"))
+    rag_out = {**stats, "offer_rate": round(stats.get("offer", 0) / asked, 3) if asked else None,
+               "accept_rate": round(stats.get("offer_accepted", 0) / stats["offer"], 3) if stats.get("offer") else None}
     return {**counts, **files, "jobs": recent, "running": any(j["status"] in ("queued", "running") for j in recent),
-            "failures": failures, "ocr": ocr.available(), "llm": llm.enabled()}
+            "failures": failures, "ocr": ocr.available(), "llm": llm.enabled(), "index": idx, "rag": rag_out}
+
+
+@router.post("/index")
+async def rebuild_index() -> dict:
+    """Rebuild the search index from the vault as it is now (Retry after a failed build; Fill dashboard
+    does the same)."""
+    from vicky.kb import index
+
+    if not await db.fetchval("select exists (select 1 from kb_notes)"):
+        raise HTTPException(422, "The knowledge base is empty. Import some files first.")
+    return await index.start_build()
 
 
 @router.get("/notes")

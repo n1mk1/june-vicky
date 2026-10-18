@@ -54,7 +54,7 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
         {/* The chair is always seated. */}
         <li className="w-[200px] shrink-0 lg:w-auto">
           <div
-            title={collapsed ? "Vicky, chair" : undefined}
+            title={collapsed ? "Vicky, chair: picks the speaker, reviews every question, scores every answer" : undefined}
             className="flex w-full items-center gap-3 rounded-[4px] border border-dashed border-line-strong p-2.5"
           >
             <VcGlyph glyph="vicky" className="text-ember" />
@@ -66,7 +66,7 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
                     <span className="size-1.5 rounded-full bg-ember animate-[pulse-dot_1.2s_ease-in-out_infinite]" aria-label="Speaking" />
                   )}
                 </span>
-                <span className="block truncate text-[11.5px] text-ink-2">Chair</span>
+                <span className="block truncate text-[11.5px] text-ink-2">Chair · reviews and scores</span>
               </span>
             )}
           </div>

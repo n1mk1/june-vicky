@@ -75,7 +75,14 @@ const KIND_LABEL: Record<string, string> = {
   founder_stated: "You said",
   benchmark: "Benchmark",
   derived: "Derived",
+  note: "Knowledge base",
 };
+
+/** The knowledge-base note a figure's table or document came from (Fill dashboard), if any. */
+export function kbNotePath(source: Source | PointSource | Record<string, unknown> | null | undefined): string | null {
+  const n = (source as { kb_note?: { path?: unknown } } | null)?.kb_note;
+  return n && typeof n.path === "string" ? n.path : null;
+}
 
 /** "CSV · rows 3–26", "PDF p.4", "You said". */
 export function sourceLabel(source: Source | PointSource | Record<string, unknown> | null | undefined): string {

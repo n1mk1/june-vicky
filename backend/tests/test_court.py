@@ -44,7 +44,7 @@ def test_chair_decision_outside_the_candidates_is_invalid():
 def test_five_seated_vcs_open_on_different_lenses():
     """FR-8 (offline): gap ownership splits the attack list so first questions don't overlap."""
     ctx = sample_context("tidewell")
-    panel = [registry.builtins()[i] for i in ("james", "alex", "mark", "priya", "claire")]
+    panel = [registry.builtins()[i] for i in ("aristotle", "thales", "xenophon", "plato", "socrates")]
     memos = minds.build_memos(panel, ctx)
     firsts = [memos[p.id]["hypotheses"][0] for p in panel]
     assert len({h["attack_id"] for h in firsts}) == 5
@@ -62,14 +62,14 @@ def test_questions_pass_the_audit_and_have_no_placeholders():
 
 def test_no_concession_without_a_matching_figure():
     ctx = sample_context("tidewell")
-    p = registry.builtins()["james"]
+    p = registry.builtins()["aristotle"]
     state = {"hyps": [minds._hyp(next(a for a in ctx.attack if "cmgr_12m" in a.figure_ids), p, 1)]}
     h = state["hyps"][0]
     before = h["confidence"]
-    minds.update_and_bid(p, state, [], weak=True, current_vc="james", current_hyp=h["id"], turns_since=0)
+    minds.update_and_bid(p, state, [], weak=True, current_vc="aristotle", current_hyp=h["id"], turns_since=0)
     assert h["confidence"] >= before  # evasive answer: doubt can't drop
     match = [{"status": "matches", "figure_id": "cmgr_12m"}]
-    minds.update_and_bid(p, state, match, weak=False, current_vc="james", current_hyp=h["id"], turns_since=0)
+    minds.update_and_bid(p, state, match, weak=False, current_vc="aristotle", current_hyp=h["id"], turns_since=0)
     assert h["confidence"] < before
 
 

@@ -40,6 +40,14 @@ def scripted(call):
         return json_reply({"claims": []}, model="claude-haiku-5-5")
     if task == "judge":
         return json_reply(JUDGED, model="claude-opus-5-5")
+    if task == "review":
+        return json_reply({"verdict": "approve", "issues": [], "note": ""}, model="claude-haiku-5-5")
+    if task == "probes":
+        return json_reply({"probes": []})
+    if task == "ask_knowledge":
+        return text_reply("From memory: what do your notes say about that?")
+    if task == "verify":
+        return json_reply({"verdict": "partial", "explanation": "Part of it."}, model="claude-haiku-5-5")
     if task == "bid":
         hid = re.search(r"\n(\S+\.h\d+) \|", user)
         return json_reply({"deltas": [], "bid": 0.5, "intent": "new_topic", "target_hyp": hid.group(1) if hid else None})
@@ -55,7 +63,7 @@ async def _login_and_confirm(api_client):
 async def test_prepare_court_runs_on_the_llm_path(api_client, live_llm):
     await _login_and_confirm(api_client)
     rec = live_llm.install(scripted)
-    r = await api_client.post("/court/start", json={"panel": ["james", "alex"], "question_cap": 4})
+    r = await api_client.post("/court/start", json={"panel": ["aristotle", "thales"], "question_cap": 4})
     assert r.status_code == 200, r.text
     s = r.json()
     assert [t["kind"] for t in s["turns"]] == ["intro", "question"] and s["turns"][1]["text"] == SPOKEN

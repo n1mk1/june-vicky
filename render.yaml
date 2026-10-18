@@ -54,6 +54,9 @@ services:
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
+      # Knowledge-base search (docs/08-RAG.md): embeddings and reranking. Unset = BM25 only.
+      - key: VOYAGE_API_KEY
+        sync: false
       - key: ACCESS_CODE
         sync: false
 

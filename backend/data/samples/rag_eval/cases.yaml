@@ -1,0 +1,53 @@
+# Questions for the retrieval eval, each with the note that answers it (docs/08-RAG.md §Testing and evals).
+# Phrased the way a founder or an investor would ask: synonyms, acronyms and paraphrases on purpose.
+# Reviewed catch-all misses (scripts/rag_misses.py) are added here.
+- {q: "What did the board approve last meeting?", note: company/Board update September.md}
+- {q: "How many stores are in the partnership pilot?", note: company/Board update September.md}
+- {q: "What risks did the directors raise?", note: company/Board update September.md}
+- {q: "Is there supplier concentration risk?", note: company/Board update September.md}
+- {q: "When is the next board review?", note: company/Board update September.md}
+- {q: "Who are we hiring before the next round?", note: team/Hiring plan.md}
+- {q: "What's the headcount plan?", note: team/Hiring plan.md}
+- {q: "When does the head of operations start?", note: team/Hiring plan.md}
+- {q: "Do we use contractors?", note: team/Hiring plan.md}
+- {q: "How do we charge customers?", note: product/Pricing.md}
+- {q: "What are the subscription tiers?", note: product/Pricing.md}
+- {q: "Is there a volume discount for chains?", note: product/Pricing.md}
+- {q: "What do you get for paying annually?", note: product/Pricing.md}
+- {q: "Who are the competitors?", note: market/Competitors.md}
+- {q: "How are we different from point-of-sale vendors?", note: market/Competitors.md}
+- {q: "What does Freshlytics do?", note: market/Competitors.md}
+- {q: "What's on the product roadmap?", note: product/Roadmap.md}
+- {q: "Are we building a mobile app?", note: product/Roadmap.md}
+- {q: "What is the supplier portal?", note: product/Roadmap.md}
+- {q: "Will the product suggest markdowns before food spoils?", note: product/Roadmap.md}
+- {q: "How will the raise be spent?", note: fundraising/Use of funds.md}
+- {q: "What's the use of proceeds?", note: fundraising/Use of funds.md}
+- {q: "Are we raising on a SAFE?", note: fundraising/Use of funds.md}
+- {q: "How much working capital is reserved?", note: fundraising/Use of funds.md}
+- {q: "Why do customers churn?", note: customers/Churn review.md}
+- {q: "What's driving attrition?", note: customers/Churn review.md}
+- {q: "Which stores cancel the most?", note: customers/Churn review.md}
+- {q: "What changed to reduce cancellations?", note: customers/Churn review.md}
+- {q: "What did store managers say in interviews?", note: customers/Customer interviews.md}
+- {q: "What's the biggest pain for grocers?", note: customers/Customer interviews.md}
+- {q: "Do customers want a weekly email?", note: customers/Customer interviews.md}
+- {q: "How do we onboard a new store?", note: operations/Onboarding playbook.md}
+- {q: "When do automatic reorders switch on?", note: operations/Onboarding playbook.md}
+- {q: "What's the mission?", note: company/Mission.md}
+- {q: "Who founded the company?", note: team/Founders.md}
+- {q: "What is the CEO's background?", note: team/Founders.md}
+- {q: "Where is customer data stored?", note: legal/Data processing.md}
+- {q: "Do we keep shopper identities?", note: legal/Data processing.md}
+- {q: "How long is data kept after cancellation?", note: legal/Data processing.md}
+- {q: "What's the TAM?", note: market/Market sizing.md}
+- {q: "Which chains do we target first?", note: market/Market sizing.md}
+- {q: "Which distributors do our customers rely on?", note: operations/Supplier relationships.md}
+- {q: "Do we have a data-sharing agreement with suppliers?", note: operations/Supplier relationships.md}
+- {q: "What's the GTM strategy?", note: company/Go to market.md}
+- {q: "How do buying groups get paid?", note: company/Go to market.md}
+- {q: "What is our sales channel?", note: company/Go to market.md}
+- {q: "What waste do owners care about most?", note: customers/Customer interviews.md}
+- {q: "Who is the CTO?", note: team/Founders.md}
+- {q: "How does the system learn sell-through?", note: operations/Onboarding playbook.md}
+- {q: "Is there a minimum commitment in the pilot?", note: company/Board update September.md}

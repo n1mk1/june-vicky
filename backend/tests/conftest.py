@@ -3,6 +3,7 @@ Redis from `docker compose up db kv` (or CI service containers); they skip when 
 """
 
 import os
+import zlib
 from urllib.parse import urlparse, urlunparse
 
 import asyncpg
@@ -74,7 +75,12 @@ async def api_client():
     os.environ["DATABASE_URL"] = dsn
     os.environ["LLM_MODE"] = "offline"
     redis = urlparse(os.environ.get("REDIS_URL", get_settings().redis_url))
-    os.environ["REDIS_URL"] = urlunparse(redis._replace(path="/15"))  # own Redis DB: rate limits start clean
+    # Own Redis DB, so rate limits start clean; one per test database, so test runs from different checkouts
+    # or sessions (DATABASE_URL=…/vicky_<name>) don't share rate limits, caches or offers.
+    rdb = 15 if name == "vicky_test" else 2 + zlib.crc32(name.encode()) % 12
+    os.environ["REDIS_URL"] = urlunparse(redis._replace(path=f"/{rdb}"))
+    # The whole suite makes more requests a minute than the per-IP limit allows a real client.
+    os.environ.setdefault("RATE_LIMIT_PER_MIN", "100000")
     get_settings.cache_clear()
     from vicky import kv
     from vicky.api import app

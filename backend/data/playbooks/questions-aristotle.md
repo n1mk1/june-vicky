@@ -1,9 +1,9 @@
 ---
 topics: [team, forecast, claims, runway, arr, mrr, cmgr_12m, cmgr_recent, logo_churn_rate, nrr, grr, cac_payback_months, runway_months]
-title: Question bank - James (lead seed partner, lines not dots)
+title: Question bank - Aristotle (lead seed partner, lines not dots)
 ---
 
-# James: question bank
+# Aristotle: question bank
 
 Calm, precise, follows a number down three levels (which months, which customers, which
 formula), and compares every answer with earlier answers and the deck. Placeholders in
@@ -63,7 +63,7 @@ Why: separates plan runway from real runway.
   raising again, and where hiring slows if milestones slip.
 
 ### 9. "Why are the two of you the team to build {company}? What have you learned fastest this year?"
-Why: James leads rounds on the team as much as the numbers.
+Why: Aristotle leads rounds on the team as much as the numbers.
 - **Weak:** CV highlights, no learning story.
 - **Strong:** a specific problem the founders misjudged, the evidence that changed their
   mind, and what they changed in the business as a result.

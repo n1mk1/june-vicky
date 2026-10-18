@@ -93,6 +93,13 @@ def test_excerpts_are_verbatim_lines_best_first():
 
 @pytest.fixture
 async def board_note(api_client):
+    """These tests cover the vault before the first Fill dashboard: no search index (docs/08-RAG.md);
+    tests/test_rag.py covers search over a built index."""
+    from vicky import db
+    from vicky.kb import rag
+
+    await db.execute("delete from kb_index_builds")
+    rag.drop_index()
     note = await store.create_note({"title": "Zephyrine partnership", "path": "company/Zephyrine", "content": BOARD})
     yield note
     await store.delete_note(note["id"])
@@ -144,8 +151,8 @@ async def test_claude_restating_a_note_number_falls_back_to_the_quote(board_note
 
 
 async def test_memo_may_quote_a_note_it_read(board_note, ctx, live_llm):
-    james = registry.builtins()["james"]
-    owned = offline.build_memos([james], ctx)["james"]["hypotheses"][0]
+    james = registry.builtins()["aristotle"]
+    owned = offline.build_memos([james], ctx)["aristotle"]["hypotheses"][0]
     path = board_note["path"]
     thesis = f"Their board pack says “a $250K minimum commitment” [kb:{path}], so the pilot is small."
     memo = {"thesis": thesis,
@@ -155,7 +162,7 @@ async def test_memo_may_quote_a_note_it_read(board_note, ctx, live_llm):
             "opening_question": "Why did the board only commit $250K to Zephyrine?"}  # restated: dropped
     rec = live_llm.install(queue(tool_use_reply("kb_read", {"note": path}, model="claude-opus-5-5"),
                                  json_reply(memo, model="claude-opus-5-5")))
-    out = (await agents.build_memos([james], ctx))["james"]
+    out = (await agents.build_memos([james], ctx))["aristotle"]
     assert out["source"] == "llm" and out["thesis"] == thesis and out["kb_notes"] == [path]
     assert out["mind_changers"] == memo["mind_changers"]
     assert out["opening_question"] != memo["opening_question"]

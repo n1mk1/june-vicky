@@ -175,6 +175,13 @@ export function FactsTable({ engagement, onChanged }: { engagement: Engagement; 
     (f) => (kind === "all" || f.kind === kind) && (!q || `${f.name} ${f.label ?? ""} ${f.period ?? ""}`.toLowerCase().includes(q)),
   );
   const facts = filtered.slice(0, limit);
+  // The same figure for the same period from two sources with different values: the founder picks one.
+  const byKey = new Map<string, Fact[]>();
+  for (const f of all) byKey.set(`${f.name}|${f.period ?? ""}`, [...(byKey.get(`${f.name}|${f.period ?? ""}`) ?? []), f]);
+  const others = (f: Fact) =>
+    (byKey.get(`${f.name}|${f.period ?? ""}`) ?? []).filter(
+      (o) => o.id !== f.id && Math.abs(o.value - f.value) > Math.max(1e-9, Math.abs(f.value) * 0.005),
+    );
 
   const remove = async (id: string) => {
     setRemoving(id);
@@ -251,6 +258,12 @@ export function FactsTable({ engagement, onChanged }: { engagement: Engagement; 
                     <span className="block text-ink">{f.label || humanize(f.name)}</span>
                     <span className="font-mono text-[10px] text-dim">{f.name}</span>
                     {f.note && <span className="mt-0.5 block text-[11px] text-ink-2">{f.note}</span>}
+                    {others(f).length > 0 && (
+                      <span className="mt-0.5 block text-[11px] text-ember">
+                        Sources disagree: also {others(f).map((o) => `${fmtValue(o.value, o.unit, currency)} (${sourceLabel(o.source)})`).join(", ")}.
+                        Remove the one that&apos;s wrong.
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-display text-[15px] tracking-[-0.03em] tabular-nums whitespace-nowrap">
                     {fmtValue(f.value, f.unit, currency)}

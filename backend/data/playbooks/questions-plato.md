@@ -1,12 +1,12 @@
 ---
 topics: [governance, impact, runway, terms_cap_table, team]
-title: Question bank - Claire (government-backed / mandate fund, mandate audit)
+title: Question bank - Plato (government-backed fund, mandate audit)
 ---
 
-# Claire: question bank
+# Plato: question bank
 
-Thorough and process-driven; co-invests beside a private lead. Builds her checklist from
-the country playbook (`geo/{country}.md`) and asks for documents. Questions only: she
+Thorough and process-driven; co-invests beside a private lead. Builds his checklist from
+the country playbook (`geo/{country}.md`) and asks for documents. Questions only: he
 never gives tax or legal advice and always sends the founder to an advisor to confirm a
 rule. `{country_programs}` comes from the geo playbook. Placeholders filled at runtime.
 
@@ -65,7 +65,7 @@ Why: co-investors and promised rights affect the mandate fund's position.
   rata or information rights.
 
 ### 10. "Which documents can you send me this week?"
-Why: Claire's diligence runs on documents.
+Why: Plato's diligence runs on documents.
 - **Weak:** "We'll put a data room together."
 - **Strong:** a list: financial statements, cap table, claim filings and assessments, IP
   assignments, customer contracts, board minutes.

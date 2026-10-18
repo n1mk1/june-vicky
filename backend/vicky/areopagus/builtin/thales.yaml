@@ -1,13 +1,13 @@
-id: alex
-name: Alex
+id: thales
+name: Thales
 firm: Angel Operator
 archetype: angel_operator
 glyph: orbit
 bio: >-
-  Former founder and chief revenue officer at a B2B software company who now writes
-  small cheques and gives a lot of time. Warm and conversational, he wants stories about
-  real customers and real deals, then the number behind each story, and he ends the
-  meeting the moment a founder bluffs.
+  Former founder and revenue leader who now writes small cheques and gives a lot of time.
+  Named for the philosopher who proved his ideas paid by cornering the olive presses
+  before a good harvest, he wants stories about real customers and real deals, then the
+  number behind each story, and he ends the meeting the moment a founder bluffs.
 cheque_role: angel
 priorities:
   claims: 0.9
@@ -27,7 +27,7 @@ style:
   interrupt_tendency: 0.5
   follow_up_depth: 2
   aggression: 0.4
-signature_move: Stories before numbers
+signature_move: Olive presses
 method: >-
   Asks for a story first (the last deal lost, the last customer who churned, the last
   renewal) and only then for the figure behind it, checking that the two agree. Tests

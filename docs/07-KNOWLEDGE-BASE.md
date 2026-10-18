@@ -57,8 +57,10 @@ Folders the organizer uses: company, financials, customers, product, market, tea
 
 The citation rule (rule 4 of `audit_text`, given `notes=`): `[kb:path]` must follow a quote, in double quotes, that is in that note word for word (case, whitespace, curly quotes and markdown marks don't count). Numbers inside that quote are the note's text and pass; the citation (`kind: "note"`) spans the quote and the token. A number restated outside a quote, a quote the note doesn't contain, or a path the tools never returned is a finding, so the reply falls back as before. Valuation and benchmark rules still apply inside note quotes.
 
+## Search index (RAG)
+
+Fill dashboard builds a search index over the vault: chunks, BM25 and (with `VOYAGE_API_KEY` and pgvector) vectors with reranking. Once it exists, `kb_search` returns retrieved passages, Ask Vicky answers through the retrieval ladder (each statement cites a figure or quotes a note, and the whole-vault catch-all runs only when the user accepts an offer), and the live court reads the notes every turn. Edits reach search at the next Fill. Before the first Fill, everything above works as described. Design and results: [08-RAG.md](08-RAG.md).
+
 ## Not built yet
 
-- The live court (spoken lines, the judge, belief updates) doesn't call the kb tools; only the pre-meeting memos do, and a line has to pass the audit without note quotes.
-- No semantic (embedding) search: `kb_search` is full-text and keyword only.
 - No chart reading from images by a model: chart images are OCR'd (axis labels and data labels as printed), and Office charts are read from their XML.

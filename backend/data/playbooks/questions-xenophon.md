@@ -1,9 +1,9 @@
 ---
 topics: [product_tech, market, terms_cap_table, governance, concentration]
-title: Question bank - Kenji (corporate / strategic VC, trap terms)
+title: Question bank - Xenophon (corporate / strategic VC, trap terms)
 ---
 
-# Kenji: question bank
+# Xenophon: question bank
 
 Friendly and long-term. Talks channel fit and shared customers, then floats rights as if
 routine. The test is whether the founder notices what each right would cost with other

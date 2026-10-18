@@ -92,9 +92,9 @@ async def test_dashboard_widgets_are_evaluated_by_code(api_client):
 
 async def test_areopagus_builtins_and_fork(api_client):
     personas = (await api_client.get("/areopagus")).json()
-    assert len([p for p in personas if p["builtin"]]) == 10
-    assert (await api_client.put("/areopagus/mark", json={"name": "X"})).status_code == 403
-    fork = (await api_client.post("/areopagus/mark/fork")).json()
+    assert len([p for p in personas if p["builtin"]]) == 5
+    assert (await api_client.put("/areopagus/socrates", json={"name": "X"})).status_code == 403
+    fork = (await api_client.post("/areopagus/socrates/fork")).json()
     assert fork["builtin"] is False and fork["base_archetype"] == "skeptical_ic_partner"
     assert fork["signature_move"] == "Pre-mortem chain" and "pre-mortem" not in fork["id"]
     assert any(p["id"] == fork["id"] for p in (await api_client.get("/areopagus")).json())
@@ -118,20 +118,20 @@ async def test_fr13_builder_generate_create_edit(api_client):
 
 async def test_session_survives_a_deleted_custom_investor(api_client):
     made = (await api_client.post("/areopagus", json={"name": "Temp"})).json()
-    s = (await api_client.post("/court/start", json={"panel": ["james", made["id"]], "question_cap": 4})).json()
+    s = (await api_client.post("/court/start", json={"panel": ["aristotle", made["id"]], "question_cap": 4})).json()
     assert (await api_client.delete(f"/areopagus/{made['id']}")).status_code == 200
     view = await api_client.get(f"/court/{s['id']}")
-    assert view.status_code == 200 and [p["id"] for p in view.json()["panel"]] == ["james"]
+    assert view.status_code == 200 and [p["id"] for p in view.json()["panel"]] == ["aristotle"]
     assert (await api_client.post(f"/court/{s['id']}/end")).status_code == 200
 
 
 async def test_prepare_court_round_trip(api_client):
-    s = (await api_client.post("/court/start", json={"panel": ["james", "alex", "mark"], "question_cap": 5,
+    s = (await api_client.post("/court/start", json={"panel": ["aristotle", "thales", "socrates"], "question_cap": 5,
                                                          "coaching": "coached"})).json()
     assert s["status"] == "live" and s["awaiting"] == "founder"
     assert [t["kind"] for t in s["turns"]] == ["intro", "question"]
     first_q = s["turns"][-1]
-    assert first_q["speaker"] in ("james", "alex", "mark") and first_q["citations"]
+    assert first_q["speaker"] in ("aristotle", "thales", "socrates") and first_q["citations"]
 
     s = (await api_client.post(f"/court/{s['id']}/answer", json={"text": "We're growing 10% a month."})).json()
     assert any(c["status"] == "contradicts" for c in s["claims"])

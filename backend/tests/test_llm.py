@@ -50,7 +50,7 @@ def ctx():
 
 @pytest.fixture
 def james():
-    return registry.builtins()["james"]
+    return registry.builtins()["aristotle"]
 
 
 def by_task(**handlers):
@@ -157,7 +157,7 @@ async def test_without_a_key_the_minds_are_the_offline_minds(ctx, james, monkeyp
     get_settings.cache_clear()
     try:
         assert await agents.build_memos([james], ctx) == offline.build_memos([james], ctx)
-        hyp = offline.build_memos([james], ctx)["james"]["hypotheses"][0]
+        hyp = offline.build_memos([james], ctx)["aristotle"]["hypotheses"][0]
         spoken = await agents.speak(james, hyp, ctx, "new_topic", set())
         assert spoken.text == offline.question_for(james, hyp, ctx, set()) and spoken.source == "offline"
         answer = "Our ARR is $1.29M and churn is about 1%."
@@ -176,7 +176,7 @@ def offline_claims(answer):
 # ---------------------------------------------------------------- memos
 
 async def test_memo_uses_kit_tools_and_code_keeps_only_anchored_hypotheses(live_llm, ctx, james):
-    base = offline.build_memos([james], ctx)["james"]
+    base = offline.build_memos([james], ctx)["aristotle"]
     owned = base["hypotheses"][0]
     real_fig = next(f.id for f in ctx.available() if f.id not in owned["evidence"])
     memo = {"thesis": "Growth is slowing and the plan assumes it won't.",
@@ -190,9 +190,9 @@ async def test_memo_uses_kit_tools_and_code_keeps_only_anchored_hypotheses(live_
             "mind_changers": ["Cohort data by month"], "opening_question": INVENTED}
     rec = live_llm.install(by_task(memo=[tool_use_reply("get_metric", {"id": "arr"}, model="claude-opus-5-5"),
                                          json_reply(memo, model="claude-opus-5-5")]))
-    out = (await agents.build_memos([james], ctx))["james"]
+    out = (await agents.build_memos([james], ctx))["aristotle"]
     assert out["source"] == "llm"
-    assert [h["id"] for h in out["hypotheses"]] == ["james.h1", "james.h2"]
+    assert [h["id"] for h in out["hypotheses"]] == ["aristotle.h1", "aristotle.h2"]
     first, new = out["hypotheses"]
     assert first["attack_id"] == owned["attack_id"] and first["confidence"] == 0.9  # clamped
     assert new["evidence"] == [real_fig] and new["severity"] == 0.7  # a model-only doubt can't outrank code's
@@ -207,13 +207,13 @@ async def test_memo_uses_kit_tools_and_code_keeps_only_anchored_hypotheses(live_
 
 async def test_memo_failure_falls_back_per_investor(live_llm, ctx, james):
     live_llm.install(by_task(memo=[(500, {"type": "error", "error": {"type": "api_error", "message": "x"}})]))
-    assert (await agents.build_memos([james], ctx))["james"] == offline.build_memos([james], ctx)["james"]
+    assert (await agents.build_memos([james], ctx))["aristotle"] == offline.build_memos([james], ctx)["aristotle"]
 
 
 # ---------------------------------------------------------------- speaking
 
 async def test_a_line_that_fails_the_audit_is_regenerated_once(live_llm, ctx, james):
-    hyp = offline.build_memos([james], ctx)["james"]["hypotheses"][0]
+    hyp = offline.build_memos([james], ctx)["aristotle"]["hypotheses"][0]
     good = "Walk me through which months that growth rate covers and how you calculate it."
     rec = live_llm.install(by_task(speak=[text_reply(INVENTED), text_reply(good)]))
     spoken = await agents.speak(james, hyp, ctx, "new_topic", set())
@@ -223,7 +223,7 @@ async def test_a_line_that_fails_the_audit_is_regenerated_once(live_llm, ctx, ja
 
 
 async def test_two_failed_lines_fall_back_to_the_offline_line(live_llm, ctx, james):
-    hyp = offline.build_memos([james], ctx)["james"]["hypotheses"][0]
+    hyp = offline.build_memos([james], ctx)["aristotle"]["hypotheses"][0]
     live_llm.install(by_task(speak=[text_reply(INVENTED), text_reply("We value you at $20M pre-money.")]))
     spoken = await agents.speak(james, hyp, ctx, "new_topic", set())
     assert spoken.source == "offline" and spoken.regenerated is True
@@ -233,73 +233,73 @@ async def test_two_failed_lines_fall_back_to_the_offline_line(live_llm, ctx, jam
 # ---------------------------------------------------------------- chair
 
 def _ranked():
-    return referee.rank([referee.Bid("james", 0.8, "new_topic", "james.h1", turns_since_spoke=5),
-                         referee.Bid("alex", 0.6, "new_topic", "alex.h1", turns_since_spoke=5)], answer_weak=False)
+    return referee.rank([referee.Bid("aristotle", 0.8, "new_topic", "aristotle.h1", turns_since_spoke=5),
+                         referee.Bid("thales", 0.6, "new_topic", "thales.h1", turns_since_spoke=5)], answer_weak=False)
 
 
 def _state():
     return {"vcs": {v: {"hyps": [{"id": f"{v}.h1", "claim": "doubt", "lens": "forecast", "confidence": 0.7, "asked": 0,
-                                  "status": "open"}]} for v in ("james", "alex")}}
+                                  "status": "open"}]} for v in ("aristotle", "thales")}}
 
 
 async def test_chair_can_pick_any_ranked_candidate(live_llm):
-    panel = {p: registry.builtins()[p] for p in ("james", "alex")}
-    live_llm.install(by_task(chair=[json_reply({"action": "call_on", "vc_id": "alex", "intent": "new_topic",
-                                                "hypothesis_id": "alex.h9", "note": "fresh lens"}),
-                                    json_reply({"action": "call_on", "vc_id": "alex", "intent": "follow_up",
-                                                "hypothesis_id": "alex.h1", "note": None})]))
+    panel = {p: registry.builtins()[p] for p in ("aristotle", "thales")}
+    live_llm.install(by_task(chair=[json_reply({"action": "call_on", "vc_id": "thales", "intent": "new_topic",
+                                                "hypothesis_id": "thales.h9", "note": "fresh lens"}),
+                                    json_reply({"action": "call_on", "vc_id": "thales", "intent": "follow_up",
+                                                "hypothesis_id": "thales.h1", "note": None})]))
     pick = await agents.chair(_ranked(), _state(), panel)
-    assert pick.candidate.vc_id == "alex" and not pick.fallback and pick.valid
-    assert pick.decision["hypothesis_id"] == "alex.h1"  # an unknown hypothesis becomes the candidate's own
+    assert pick.candidate.vc_id == "thales" and not pick.fallback and pick.valid
+    assert pick.decision["hypothesis_id"] == "thales.h1"  # an unknown hypothesis becomes the candidate's own
     pick = await agents.chair(_ranked(), _state(), panel)
-    assert pick.fallback and pick.candidate.vc_id == "james"  # a follow-up the referee didn't allow is invalid
+    assert pick.fallback and pick.candidate.vc_id == "aristotle"  # a follow-up the referee didn't allow is invalid
 
 
 async def test_invalid_or_late_chair_falls_back_to_the_top_candidate(live_llm, monkeypatch):
-    panel = {p: registry.builtins()[p] for p in ("james", "alex")}
+    panel = {p: registry.builtins()[p] for p in ("aristotle", "thales")}
     live_llm.install(by_task(chair=[json_reply({"action": "call_on", "vc_id": "zed", "intent": "new_topic",
                                                 "hypothesis_id": None, "note": None})]))
     pick = await agents.chair(_ranked(), _state(), panel)
-    assert pick.fallback and pick.candidate.vc_id == "james" and "not an eligible" in pick.reason
+    assert pick.fallback and pick.candidate.vc_id == "aristotle" and "not an eligible" in pick.reason
 
     async def slow(_call):
         await asyncio.sleep(0.5)
-        return json_reply({"action": "call_on", "vc_id": "alex", "intent": "new_topic", "hypothesis_id": "alex.h1",
+        return json_reply({"action": "call_on", "vc_id": "thales", "intent": "new_topic", "hypothesis_id": "thales.h1",
                            "note": None})
 
     monkeypatch.setenv("CHAIR_TIMEOUT_S", "0.05")
     get_settings.cache_clear()
     live_llm.install(slow)
     pick = await agents.chair(_ranked(), _state(), panel)
-    assert pick.fallback and pick.candidate.vc_id == "james"
+    assert pick.fallback and pick.candidate.vc_id == "aristotle"
 
 
 # ---------------------------------------------------------------- beliefs
 
 def _vc_state():
-    return {"hyps": [{"id": "james.h1", "attack_id": "growth_decel", "claim": "Growth is slowing", "lens": "forecast",
+    return {"hyps": [{"id": "aristotle.h1", "attack_id": "growth_decel", "claim": "Growth is slowing", "lens": "forecast",
                       "evidence": ["cmgr_12m"], "confidence": 0.7, "severity": 0.8, "status": "open", "asked": 1,
                       "weak_answers": 0, "quotes": []}], "last_spoke": 0}
 
 
 async def test_no_concession_without_a_matching_figure_holds_on_the_llm_path(live_llm, ctx, james):
-    drop = {"deltas": [{"hyp_id": "james.h1", "new_confidence": 0.1, "why": "They sounded confident"}], "bid": 0.4,
-            "intent": "follow_up", "target_hyp": "james.h1"}
+    drop = {"deltas": [{"hyp_id": "aristotle.h1", "new_confidence": 0.1, "why": "They sounded confident"}], "bid": 0.4,
+            "intent": "follow_up", "target_hyp": "aristotle.h1"}
     live_llm.install(by_task(bid=[json_reply(drop), json_reply(drop)]))
     state = _vc_state()
-    out = await agents.update_and_bid(james, state, [], False, "alex", "alex.h1", 2, set(), ctx=ctx, answer="Trust me.")
+    out = await agents.update_and_bid(james, state, [], False, "thales", "thales.h1", 2, set(), ctx=ctx, answer="Trust me.")
     assert state["hyps"][0]["confidence"] == 0.7 and out["deltas"] == []
     assert out["intent"] != "follow_up"  # not this investor's thread
     match = [{"status": "matches", "figure_id": "cmgr_12m", "text": "growth"}]
-    out = await agents.update_and_bid(james, state, match, False, "james", "james.h1", 0, set(), ctx=ctx)
+    out = await agents.update_and_bid(james, state, match, False, "aristotle", "aristotle.h1", 0, set(), ctx=ctx)
     assert state["hyps"][0]["confidence"] == pytest.approx(0.35)  # accepted, but at most MAX_DELTA per answer
-    assert out["deltas"][0]["hyp_id"] == "james.h1"
+    assert out["deltas"][0]["hyp_id"] == "aristotle.h1"
 
 
 # ---------------------------------------------------------------- judge and claims
 
 async def test_judge_scores_are_clamped_and_rewrites_audited(live_llm, ctx, james):
-    hyp = offline.build_memos([james], ctx)["james"]["hypotheses"][0]
+    hyp = offline.build_memos([james], ctx)["aristotle"]["hypotheses"][0]
     answer = "We grew fast last year and we're fixing the pipeline."
     js = {"evidence": 7, "clarity": 3.04, "composure": -1, "investor_fit": 4, "good": "Owned the slowdown.",
           "missing": "The growth figure and its window.", "strong_answer": "Our ARR is $9.9M and growing 40% a month."}

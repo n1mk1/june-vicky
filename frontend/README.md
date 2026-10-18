@@ -55,7 +55,7 @@ Global setup signs in with `ACCESS_CODE` (default `vicky-demo`) and, if nothing 
 ## Where things live
 
 - `lib/tidewell.ts`: Tidewell monthly actuals from CSV 01, and every derived figure with its formula and source.
-- `lib/panel.ts`: the James / Alex / Mark personas and the scripted Prepare and Simulation sessions. These are mock data until the FastAPI backend exists.
+- `lib/court.ts`: maps a court session from the API (turns, scores, claims, knowledge checks) to the Preparation feed and Q&A list.
 - `components/fx`: the preloader, light streaks and WebGL scenes (the VICKY mark and readiness orb).
 - `components/ui`: pills with letter roll, panels with corner marks, the VICKY mark, VC glyphs.
 - `app/globals.css`: theme tokens for `data-theme="dark"` and `data-theme="light"`.

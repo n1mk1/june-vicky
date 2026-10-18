@@ -36,7 +36,8 @@ _CREDITS = r"(?:the )?(?:non dilutive(?: income)?|(?:tax |r and d |rd )?credits?
 class Intent(BaseModel):
     kind: Kind
     spec: WidgetSpec | None = None
-    last_months: int | None = None  # time_range: None clears it
+    last_months: int | None = None  # time_range: None (and no span) clears it
+    span: dict[str, str] | None = None  # time_range: {from, to} months, for "zoom to Q1 2026"
     summary: str = ""
 
 
@@ -198,6 +199,30 @@ def _group_by(t: str) -> str | None:
     return {"monthly": "month", "quarterly": "quarter", "annual": "year", "annually": "year", "yearly": "year"}.get(word, word)
 
 
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+_SPAN_PARTS = re.compile(r"\bq([1-4]) (\d{4})\b|\b(\d{4}) q([1-4])\b|\b(" + "|".join(_MONTHS) + r")[a-z]* (\d{4})\b|"
+                         r"\b(\d{4}) (0[1-9]|1[0-2])\b|\b((?:19|20)\d{2})\b")
+
+
+def _span(t: str) -> dict[str, str] | None:
+    """The months named in "zoom to Q1 2026", "2025", "jan 2025 to mar 2026": {from, to} as YYYY-MM."""
+    bounds: list[tuple[str, str]] = []
+    for m in _SPAN_PARTS.finditer(t):
+        if m.group(1) or m.group(3):
+            y, q = (m.group(2), int(m.group(1))) if m.group(1) else (m.group(3), int(m.group(4)))
+            bounds.append((f"{y}-{3 * q - 2:02d}", f"{y}-{3 * q:02d}"))
+        elif m.group(5):
+            ym = f"{m.group(6)}-{_MONTHS.index(m.group(5)) + 1:02d}"
+            bounds.append((ym, ym))
+        elif m.group(7):
+            bounds.append((f"{m.group(7)}-{m.group(8)}", f"{m.group(7)}-{m.group(8)}"))
+        else:
+            bounds.append((f"{m.group(9)}-01", f"{m.group(9)}-12"))
+    if not bounds:
+        return None
+    return {"from": min(b[0] for b in bounds), "to": max(b[1] for b in bounds)}
+
+
 def _template(t: str) -> str | None:
     return next((tpl for pat, tpl in _TEMPLATES if re.search(pat, t)), None)
 
@@ -227,6 +252,8 @@ def interpret(text: str, ctx: TruthContext) -> Intent:
     months = _window_months(t)
     if _ZOOM.search(t) and months:
         return Intent(kind="time_range", last_months=months, summary=f"Zoomed to {_range_label(months)}")
+    if _ZOOM.search(t) and (span := _span(t)):
+        return Intent(kind="time_range", span=span, summary=f"Zoomed to {span['from']} → {span['to']}")
     if not hits and months and len(t.split()) <= 6:  # "last 6 months"
         return Intent(kind="time_range", last_months=months, summary=f"Zoomed to {_range_label(months)}")
     if "valuation" in t or "valued" in t or (_QUESTION.match(t) and not _CHART_VERB.search(t)):
@@ -269,6 +296,11 @@ def _build_spec(t: str, hits: list[_Hit], months: int | None, ctx: TruthContext)
         cats = [c for c in OPEX_CATEGORIES if ctx.model.has(c)] or ["opex.total"]
         series = [(c, OPEX_NAMES.get(c, "Operating expenses"), "money") for c in cats]
     else:
+        series = [(m.ref, m.label, m.unit) for m in measures]
+    if not series:  # "runway as % of revenue": a single figure can't be a share of a series
+        if scalars:
+            return WidgetSpec(template="kpi", title=scalars[0].label,
+                              series=[SeriesSpec(ref=m.ref, label=m.label) for m in scalars][:MAX_SERIES])
         series = [(m.ref, m.label, m.unit) for m in measures]
 
     # transforms

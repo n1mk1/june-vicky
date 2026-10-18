@@ -237,6 +237,13 @@ NOT_UNDERSTOOD = ("I can chart a metric from your data or zoom the dashboard. Tr
 _GROUPED = re.compile(r"\b(?:by|per|each|every) (?:month|quarter|year)s?\b|\b(?:monthly|quarterly) (?:chart|trend|view)\b")
 _ASKING = re.compile(r"^(?:what|whats|what's|which|how|when|where|who|why|is|are|was|were|did|does|do|can|could|tell me|"
                      r"give me the|list|explain|compare|summari[sz]e|show me how)\b")
+# "can you show revenue by quarter?" is a request, not a question (but "can you show me how … ?" is one).
+_POLITE_CHART = re.compile(r"^(?:(?:can|could|would|will) you|please|pls|plz|kindly)(?: please)? (?:show|add|chart|plot|"
+                           r"graph|display|visuali[sz]e|draw|make|create|put|pin|build|give me a)\b(?! me how)")
+_REMOVE = re.compile(r"^(?:please )?(?:remove|delete|drop|hide|get rid of|take (?:off|away)|undo)\b")
+CANT_REMOVE = ("I can't remove widgets from here: use the remove button on the widget itself. I can add a chart, "
+               "answer a question about your data or zoom every chart.")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")  # Postgres text can't hold NUL
 
 
 async def _log(dashboard_id: str, role: str, content: str, tool_calls: list[dict] | None = None) -> None:
@@ -249,7 +256,7 @@ async def chat(dashboard_id: str, text: str, currency: str | None = None) -> dic
 
     The reply never carries a figure: it names the widget, the period range or the missing-data reason.
     """
-    text = (text or "").strip()[:500]
+    text = _CONTROL.sub(" ", text or "").strip()[:500]
     dash, ctx = await _ctx_for_dashboard(dashboard_id, currency)
     intent = interpret(text, ctx)
     out: dict[str, Any] = {"kind": intent.kind, "reply": "", "spec": None, "widget_id": None, "missing": None,
@@ -259,18 +266,26 @@ async def chat(dashboard_id: str, text: str, currency: str | None = None) -> dic
     # A widget needs an explicit ask: a chart verb ("show", "plot", "add") or a grouping ("by quarter").
     # Everything else ("total revenue over the last 12 months", "runway?") is a question to answer.
     asks_for_chart = bool(_CHART_VERB.search(t)) or bool(_GROUPED.search(t))
-    is_question = text.rstrip().endswith("?") or bool(_ASKING.match(t))
-    if intent.kind in ("question", "none") or (intent.kind == "widget" and (is_question or not asks_for_chart)):
+    is_question = (text.rstrip().endswith("?") or bool(_ASKING.match(t))) and not _POLITE_CHART.match(t)
+    removing = bool(_REMOVE.match(t)) and intent.kind != "time_range"  # "remove zoom" is a time range
+    if not removing and (intent.kind in ("question", "none")
+                         or (intent.kind == "widget" and (is_question or not asks_for_chart))):
         intent = intent.model_copy(update={"kind": "answer"})
 
-    if intent.kind == "answer":
-        a = await qa.answer_any(text, ctx)
-        out.update(kind="answer", reply=a["reply"], citations=a["citations"], suggestions=a["suggestions"],
-                   chart=a["chart"])
+    if removing:
+        out.update(kind="none", reply=CANT_REMOVE)
+    elif intent.kind == "answer":
+        a = await qa.answer_any(text, ctx, dashboard_id=dashboard_id)
+        from vicky.kb.ask import link_figures
+
+        out.update(kind="answer", reply=a["reply"], citations=await link_figures(a["citations"], ctx),
+                   suggestions=a["suggestions"], chart=a["chart"])
+        if a.get("offer"):
+            out["offer"] = a["offer"]
         tool = {"name": "answer", "input": {"topic": a.get("topic")}}
     elif intent.kind == "time_range":
-        tr = {"last_months": intent.last_months} if intent.last_months else None
-        d = await set_time_range(dashboard_id, tr, None)
+        tr = {"last_months": intent.last_months} if intent.last_months else intent.span
+        d = await set_time_range(dashboard_id, tr, None, currency)
         out.update(dashboard=d, time_range=d["time_range"])
         out["reply"] = (f"Zoomed every chart to {d['time_range']['label']}." if d["time_range"]
                         else "Showing the full range on every chart.")
@@ -299,4 +314,23 @@ async def chat(dashboard_id: str, text: str, currency: str | None = None) -> dic
 
     await _log(dashboard_id, "founder", text)
     await _log(dashboard_id, "vicky", out["reply"], [tool] if tool else [])
+    return out
+
+
+async def catch_all(dashboard_id: str, offer_id: str, accept: bool, currency: str | None = None) -> dict | None:
+    """Accept or decline a catch-all offer made by `chat`. Declined: nothing runs, returns None."""
+    from vicky.kb import ask
+
+    rec = await ask.take_offer(dashboard_id, offer_id)
+    if not accept:
+        await ask.decline(rec)
+        return None
+    _dash, ctx = await _ctx_for_dashboard(dashboard_id, currency)
+    offline = qa.answer(rec["question"], ctx)
+    a = await ask.accept(rec, ctx, offline)
+    out: dict[str, Any] = {"kind": "answer", "reply": a["reply"], "spec": None, "widget_id": None, "missing": None,
+                           "time_range": None, "dashboard": None,
+                           "citations": await ask.link_figures(a.get("citations") or [], ctx),
+                           "suggestions": a.get("suggestions") or [], "chart": a.get("chart")}
+    await _log(dashboard_id, "vicky", out["reply"], [{"name": "catch_all", "input": {"offer_id": offer_id}}])
     return out

@@ -76,7 +76,7 @@ Existing hero, kept. Changes:
 Steps shown as mono labels `01 PROFILE · 02 MAPPING · 03 FACTS · 04 CONFIRM` across the top with a hairline progress.
 
 1. **Company profile form**: name, country (select), currency, fiscal year start, stage, round type/size, business model (Recurring · Other), granularity (Month · Quarter). Vicky's inferred values are prefilled with a dashed "inferred" chip; the founder confirms.
-2. **MappingTable** (`components/truth/MappingTable.tsx`): one row per source column: source name, sample values (mono), canonical field (select), unit, confidence bar. Rows under 0.6 confidence get an ember left border and sort to the top. "Keep as raw column" option. Wide layouts show a "Transposed: months were columns" note.
+2. **MappingTable** (`components/truth/MappingTable.tsx`): one row per source column: source name, sample values (mono), canonical field (select), unit, confidence bar. Rows under 0.6 confidence get an ember left border and sort to the top. "Keep as raw column" option. Wide layouts show a "Transposed: months were columns" note. The unit follows the field picked (Date for the date axis, locked; a currency for money; Count for counts); picking another column as the date axis re-reads the table on save. No button per table: each step ends in one **Save and continue** that saves every table.
 3. **Facts table**: name, value, unit, period, kind chip (historical / forecast / founder claim), source chip (`CSV rows 3–26`, `PDF p.4`, `You said`). Rows from documents with unverifiable `cited_text` get a dashed ember chip "Couldn't verify on page". Edit and remove inline.
 4. **Coverage checklist**: metric groups with ✓ / "Needs: cohort table". Confirm button (solid pill). Confirming shows a one-line notice when it starts a new engagement.
 
@@ -95,13 +95,13 @@ New behaviours:
 Left: **VcRoster**. First card is the fixed **Chair** (VICKY glyph, "Vicky · Chair", no checkbox). Then seated VCs: glyph, name (display 17px), firm, speaking dot (ember pulse), temperature bars (1–3), checkbox. A session-setup row above the feed: question cap slider 6–20 and the Coaching segmented control (Coached · Realistic). The "+" opens the inline "Describe the investor" textarea (existing) which now calls the generator and shows the persona preview before adding.
 
 Centre: **Court panel** titled `Court · round N` with `FeedTabs` (Everything · Feedback & scoring · Slide design · Knowledge). Message types:
-- **Vicky** (chair): glyph, name, display-type text; agenda and introductions at the start; "Mark, take growth" style hand-offs render as a small mono line, not a full message.
+- **Vicky** (chair): glyph, name, display-type text; agenda and introductions at the start; "Socrates, take growth" style hand-offs render as a small mono line, not a full message.
 - **VC**: glyph, name · firm, display-type question with `BlurText`, footnote markers.
 - **Founder**: left hairline, body text.
 - **Score card**: claim chip + text, five `DimBars` (ember under 2.5), note.
 - **Slide card** and **Knowledge card** (term, text, source label).
 - **Coaching time-out card** (new): ember corner marks, label "TIME-OUT · Vicky", the gap named, a link to the Figure, no new numbers.
-- **Memo progress** (session start): one line per VC with a summarized-thinking snippet and a pulse dot ("Mark is stress-testing growth…").
+- **Memo progress** (session start): one line per VC with a summarized-thinking snippet and a pulse dot ("Socrates is stress-testing growth…").
 - Typing state: "{Name} is thinking…" in dim text.
 
 Prompt bar: placeholder "Answer the panel. Cite where each number comes from.", mic as the leading button when STT is enabled, hint "Scores are written by an independent judge after each answer." Disabled with "Pick at least one investor to start." when nothing is seated.

@@ -53,7 +53,7 @@ function StageNotice({ gate }: { gate: Gate }) {
 export function SimView() {
   const guard = useAccessGuard();
   const personas = useApi<PersonaSummary[]>("areopagus");
-  const [chosen, setChosen] = useState<string[]>(["james", "alex", "mark"]);
+  const [chosen, setChosen] = useState<string[]>(["aristotle", "thales", "socrates"]);
   const [view, setView] = useState<View>("slides");
   const [interrupt, setInterrupt] = useState<Interrupt>("live");
   const [slide, setSlide] = useState(1);

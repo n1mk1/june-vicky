@@ -9,7 +9,9 @@ returns. With a key, Claude writes the words and the judgement calls; code keeps
 - every spoken line, thesis, rationale and strong answer passes `audit_text`; a spoken line that
   fails is regenerated once with the audit feedback, then replaced by the offline line;
 - extracted claims must quote the founder verbatim, including the number;
-- memos may read the knowledge base (`kb_search` / `kb_read`) and quote a note only verbatim, cited `[kb:path]`.
+- memos may read the knowledge base (`kb_search` / `kb_read`) and quote a note only verbatim, cited `[kb:path]`;
+- Vicky chairs: she picks the speaker, reviews every drafted line before it is spoken (code issues always
+  send it back), scores each answer, and verifies knowledge answers against the founder's notes.
 Any `LLMError` (refusal, timeout, budget, bad output) falls back to the offline result.
 """
 
@@ -29,11 +31,21 @@ from vicky.areopagus import kits
 from vicky.areopagus.schema import LENS_LABELS, VCPersona
 from vicky.audit import audit_text, extract_numbers
 from vicky.config import get_settings
+from vicky.court import knowledge, referee
 from vicky.court import minds as offline
-from vicky.court import referee
+from vicky.court import review as code_review
 from vicky.kb import tools as kb_tools
 from vicky.llm.client import LLMError, get_llm, with_timeout
-from vicky.llm.schemas import BeliefUpdate, ChairDecision, ClaimList, JudgeScore, Memo
+from vicky.llm.schemas import (
+    BeliefUpdate,
+    ChairDecision,
+    ClaimList,
+    JudgeScore,
+    KnowledgeVerdict,
+    LineReview,
+    Memo,
+    ProbeList,
+)
 from vicky.model.context import TruthContext
 from vicky.model.figures import Figure
 from vicky.model.truth import quick_claims, resolve_metric
@@ -116,6 +128,16 @@ def _check_line(c: dict) -> str:
 def _passes(text: str, ctx: TruthContext, quotes: list[str] | None = None, allowed: list[float] | None = None,
             notes: dict[str, dict] | None = None) -> bool:
     return bool(text) and audit_text(text, ctx.available(), quotes, allowed, notes).passed
+
+
+def notes_block(kb: list[dict] | None) -> str:
+    """Passages of the founder's own knowledge base retrieved for this turn (docs/08-RAG.md §Live court)."""
+    if not kb:
+        return ""
+    body = "\n".join(f'<passage cite="{c["cite"]}" heading="{c.get("heading") or ""}">\n{c["text"]}\n</passage>'
+                     for c in kb)
+    return ("The founder's own notes (quote one only word for word inside double quotes, followed by its cite "
+            "token, e.g. \"exact words\" [kb:folder/Note.md]; never restate a number from a note):\n" + body)
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -303,14 +325,19 @@ async def extract_claims(answer: str) -> list[dict]:
 
 # ---------------------------------------------------------------- judge
 
-JUDGE_TASK = """Task: score the founder's answer as an independent judge (you are not one of the investors).
+JUDGE_TASK = """Task: score the founder's answer. You are Vicky: you run the meeting and grade every answer for the \
+founder; you are not one of the investors and you don't take their side.
 Dimensions, 0-5 each: evidence (cites the right figure, window and calculation), clarity (direct, structured, \
 no hedging), composure (owns weak spots, not defensive), investor_fit (addresses the investor's doubt and says what \
 happens next). Accuracy is computed separately by code; don't score it. `good` and `missing` are one sentence each. \
-`strong_answer` rewrites the answer in the founder's voice in at most four sentences, using only the figures given."""
+`strong_answer` rewrites the answer in the founder's voice in at most four sentences, using only the figures given. \
+When the answer contradicts the founder's own notes (if any are given), say so in `missing`, quoting the note word \
+for word with its cite token. On a knowledge check (the question tested whether the founder knows their own notes), \
+score evidence on what they recalled, using the verdict given."""
 
 
-def _judge_prompt(answer: str, hyp: dict | None, checks: list[dict], ctx: TruthContext, question: str) -> str:
+def _judge_prompt(answer: str, hyp: dict | None, checks: list[dict], ctx: TruthContext, question: str,
+                  kb: list[dict] | None = None, check: dict | None = None) -> str:
     figs = [ctx.figure(e) for e in (hyp or {}).get("evidence", [])]
     lines = [f"Question: {question}", f"Answer: {answer}"]
     if hyp:
@@ -319,16 +346,21 @@ def _judge_prompt(answer: str, hyp: dict | None, checks: list[dict], ctx: TruthC
         lines.append("Figures behind the question:\n" + "\n".join(
             f"- {f.label} = {f.display} (formula: {f.formula})" for f in figs if f))
     lines.append("Claim checks by code:\n" + ("\n".join(_check_line(c) for c in checks) or "- no numeric claims"))
+    if check:
+        lines.append(f"Knowledge check. Vicky's verdict: {check['verdict']}. {check['explanation']}")
+    if kb:
+        lines.append(notes_block(kb))
     return "\n\n".join(lines)
 
 
-def judge_from_llm(js: JudgeScore, base: dict, hyp: dict | None, ctx: TruthContext, answer: str) -> dict:
+def judge_from_llm(js: JudgeScore, base: dict, hyp: dict | None, ctx: TruthContext, answer: str,
+                   notes: dict[str, dict] | None = None) -> dict:
     out = copy.deepcopy(base)
     out["dims"] = {k: round(_clamp(getattr(js, k), 0.0, 5.0), 1) for k in ("evidence", "clarity", "composure", "investor_fit")}
     r = out["rationale"]
-    if _passes(js.good, ctx, [answer]):
+    if _passes(js.good, ctx, [answer], notes=notes):
         r["good"] = js.good.strip()
-    if _passes(js.missing, ctx, [answer]):
+    if _passes(js.missing, ctx, [answer], notes=notes):
         r["missing"] = js.missing.strip()
     correct = ctx.figure(next((e for e in (hyp or {}).get("evidence", []) if ctx.figure(e)), ""))
     allowed = [i.value for i in correct.inputs if i.value is not None] if correct else None
@@ -338,14 +370,19 @@ def judge_from_llm(js: JudgeScore, base: dict, hyp: dict | None, ctx: TruthConte
     return out
 
 
-async def judge(answer: str, hyp: dict | None, checks: list[dict], ctx: TruthContext, question: str) -> dict:
+async def judge(answer: str, hyp: dict | None, checks: list[dict], ctx: TruthContext, question: str, *,
+                kb: list[dict] | None = None, notes: dict[str, dict] | None = None, check: dict | None = None) -> dict:
+    """Vicky's score. `check` is her knowledge verdict when the question was a knowledge check."""
     base = offline.judge(answer, hyp, checks, ctx, question)
+    if check:
+        base = knowledge.adjust_score(base, check)
     if not llm.enabled():
         return base
     try:
         js = await get_llm().parse("judge", JudgeScore, system=[f"{RULES}\n\n{JUDGE_TASK}", figures_block(ctx)],
-                                   messages=[{"role": "user", "content": _judge_prompt(answer, hyp, checks, ctx, question)}])
-        return judge_from_llm(js, base, hyp, ctx, answer)
+                                   messages=[{"role": "user",
+                                              "content": _judge_prompt(answer, hyp, checks, ctx, question, kb, check)}])
+        return judge_from_llm(js, base, hyp, ctx, answer, notes)
     except Exception as e:
         _fallback("judge", e)
         return base
@@ -361,15 +398,16 @@ thread you asked about; `jump_in` when the answer contradicted data behind one o
 
 
 def _bid_prompt(p: VCPersona, state: dict, checks: list[dict], weak: bool, current_vc: str | None,
-                current_hyp: str | None, answer: str, question: str, discussed: set[str]) -> str:
-    return "\n\n".join([
+                current_hyp: str | None, answer: str, question: str, discussed: set[str],
+                kb: list[dict] | None = None) -> str:
+    return "\n\n".join(x for x in [
         f"You are {p.id}. The question was asked by {current_vc or 'nobody yet'} on hypothesis {current_hyp or '-'}.",
         f"Question: {question}", f"Answer: {answer}",
         "Claim checks by code:\n" + ("\n".join(_check_line(c) for c in checks) or "- no numeric claims"),
         f"Code judged the answer {'weak' if weak else 'adequate'}.",
         "Your hypotheses (id | lens | claim | evidence | confidence | status | times asked):\n"
         + "\n".join(_hyp_line(h) for h in state["hyps"]),
-        f"Already discussed: {', '.join(sorted(discussed)) or 'nothing'}"])
+        f"Already discussed: {', '.join(sorted(discussed)) or 'nothing'}", notes_block(kb)] if x)
 
 
 def apply_update(p: VCPersona, state: dict, upd: BeliefUpdate, checks: list[dict], current_vc: str | None,
@@ -416,7 +454,8 @@ def apply_update(p: VCPersona, state: dict, upd: BeliefUpdate, checks: list[dict
 
 async def update_and_bid(p: VCPersona, state: dict, checks: list[dict], weak: bool, current_vc: str | None,
                          current_hyp: str | None, turns_since: int, discussed: set[str] | None = None, *,
-                         ctx: TruthContext | None = None, answer: str = "", question: str = "") -> dict[str, Any]:
+                         ctx: TruthContext | None = None, answer: str = "", question: str = "",
+                         kb: list[dict] | None = None) -> dict[str, Any]:
     if not llm.enabled() or ctx is None:
         return offline.update_and_bid(p, state, checks, weak, current_vc, current_hyp, turns_since, discussed)
     code_choice = offline.update_and_bid(p, copy.deepcopy(state), checks, weak, current_vc, current_hyp, turns_since,
@@ -425,7 +464,7 @@ async def update_and_bid(p: VCPersona, state: dict, checks: list[dict], weak: bo
         upd = await get_llm().parse(
             "update_bid", BeliefUpdate, system=[f"{RULES}\n\n{BID_TASK}", persona_block(p)],
             messages=[{"role": "user", "content": _bid_prompt(p, state, checks, weak, current_vc, current_hyp, answer,
-                                                              question, discussed or set())}])
+                                                              question, discussed or set(), kb)}])
         work = copy.deepcopy(state)
         out = apply_update(p, work, upd, checks, current_vc, code_choice, ctx)
         for live, new in zip(state["hyps"], work["hyps"], strict=True):  # in place: callers hold these dicts
@@ -441,7 +480,9 @@ async def update_and_bid(p: VCPersona, state: dict, checks: list[dict], weak: bo
 CHAIR_TASK = """Task: you are Vicky, chairing the panel. Pick who asks next from the candidates (the referee has \
 already applied fairness, cooldowns and depth caps; the list is ranked). Prefer the candidate whose question best \
 moves the founder's preparation forward: unresolved severe doubts first, a follow-up when the last answer dodged. \
-Use action call_on with a vc_id, intent and hypothesis_id from the list."""
+A `knowledge` candidate is a knowledge check you scheduled: the investor asks whether the founder knows what their \
+own notes say. Take it unless a follow-up on a dodged answer matters more. Use action call_on with a vc_id, intent \
+and hypothesis_id from the list."""
 
 
 @dataclass
@@ -466,10 +507,13 @@ def _code_pick(ranked: list[referee.Candidate], reason: str = "ok", fallback: bo
 def _chair_prompt(ranked: list[referee.Candidate], state: dict, panel: dict[str, VCPersona], weak: bool,
                   question_count: int, cap: int) -> str:
     def claim(hid: str | None) -> str:
+        if (pr := knowledge.probe(state, hid)) is not None:
+            return f"knowledge check on {pr['topic']} ({pr['expected'].get('path') or 'a note'})"
         for s in state["vcs"].values():
             for h in s["hyps"]:
                 if h["id"] == hid:
-                    return f"{h['claim']} (lens {h['lens']}, confidence {h['confidence']:.2f}, asked {h['asked']})"
+                    drill = f", drilled last session: {h['drill']}" if h.get("drill") else ""
+                    return f"{h['claim']} (lens {h['lens']}, confidence {h['confidence']:.2f}, asked {h['asked']}{drill})"
         return "-"
 
     rows = "\n".join(f"{i + 1}. {c.vc_id} ({panel[c.vc_id].name if c.vc_id in panel else c.vc_id}) | {c.intent} | "
@@ -499,9 +543,9 @@ async def chair(ranked: list[referee.Candidate], state: dict, panel: dict[str, V
     valid, why = referee.validate(decision, ranked)
     if not valid:
         return _code_pick(ranked, f"fallback: {why}", True, t0)
-    cand = next(c for c in ranked if c.vc_id == decision["vc_id"])
+    cand = referee.pick(decision, ranked)
     own = {h["id"] for h in state["vcs"].get(cand.vc_id, {}).get("hyps", []) if h["status"] == "open"}
-    if decision.get("hypothesis_id") not in own:
+    if cand.intent == "knowledge" or decision.get("hypothesis_id") not in own:
         decision["hypothesis_id"] = cand.target_hyp
     decision["intent"] = cand.intent  # the referee decides whether a follow-up is still allowed
     decision["note"] = _clean(decision.get("note") or "", 200)
@@ -524,7 +568,8 @@ class Spoken:
     source: str = "offline"
 
 
-def _speak_prompt(hyp: dict, ctx: TruthContext, intent: str, answer: str, question: str, checks: list[dict]) -> str:
+def _speak_prompt(hyp: dict, ctx: TruthContext, intent: str, answer: str, question: str, checks: list[dict],
+                  kb: list[dict] | None = None) -> str:
     figs = [f for f in (ctx.figure(e) for e in hyp["evidence"]) if f]
     lines = [f"Intent: {intent}", f"Hypothesis: {hyp['claim']} (lens {hyp['lens']})"]
     if hyp.get("detail"):
@@ -538,12 +583,17 @@ def _speak_prompt(hyp: dict, ctx: TruthContext, intent: str, answer: str, questi
     if answer:
         lines.append(f"Founder's last answer: {answer}")
         lines.append("Claim checks by code:\n" + ("\n".join(_check_line(c) for c in checks) or "- no numeric claims"))
+    if kb:
+        lines.append(notes_block(kb) + "\nYou may quote one of these to press the founder, e.g. on a contradiction.")
     return "\n\n".join(lines)
 
 
 async def speak(p: VCPersona, hyp: dict, ctx: TruthContext, intent: str, asked: set[str], *, answer: str = "",
-                question: str = "", checks: list[dict] | None = None, follow_up: bool = False) -> Spoken:
-    """The VC's line. Audit; on failure regenerate once with the findings; then the offline line."""
+                question: str = "", checks: list[dict] | None = None, follow_up: bool = False,
+                kb: list[dict] | None = None, notes: dict[str, dict] | None = None,
+                review: dict | None = None) -> Spoken:
+    """The VC's line. Audit; on failure regenerate once with the findings; then the offline line.
+    `review` is Vicky's send-back of an earlier draft ({draft, note}): the line is rewritten to address it."""
     def offline_line() -> str:
         if follow_up:
             return offline.follow_up_for(p, hyp, ctx, checks or [], answer, asked)
@@ -553,11 +603,14 @@ async def speak(p: VCPersona, hyp: dict, ctx: TruthContext, intent: str, asked: 
         return Spoken(offline_line())
     quotes = [*(hyp.get("quotes") or []), *([answer] if answer else [])]
     system = [f"{RULES}\n\n{SPEAK_TASK}", persona_block(p)]
-    messages: list[dict] = [{"role": "user", "content": _speak_prompt(hyp, ctx, intent, answer, question, checks or [])}]
+    messages: list[dict] = [{"role": "user",
+                             "content": _speak_prompt(hyp, ctx, intent, answer, question, checks or [], kb)}]
+    if review:
+        messages += _sent_back(review)
     try:
         for attempt in range(2):
             text = (await get_llm().text("speak", system=system, messages=messages)).strip().strip('"').strip()
-            res = audit_text(text, ctx.available(), quotes or None)
+            res = audit_text(text, ctx.available(), quotes or None, notes=notes)
             if text and res.passed:
                 return Spoken(text, regenerated=attempt > 0, source="llm")
             messages += [{"role": "assistant", "content": text or "(empty)"},
@@ -568,3 +621,166 @@ async def speak(p: VCPersona, hyp: dict, ctx: TruthContext, intent: str, asked: 
     except Exception as e:
         _fallback(f"speak {p.id}", e)
         return Spoken(offline_line())
+
+
+def _sent_back(review: dict) -> list[dict]:
+    return [{"role": "assistant", "content": review.get("draft") or "(draft)"},
+            {"role": "user", "content": f"Vicky, chairing, sent that line back: {review.get('note') or 'rewrite it'}. "
+                                        "Rewrite it. Output only the line."}]
+
+
+# ---------------------------------------------------------------- Vicky reviews a line
+
+REVIEW_TASK = """Task: review the investor's draft line before it is spoken. You are Vicky, chairing the meeting \
+for the founder's benefit. Approve a line that is one clear question in the investor's own lane and voice, grounded in \
+the doubt or note it is about, and new to the meeting. Send it back (`revise`) when it repeats an earlier question, \
+wanders off the investor's lens, asks several things at once, lectures instead of asking, is unfair to the founder, \
+or (for a knowledge check) gives the answer away. Don't rewrite it yourself; say in `note` what to fix."""
+
+
+def _review_prompt(p: VCPersona, text: str, intent: str, about: str, asked: list[str], issues: list[str]) -> str:
+    recent = "\n".join(f"- {q}" for q in asked[-6:]) or "- none yet"
+    lines = [f"Investor: {_clean(p.name, 40)} ({_clean(p.firm or p.archetype, 80)}); lens {p.lens_line()}",
+             f"Intent: {intent}", f"About: {about}", f"Earlier questions:\n{recent}", f"Draft line: {text}"]
+    if issues:
+        lines.append("Code already found: " + "; ".join(issues))
+    return "\n\n".join(lines)
+
+
+async def review_line(p: VCPersona, text: str, *, intent: str, about: str, asked: list[str],
+                      answer_key: str | None = None) -> dict:
+    """Vicky's review of a drafted line: code's checks always count; with a key she can add her own."""
+    out = code_review.review(text, asked=asked, intent=intent, answer_key=answer_key)
+    if not llm.enabled():
+        return out
+    try:
+        r = await get_llm().parse("review", LineReview, system=f"{RULES}\n\n{REVIEW_TASK}",
+                                  messages=[{"role": "user", "content": _review_prompt(p, text, intent, about, asked,
+                                                                                      out["issues"])}])
+    except Exception as e:
+        _fallback("review", e)
+        return out
+    mine = [_clean(i, 120) for i in r.issues if i.strip()] if r.verdict == "revise" else []
+    if r.verdict == "revise" and not mine:
+        mine = ["sent back by the chair"]
+    issues = [*out["issues"], *mine]
+    note = "; ".join(x for x in [out["note"], _clean(r.note, 300) if r.verdict == "revise" else ""] if x)
+    return {"verdict": "revise" if issues else "approve", "issues": issues[:6], "note": note, "source": "llm"}
+
+
+# ---------------------------------------------------------------- knowledge checks
+
+PROBES_TASK = """Task: draft recall questions for a pitch rehearsal. Each passage is from the founder's own notes. \
+For each investor, write up to two questions in their lane that the founder can answer only if they know what the \
+passage says: a decision, a commitment, a customer fact, a plan, a definition. The question contains no numbers and \
+doesn't give the answer away. `answer_quote` is the span of the passage that answers it, copied word for word. Skip \
+passages with nothing worth testing."""
+
+
+def _probes_prompt(panel: list[VCPersona], passages: dict[str, list[tuple[str, dict]]]) -> str:
+    rows = []
+    for p in panel:
+        rows.append(f"Investor {p.id}: {_clean(p.name, 40)} ({_clean(p.firm or p.archetype, 80)}); lens {p.lens_line()}")
+        for lens, c in passages.get(p.id, []):
+            rows.append(f'<passage id="{c["id"]}" lens="{lens}" heading="{_clean(c.get("heading") or "", 80)}">\n'
+                        f"{c['text']}\n</passage>")
+    return "\n\n".join(rows)
+
+
+def probes_from_llm(pl: ProbeList, panel: list[VCPersona], passages: dict[str, list[tuple[str, dict]]],
+                    ctx: TruthContext) -> list[dict]:
+    """Keep a drafted probe only if its investor, passage and verbatim answer all check out."""
+    by_id = {c["id"]: (lens, c) for found in passages.values() for lens, c in found}
+    seated = {p.id for p in panel}
+    out, used, per = [], set(), dict.fromkeys(seated, 0)
+    for d in pl.probes:
+        hit = by_id.get(d.passage_id)
+        if d.vc_id not in seated or hit is None or d.passage_id in used or per[d.vc_id] >= knowledge.PROBES_PER_VC:
+            continue
+        lens, c = hit
+        q, quote = d.question.strip(), d.answer_quote.strip().strip('"')
+        if not knowledge.verbatim_in(quote, c["text"]) or re.search(r"\d", q) or not _passes(q, ctx):
+            continue
+        if code_review.review(q, asked=[], intent="knowledge", answer_key=quote)["issues"]:
+            continue
+        base = knowledge.probe_from(c, d.vc_id, lens, per[d.vc_id] + 1)
+        if base is None:
+            continue
+        per[d.vc_id] += 1
+        used.add(d.passage_id)
+        out.append({**base, "question": q, "expected": {**base["expected"], "quote": quote}, "source": "llm"})
+    return out
+
+
+async def build_probes(panel: list[VCPersona], passages: dict[str, list[tuple[str, dict]]],
+                       ctx: TruthContext) -> list[dict]:
+    """Knowledge questions for the session, from the passages found for each investor's lenses."""
+    base = knowledge.build_probes(passages)
+    if not llm.enabled() or not any(passages.values()):
+        return base
+    try:
+        pl = await get_llm().parse("probes", ProbeList, system=f"{RULES}\n\n{PROBES_TASK}",
+                                   messages=[{"role": "user", "content": _probes_prompt(panel, passages)}])
+        out = probes_from_llm(pl, panel, passages, ctx)
+    except Exception as e:
+        _fallback("probes", e)
+        return base
+    # An investor the model skipped keeps code's probes, on passages nobody else tests.
+    have, used = {pr["vc"] for pr in out}, {pr["expected"]["chunk_id"] for pr in out}
+    return out + [pr for pr in base if pr["vc"] not in have and pr["expected"]["chunk_id"] not in used]
+
+
+ASK_TASK = """Task: ask the founder to recall something from their own notes, in character: one question, at most \
+two sentences, no preamble. Test whether they know it without looking. Never quote or hint at the answer, and use no \
+numbers. Output only the line."""
+
+
+async def ask_knowledge(p: VCPersona, pr: dict, ctx: TruthContext, *, review: dict | None = None) -> Spoken:
+    """The investor's wording of a knowledge question; the probe's own question offline or on failure."""
+    if not llm.enabled():
+        return Spoken(pr["question"])
+    messages: list[dict] = [{"role": "user", "content": f"Topic: {pr['topic']}\nQuestion to ask, in your own words: "
+                                                         f"{pr['question']}"}]
+    if review:
+        messages += _sent_back(review)
+    try:
+        text = (await get_llm().text("ask_knowledge", system=[f"{RULES}\n\n{ASK_TASK}", persona_block(p)],
+                                     messages=messages)).strip().strip('"').strip()
+        if text and not re.search(r"\d", text) and _passes(text, ctx):
+            return Spoken(text, regenerated=bool(review), source="llm")
+    except Exception as e:
+        _fallback(f"ask_knowledge {p.id}", e)
+    return Spoken(pr["question"], regenerated=bool(review))
+
+
+VERIFY_TASK = """Task: verify the founder's recall. You are Vicky. The question tested whether the founder knows what \
+their own notes say; the answer key and the passages found for the answer are given. `knows`: the answer gets the \
+substance right (the wording may differ). `partial`: some of it, or vague. `contradicts`: it states something the \
+notes contradict. `missed`: wrong, off-topic or "I don't know". The explanation speaks to the founder and quotes the \
+note word for word in double quotes followed by its [kb:path] token."""
+
+
+def _verify_prompt(pr: dict, question: str, answer: str, passages: list[dict]) -> str:
+    exp = pr["expected"]
+    return "\n\n".join(x for x in [
+        f"Question asked: {question}", f"Founder's answer: {answer}",
+        f'Answer key (from {exp.get("cite")}): "{exp.get("quote")}"', notes_block(passages)] if x)
+
+
+async def verify_knowledge(pr: dict, question: str, answer: str, passages: list[dict], ctx: TruthContext,
+                           notes: dict[str, dict] | None) -> dict:
+    """Vicky's verdict on a knowledge answer. Her explanation must pass the audit against the notes;
+    otherwise code's explanation for her verdict is used."""
+    base = knowledge.verify(answer, pr, passages)
+    if not llm.enabled() or base["verdict"] == "unverified":
+        return base
+    try:
+        v = await get_llm().parse("verify", KnowledgeVerdict, system=f"{RULES}\n\n{VERIFY_TASK}",
+                                  messages=[{"role": "user", "content": _verify_prompt(pr, question, answer, passages)}])
+    except Exception as e:
+        _fallback("verify", e)
+        return base
+    text = v.explanation.strip()
+    if not _passes(text, ctx, [answer], notes=notes):
+        text = knowledge.explain(v.verdict, pr["expected"].get("quote") or "", pr["expected"].get("cite"))
+    return {"verdict": v.verdict, "explanation": text, "cite": pr["expected"].get("cite"), "source": "llm"}

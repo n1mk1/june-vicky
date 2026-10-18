@@ -6,6 +6,7 @@ import { EChart } from "@/components/charts/EChart";
 import { SourceChip } from "@/components/dashboard/SourceChip";
 import { DimBars, type Dim } from "@/components/prep/ChatFeed";
 import { ClaimChip } from "@/components/prep/ClaimChip";
+import { KnowledgeChip } from "@/components/prep/KnowledgeChip";
 import { CitedText } from "@/components/ui/Footnote";
 import { CornerMarks } from "@/components/ui/Panel";
 import { PillLink } from "@/components/ui/Pill";
@@ -93,6 +94,7 @@ export function ReportDoc({ id }: { id: string }) {
     { id: "ledger", title: "Claims ledger", show: r.ledger?.length > 0 },
     { id: "slides", title: "Slide notes", show: !!r.slides?.length },
     { id: "delivery", title: "Delivery", show: !!r.delivery },
+    { id: "recall", title: "Knowledge checks", show: !!r.knowledge?.length },
     { id: "knowledge", title: "Knowledge gaps", show: !!r.knowledge_gaps?.length },
     { id: "plan", title: "Action plan", show: r.action_plan?.length > 0 },
     { id: "audit", title: "Audit notes", show: !!r.audit_notes?.length },
@@ -322,6 +324,26 @@ export function ReportDoc({ id }: { id: string }) {
                   </div>
                 )}
               </dl>
+            </Section>
+          )}
+
+          {!!r.knowledge?.length && (
+            <Section id="recall" title="Knowledge checks" n={num("recall")}>
+              <ol className="flex flex-col divide-y divide-line">
+                {r.knowledge.map((k, i) => (
+                  <li key={i} className="flex flex-col gap-1.5 py-3 first:pt-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11.5px] text-ink-2">{k.vc_name}</span>
+                      <KnowledgeChip verdict={k.verdict} />
+                    </div>
+                    <p className="font-display text-[16px] leading-tight tracking-[-0.03em]">{k.question}</p>
+                    <p className="border-l border-line-strong pl-3 text-[13px] text-ink-2">{k.answer}</p>
+                    <p className="text-[13px] leading-snug">
+                      <CitedText text={k.explanation} citations={k.citations} />
+                    </p>
+                  </li>
+                ))}
+              </ol>
             </Section>
           )}
 

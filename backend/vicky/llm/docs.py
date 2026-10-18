@@ -68,11 +68,29 @@ def document_text(data: bytes, kind: str) -> str:
             for row in t.rows:
                 parts.append(" | ".join(c.text.strip() for c in row.cells))
         text = "\n".join(parts)
+    elif kind in ("csv", "xlsx"):
+        text = table_text(data, kind)
     else:
         text = data.decode("utf-8", errors="replace")
     if len(text) > MAX_TEXT_CHARS:
         log.warning("document text is %d chars; facts are read from the first %d only", len(text), MAX_TEXT_CHARS)
     return text[:MAX_TEXT_CHARS]
+
+
+def table_text(data: bytes, kind: str) -> str:
+    """The tables in a spreadsheet that have no date axis (KPI sheets, cap tables), one line per row. Tables with
+    dates are mapped into series instead, so their figures aren't read twice."""
+    from vicky.model.loader import parse_table, read_tables
+
+    blocks = []
+    for t in read_tables(data, f"table.{'xlsx' if kind == 'xlsx' else 'csv'}"):
+        if not t.header or not t.rows or parse_table(t).table_kind != "raw":
+            continue
+        lines = [t.preamble] if t.preamble else []
+        lines.append(" | ".join(t.header))  # cells as printed, so a cited number is the file's own
+        lines += [" | ".join("" if c is None else str(c).strip() for c in r) for r in t.rows]
+        blocks.append(f"## {t.name}\n" + "\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 def pdf_pages(data: bytes) -> list[str]:

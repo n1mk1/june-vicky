@@ -103,11 +103,23 @@ class Vault:
         """For `audit_text(..., notes=...)`."""
         return self.seen
 
+    async def keep_ids(self, ids: list[str]) -> dict[str, dict]:
+        """Register notes by id (their current content) so quotes from them can be audited."""
+        full = await store.contents(list(dict.fromkeys(ids)))
+        for n in full.values():
+            self._keep(n)
+        return full
+
     async def search(self, query: str, limit: int = SEARCH_LIMIT) -> dict[str, Any]:
         query = str(query or "").strip()[:300]
         ts = terms(query)
         if not query or not ts:
             return {"notes": [], "error": "Give a few keywords to search for."}
+        from vicky.kb import rag  # the index built at the last Fill dashboard (docs/08-RAG.md)
+
+        r = await rag.retrieve(query, mode="ask", k=max(limit, 8))
+        if r.available:
+            return await self.from_retrieval(r, limit)
         ids: list[str] = []
         for r in [*await store.search(query, limit), *await store.keyword_search(ts, limit * 2)]:
             if r["id"] not in ids:
@@ -127,6 +139,26 @@ class Vault:
             out.append(item)
         return {"notes": out, "how_to_cite": CITE_RULE,
                 "note": "The summary is a description written for the vault; quote only from excerpts or kb_read."}
+
+    async def from_retrieval(self, r: Any, limit: int = SEARCH_LIMIT) -> dict[str, Any]:
+        """kb_search's result from retrieved chunks: one entry per note, its chunks as excerpts."""
+        await self.keep_ids([c["note_id"] for c in r.chunks])
+        by_note: dict[str, dict] = {}
+        for c in r.chunks:
+            n = self.seen.get(c["path"])
+            if n is None:
+                continue
+            item = by_note.get(c["path"])
+            if item is None:
+                if len(by_note) >= limit:
+                    continue
+                item = by_note[c["path"]] = {"id": c["note_id"], "path": c["path"], "title": c["title"],
+                                             "kind": c["kind"], "cite": c["cite"], "excerpts": [], "headings": []}
+            item["excerpts"].append(c["text"][:1600])
+            if c["heading"] and c["heading"] not in item["headings"]:
+                item["headings"].append(c["heading"])
+        return {"notes": list(by_note.values()), "how_to_cite": CITE_RULE,
+                "note": "Excerpts are passages of the note, word for word; quote only from them or kb_read."}
 
     async def read(self, ref: str) -> dict[str, Any]:
         n = await store.find_note(str(ref or ""))

@@ -35,6 +35,7 @@ export function sessionFeed(session: Session, personas: PersonaSummary[] | undef
   const claimsBySeq = new Map<number, Claim[]>();
   for (const c of session.claims) claimsBySeq.set(c.turn_seq, [...(claimsBySeq.get(c.turn_seq) ?? []), c]);
   const scoreBySeq = new Map(session.scores.map((s) => [s.turn_seq, s]));
+  const checkBySeq = new Map((session.knowledge ?? []).map((k) => [k.turn_seq, k]));
   const coached = session.settings.coaching === "coached";
   const out: FeedItem[] = [];
 
@@ -43,6 +44,9 @@ export function sessionFeed(session: Session, personas: PersonaSummary[] | undef
     if (t.kind === "answer" || t.speaker === "founder") {
       const claims = (claimsBySeq.get(t.seq) ?? []).map(toFeedClaim);
       out.push({ id, kind: "founder", text: t.text, claims });
+      const k = checkBySeq.get(t.seq);
+      if (k)
+        out.push({ id: `${id}-knowledge`, kind: "knowledge", verdict: k.verdict, text: k.explanation, citations: k.citations, source: k.expected?.path });
       const s = scoreBySeq.get(t.seq);
       if (s && coached) out.push({ id: `${id}-score`, kind: "score", dims: scoreDims(s), rationale: s.rationale });
       continue;
@@ -62,6 +66,8 @@ export function sessionFeed(session: Session, personas: PersonaSummary[] | undef
       glyph: chair ? "vicky" : (p?.glyph ?? "custom"),
       text: t.text,
       citations: t.citations,
+      knowledgeCheck: t.intent === "knowledge",
+      review: t.review,
     });
   }
   if (session.report_id) out.push({ id: `report-${session.report_id}`, kind: "report", reportId: session.report_id });
@@ -72,6 +78,8 @@ export function sessionQuestions(session: Session): QA[] {
   const claimsBySeq = new Map<number, Claim[]>();
   for (const c of session.claims) claimsBySeq.set(c.turn_seq, [...(claimsBySeq.get(c.turn_seq) ?? []), c]);
   const scoreBySeq = new Map(session.scores.map((s) => [s.turn_seq, s]));
+  const checkByQuestion = new Map((session.knowledge ?? []).map((k) => [k.question_seq, k]));
+  const drillBySeq = new Map((session.carried ?? []).filter((c) => c.kind === "drill" && c.asked_seq).map((c) => [c.asked_seq, c.mark]));
   const hide = session.settings.coaching === "realistic" && session.status === "live";
   const out: QA[] = [];
   const turns = session.turns;
@@ -88,6 +96,8 @@ export function sessionQuestions(session: Session): QA[] {
       answer: answered ? answer.text : null,
       score: s && !hide ? scoreMean(s) : null,
       status: answered ? worstStatus((claimsBySeq.get(answer.seq) ?? []).map((c) => c.status)) : null,
+      knowledge: t.intent === "knowledge" ? (answered ? (checkByQuestion.get(t.seq)?.verdict ?? null) : null) : undefined,
+      drill: drillBySeq.get(t.seq) ?? undefined,
     });
   });
   return out;

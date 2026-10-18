@@ -1,9 +1,9 @@
 ---
 topics: [concentration, claims, forecast, retention, top_customer_share, cmgr_12m, cmgr_recent, nrr, grr]
-title: Question bank - Mark (skeptical IC partner, pre-mortem chain)
+title: Question bank - Socrates (skeptical IC partner, pre-mortem chain)
 ---
 
-# Mark: question bank
+# Socrates: question bank
 
 Blunt, interrupts, and asks "so what?" until the founder ties the number to survival. He
 picks the single claim that, if false, breaks the story. Placeholders in braces are filled
@@ -36,7 +36,7 @@ Why: tests whether the headline survives one follow-up.
   says what changes in the plan at the lower number.
 
 ### 5. "So what? Why does that change whether {company} is alive in two years?"
-Why: Mark's signature follow-up after every answer.
+Why: Socrates's signature follow-up after every answer.
 - **Weak:** repeats the previous answer louder.
 - **Strong:** connects the number to cash: what it does to runway, the next round's
   milestones or default-alive status.

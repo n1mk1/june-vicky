@@ -13,15 +13,15 @@ from typing import Any
 from vicky import db, jobs, llm
 from vicky.llm import mapper
 from vicky.model import fx as fx_model
-from vicky.model.canonical import FIELDS, SPECIAL_TARGETS
+from vicky.model.canonical import FIELDS, SPECIAL_KINDS, SPECIAL_TARGETS, STRUCTURE_UNITS
 from vicky.model.context import TruthContext, build_context
 from vicky.model.coverage import coverage
 from vicky.model.currencies import norm_currency
-from vicky.model.figures import UNITS, Fact, Source, figure_dict
+from vicky.model.figures import CURRENCY_UNITS, UNITS, Fact, Source, figure_dict
 from vicky.model.financials import DatasetInput
 from vicky.model.fx import Rates
-from vicky.model.loader import ParsedDataset, parse_upload
-from vicky.model.mapping import ColumnMapping, propose_heuristic
+from vicky.model.loader import ColumnProfile, ParsedDataset, parse_upload
+from vicky.model.mapping import ColumnMapping, propose_heuristic, unit_for
 from vicky.model.truth import check_claim
 from vicky.services import fx
 
@@ -208,7 +208,8 @@ async def _store_datasets(conn, engagement_id: str, upload_id: str, kind: str, p
             dsid, ds.fingerprint, [m.model_dump() for m in proposed], proposer)
 
 
-async def add_upload(engagement_id: str | None, filename: str, data: bytes, mime: str = "") -> str:
+async def add_upload(engagement_id: str | None, filename: str, data: bytes, mime: str = "",
+                     kb_note_id: str | None = None) -> str:
     kind = _upload_kind(filename)
     parsed: list[ParsedDataset] = []
     if kind in ("csv", "xlsx"):
@@ -239,14 +240,15 @@ async def add_upload(engagement_id: str | None, filename: str, data: bytes, mime
         refined = await mapper.propose_all(fresh, currency)
     async with db.pool().acquire() as conn, conn.transaction():
         uid = await conn.fetchval(
-            """insert into uploads (engagement_id, filename, mime, bytes, size, sha256, kind, status)
-               values ($1,$2,$3,$4,$5,$6,$7::upload_kind,$8::upload_status) returning id::text""",
+            """insert into uploads (engagement_id, filename, mime, bytes, size, sha256, kind, status, kb_note_id)
+               values ($1,$2,$3,$4,$5,$6,$7::upload_kind,$8::upload_status,$9::uuid) returning id::text""",
             engagement_id, filename, mime or "application/octet-stream", data, len(data), hashlib.sha256(data).hexdigest(),
-            kind, "parsed" if parsed else "stored")
+            kind, "parsed" if parsed else "stored", kb_note_id)
         await _store_datasets(conn, engagement_id, uid, kind, parsed, currency, refined=refined)
         await _bump(conn, engagement_id)
-    if kind in DOC_KINDS and llm.enabled():
-        # FR-7: facts with citations from the document, landing as pending in the TruthPack.
+    if llm.enabled() and (kind in DOC_KINDS or any(ds.table_kind == "raw" and ds.rows for ds in parsed)):
+        # FR-7: facts with citations from the document, landing as pending in the TruthPack. A table with no
+        # date axis (a KPI sheet, a cap table) has no series to map, so its figures are read as facts too.
         await jobs.enqueue("extract", {"upload_id": uid}, engagement_id=engagement_id)
     return engagement_id
 
@@ -273,10 +275,11 @@ async def add_extracted_facts(upload_id: str, facts: list[Fact]) -> int:
 # ---------------------------------------------------------------- mappings
 
 def mapping_targets() -> list[dict]:
-    out = [{"id": f.id, "label": f.label, "group": f.group} for f in FIELDS.values()]
+    """Each target with `kind` (money, count, date, text) so the mapping step can set the unit it implies."""
+    out = [{"id": f.id, "label": f.label, "group": f.group, "kind": f.kind} for f in FIELDS.values()]
     labels = {"period": "Period (date axis)", "dim.customer": "Customer name", "dim.cohort": "Signup cohort",
               "value.mrr": "MRR value"}
-    out += [{"id": t, "label": labels.get(t, t), "group": "structure"} for t in sorted(SPECIAL_TARGETS)]
+    out += [{"id": t, "label": labels.get(t, t), "group": "structure", "kind": SPECIAL_KINDS[t]} for t in sorted(SPECIAL_TARGETS)]
     return out
 
 
@@ -294,27 +297,81 @@ async def get_mapping(dataset_id: str) -> dict:
             "proposer": row["proposer"], "targets": mapping_targets()}
 
 
+def _clean_unit(cm: ColumnMapping, col: ColumnProfile | None, currency: str) -> str:
+    """The unit the chosen field implies wins over a stale one (a date axis is "date", money a currency, a
+    count "count"); a raw column keeps what the founder picked."""
+    unit = (cm.unit or "").strip().lower()
+    implied = unit_for(cm.canonical_field, currency, col)
+    if cm.canonical_field in SPECIAL_KINDS and SPECIAL_KINDS[cm.canonical_field] != "money":
+        return implied
+    if cm.canonical_field in FIELDS:
+        money = FIELDS[cm.canonical_field].kind == "money"
+        return unit if (unit in CURRENCY_UNITS if money else unit in UNITS - CURRENCY_UNITS) else implied
+    if cm.canonical_field == "value.mrr":
+        return unit if unit in CURRENCY_UNITS else implied
+    if unit in ("month", "quarter", "year", "day", "week"):
+        return "date"
+    if unit and unit not in UNITS | STRUCTURE_UNITS:
+        raise Invalid(f"Unknown unit {unit!r} for {cm.source_column!r}")
+    return unit
+
+
 async def put_mapping(dataset_id: str, mapping: list[dict]) -> dict:
     current = await get_mapping(dataset_id)
+    ds = current["dataset"]
     valid = {t["id"] for t in current["targets"]}
-    cols = {c["name"] for c in current["dataset"]["columns"]}
-    cleaned = []
-    for m in mapping:
-        cm = ColumnMapping.model_validate(m)
+    cols = {c["name"]: c for c in ds["columns"]}
+    chosen = [ColumnMapping.model_validate(m) for m in mapping]
+    for cm in chosen:
         if cm.source_column not in cols:
             raise Invalid(f"Unknown column {cm.source_column!r}")
         if cm.canonical_field is not None and cm.canonical_field not in valid:
             raise Invalid(f"Unknown canonical field {cm.canonical_field!r}")
-        cm.unit = (cm.unit or "").strip().lower()
-        if cm.unit and cm.unit not in UNITS:
-            raise Invalid(f"Unknown unit {cm.unit!r} for {cm.source_column!r}")
+    axes = [cm.source_column for cm in chosen if cm.canonical_field == "period"]
+    if len(axes) > 1:
+        raise Invalid(f"Only one column can be the date axis; {', '.join(axes)} are all set to it.")
+    eid = await db.fetchval("select engagement_id::text from datasets where id = $1", dataset_id)
+    currency = norm_currency(await db.fetchval("select currency from company_profiles where engagement_id = $1", eid))
+    moved = bool(axes) and axes[0] not in (ds["period_axis"], "period") and not ds.get("transposed")
+    reread = await _reread(ds, axes[0]) if moved else None
+    if reread is not None:
+        # The founder chose another column as the dates: the table is read again around it.
+        cols = {c.name: c.as_dict() for c in reread.columns}
+        keep = {cm.source_column: cm for cm in chosen if cm.source_column in cols}
+        chosen = [keep.get(p.source_column, p) for p in propose_heuristic(reread, currency)]
+    profiles = {n: ColumnProfile(**{k: c.get(k) for k in ("name", "dtype", "sample_values", "null_rate", "currency")},
+                                 unit_hint=c.get("unit_hint"), scale=c.get("scale") or 1.0) for n, c in cols.items()}
+    cleaned = []
+    for cm in chosen:
+        cm.unit = _clean_unit(cm, profiles.get(cm.source_column), currency)
         cleaned.append(cm.model_dump())
     async with db.pool().acquire() as conn, conn.transaction():
+        if reread is not None:
+            await conn.execute(
+                """update datasets set columns = $2, rows = $3, period_axis = $4, granularity = $5::period_granularity,
+                     table_kind = $6, notes = $7, transposed = $8 where id = $1""",
+                dataset_id, [c.as_dict() for c in reread.columns], reread.rows, reread.period_axis,
+                reread.granularity if reread.granularity in ("month", "quarter", "year") else "none", reread.table_kind,
+                reread.notes, reread.transposed)
         await conn.execute("update dataset_mappings set confirmed = $2, confirmed_at = now() where dataset_id = $1",
                            dataset_id, cleaned)
-        eid = await conn.fetchval("select engagement_id::text from datasets where id = $1", dataset_id)
         await _bump(conn, eid)
     return await get_mapping(dataset_id)
+
+
+async def _reread(ds: dict, column: str) -> ParsedDataset:
+    """The dataset parsed again from its upload with `column` as the date axis."""
+    up = await db.fetchrow("select filename, bytes from uploads where id::text = $1", ds.get("upload_id"))
+    if up is None:
+        raise Invalid("The file this table came from is gone, so it can't be read again with another date column.")
+    try:
+        parsed = parse_upload(bytes(up["bytes"]), up["filename"], period_column={ds["name"]: column})
+    except ValueError as e:
+        raise Invalid(str(e)) from e
+    match = next((p for p in parsed if p.name == ds["name"]), None)
+    if match is None:
+        raise Invalid(f"Couldn't find the table {ds['name']!r} in {up['filename']} any more.")
+    return match
 
 
 def _dataset_summary(row: dict) -> dict:

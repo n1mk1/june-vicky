@@ -1,12 +1,12 @@
 "use client";
 
-import { BarChart3, MessageSquare, X } from "lucide-react";
+import { BarChart3, MessageSquare, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { PromptBar } from "@/components/app/PromptBar";
 import { CitedText } from "@/components/ui/Footnote";
-import { apiPost } from "@/lib/api";
+import { ApiError, apiPost } from "@/lib/api";
 import { confirmHref } from "@/lib/kb";
 import type { ChatResult } from "@/lib/types";
 import { errorText, useAccessGuard } from "@/lib/use-api";
@@ -17,6 +17,10 @@ interface Exchange {
   text: string;
   result: ChatResult | null;
   error: string | null;
+  /** The user's answer to a catch-all offer on this exchange (docs/08-RAG.md §Asking permission). */
+  offer?: "running" | "declined" | "done" | "gone";
+  offerResult?: ChatResult | null;
+  offerError?: string | null;
 }
 
 interface DashboardChatProps {
@@ -125,6 +129,26 @@ export function DashboardChat(props: DashboardChatProps) {
     }
   };
 
+  // The catch-all (Haiku over every note) runs only when the user presses "Search all notes".
+  const answerOffer = async (x: Exchange, accept: boolean) => {
+    const offer = x.result?.offer;
+    if (!offer) return;
+    const patch = (p: Partial<Exchange>) => setThread((t) => t.map((e) => (e.id === x.id ? { ...e, ...p } : e)));
+    patch({ offer: accept ? "running" : "declined", offerError: null });
+    try {
+      const r = await apiPost<ChatResult | undefined>(
+        `dashboards/${encodeURIComponent(dashboardId)}/chat/catch-all${query}`,
+        { offer_id: offer.id, accept },
+      );
+      if (accept) patch({ offer: "done", offerResult: r ?? null });
+    } catch (err) {
+      if (guard(err)) return;
+      if (!accept) return; // declining can't fail in a way worth showing
+      const gone = err instanceof ApiError && err.status === 410;
+      patch({ offer: "gone", offerError: gone ? "That offer expired. Ask the question again." : errorText(err) });
+    }
+  };
+
   const undo = async (wid: string) => {
     if (await onUndo(wid)) setUndone((s) => new Set(s).add(wid));
   };
@@ -146,6 +170,45 @@ export function DashboardChat(props: DashboardChatProps) {
             <p className="text-[13.5px] leading-relaxed text-ink" data-testid="chat-answer">
               <CitedText text={r.reply} citations={r.citations ?? []} />
             </p>
+            {r.offer && !x.offer && (
+              <div
+                data-testid="catch-all-offer"
+                className="flex flex-col gap-2 rounded-[4px] border border-line bg-surface-solid/60 px-3 py-2.5"
+              >
+                <span className="text-[12.5px] leading-snug text-ink-2">{r.offer.prompt}</span>
+                <span className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void answerOffer(x, true)}
+                    className="inline-flex items-center gap-1.5 rounded-[3px] border border-line-strong px-2.5 py-1 text-[12px] text-ink hover:border-ember hover:text-ember"
+                  >
+                    <Search className="size-3.5" strokeWidth={1.5} />
+                    Search all notes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void answerOffer(x, false)}
+                    className="text-[12px] text-ink-2 underline underline-offset-2 hover:text-ink"
+                  >
+                    No thanks
+                  </button>
+                </span>
+              </div>
+            )}
+            {x.offer === "running" && (
+              <p className="text-[12.5px] text-dim" data-testid="catch-all-running">
+                Reading every note in your knowledge base…
+              </p>
+            )}
+            {x.offer === "done" && x.offerResult && (
+              <div className="flex flex-col gap-1 border-l border-line pl-3" data-testid="catch-all-answer">
+                <span className="label">From all your notes</span>
+                <p className="text-[13.5px] leading-relaxed text-ink">
+                  <CitedText text={x.offerResult.reply} citations={x.offerResult.citations ?? []} />
+                </p>
+              </div>
+            )}
+            {x.offer === "gone" && x.offerError && <p className="text-[12.5px] text-ember">{x.offerError}</p>}
             {(r.chart || !!r.suggestions?.length) && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 {r.chart && (
@@ -276,6 +339,7 @@ export function DashboardChat(props: DashboardChatProps) {
         label="Ask Vicky about your data"
         placeholder="Ask anything about your data, e.g. which month had the highest burn?"
         onSubmit={(t) => void send(t)}
+        maxLength={500}
         onAttach={onAttach}
         busy={busy || attachBusy}
         hint={

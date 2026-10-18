@@ -8,9 +8,10 @@ import { BlurText } from "@/components/ui/BlurText";
 import { CitedText } from "@/components/ui/Footnote";
 import { CornerMarks } from "@/components/ui/Panel";
 import { VcGlyph, type Glyph } from "@/components/ui/VcGlyph";
-import type { Citation, ClaimStatus, Figure, Score } from "@/lib/types";
+import type { Citation, ClaimStatus, Figure, KnowledgeVerdict, LineReview, Score } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ClaimChip } from "./ClaimChip";
+import { KnowledgeChip } from "./KnowledgeChip";
 
 export type FeedFilter = "all" | "score" | "slide" | "knowledge";
 
@@ -41,12 +42,24 @@ export interface FeedClaim {
 }
 
 export type FeedItem =
-  | { id: string; kind: "vc"; name: string; firm?: string; glyph: Glyph; text: string; citations?: Citation[]; chair?: boolean }
+  | {
+      id: string;
+      kind: "vc";
+      name: string;
+      firm?: string;
+      glyph: Glyph;
+      text: string;
+      citations?: Citation[];
+      chair?: boolean;
+      /** A question testing whether the founder knows their own notes. */
+      knowledgeCheck?: boolean;
+      review?: LineReview | null;
+    }
   | { id: string; kind: "founder"; text: string; claims?: FeedClaim[] }
   | { id: string; kind: "score"; dims: Dim[]; note?: string; claims?: FeedClaim[]; rationale?: Score["rationale"] }
   | { id: string; kind: "coach"; text: string; citations?: Citation[] }
   | { id: string; kind: "slide"; slide: number; title: string; note: string }
-  | { id: string; kind: "knowledge"; term: string; text: string; source: string }
+  | { id: string; kind: "knowledge"; verdict: KnowledgeVerdict; text: string; citations?: Citation[]; source?: string }
   | { id: string; kind: "report"; reportId: string };
 
 const FILTER_KINDS: Record<FeedFilter, FeedItem["kind"][] | null> = {
@@ -158,6 +171,7 @@ function Message({ msg, fresh }: { msg: FeedItem; fresh: boolean }) {
             <span className="text-[11.5px] text-ink-2">
               <span className="font-display text-[14px] tracking-[-0.03em] text-ink">{msg.name}</span>
               {msg.firm ? ` · ${msg.firm}` : ""}
+              {msg.knowledgeCheck && <span className="label ml-2 align-middle">Knowledge check</span>}
             </span>
             <p
               className={cn(
@@ -167,6 +181,11 @@ function Message({ msg, fresh }: { msg: FeedItem; fresh: boolean }) {
             >
               {fresh && !msg.citations?.length ? <BlurText text={msg.text} /> : <CitedText text={msg.text} citations={msg.citations ?? []} />}
             </p>
+            {msg.review?.revised && (
+              <span className="text-[11px] text-dim" data-testid="review-note">
+                Vicky sent the first draft back{msg.review.note ? `: ${msg.review.note}` : ""}
+              </span>
+            )}
           </div>
         </div>
       );
@@ -180,7 +199,7 @@ function Message({ msg, fresh }: { msg: FeedItem; fresh: boolean }) {
       );
     case "score":
       return (
-        <Card icon={<span className="size-1.5 rounded-full bg-ink" />} title="Feedback & scoring">
+        <Card icon={<span className="size-1.5 rounded-full bg-ink" />} title="Feedback & scoring · Vicky">
           {!!msg.claims?.length && <Claims claims={msg.claims} />}
           <DimBars dims={msg.dims} />
           {msg.note && <p className="max-w-[64ch] text-[13px] leading-snug text-ink-2">{msg.note}</p>}
@@ -204,9 +223,12 @@ function Message({ msg, fresh }: { msg: FeedItem; fresh: boolean }) {
       );
     case "knowledge":
       return (
-        <Card icon={<BookOpen className="size-3.5" strokeWidth={1.5} />} title={`Knowledge · ${msg.term}`}>
-          <p className="max-w-[64ch] text-[13px] leading-snug">{msg.text}</p>
-          <span className="font-mono text-[9.5px] uppercase tracking-[-0.04em] text-dim">{msg.source}</span>
+        <Card icon={<BookOpen className="size-3.5" strokeWidth={1.5} />} title="Knowledge check · Vicky">
+          <KnowledgeChip verdict={msg.verdict} className="self-start" />
+          <p className="max-w-[64ch] text-[13px] leading-snug">
+            <CitedText text={msg.text} citations={msg.citations ?? []} />
+          </p>
+          {msg.source && <span className="font-mono text-[9.5px] uppercase tracking-[-0.04em] text-dim">Checked against {msg.source}</span>}
         </Card>
       );
     case "report":

@@ -3,8 +3,9 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useActiveEngagement } from "@/components/app/EngagementProvider";
+import { SearchIndexStatus } from "@/components/kb/SearchIndexStatus";
 import { CornerMarks } from "@/components/ui/Panel";
 import { PillButton, PillLink } from "@/components/ui/Pill";
 import { ErrorNote, Loading } from "@/components/ui/States";
@@ -16,7 +17,7 @@ import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { CoverageList } from "./CoverageList";
 import { FactsTable } from "./FactsTable";
-import { MappingTable } from "./MappingTable";
+import { MappingTable, type MappingSaver } from "./MappingTable";
 import { ProfileForm } from "./ProfileForm";
 import { UploadDrop } from "./UploadDrop";
 import { normCurrency } from "@/lib/currency";
@@ -64,6 +65,22 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
   const res = useApi<Engagement>(`engagements/${encodeURIComponent(id)}`);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  // Step 02 saves every table's mapping with one "Save and continue".
+  const savers = useRef(new Map<string, MappingSaver>());
+  const register = useCallback((datasetId: string, save: MappingSaver | null) => {
+    if (save) savers.current.set(datasetId, save);
+    else savers.current.delete(datasetId);
+  }, []);
+  const [saving, setSaving] = useState(false);
+  const [mappingError, setMappingError] = useState<string | null>(null);
+  // Facts arrive as each document is read: refresh until every extraction is done.
+  const { reload } = res;
+  const reading = (res.data?.extract_jobs ?? []).filter((j) => j.status === "queued" || j.status === "running").length;
+  useEffect(() => {
+    if (!reading) return;
+    const t = setInterval(reload, 4000);
+    return () => clearInterval(t);
+  }, [reading, reload]);
 
   if (res.loading && !res.data) return <Loading label="Loading your engagement" className="p-2" />;
   if (res.status === 404) {
@@ -97,12 +114,28 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
 
   const unconfirmed = e.datasets.filter((d) => !d.mapping_confirmed).length;
 
+  const saveMappings = async () => {
+    setSaving(true);
+    setMappingError(null);
+    const results = await Promise.all([...savers.current.values()].map((save) => save()));
+    setSaving(false);
+    if (results.every(Boolean)) {
+      res.reload();
+      setStep(3);
+    } else {
+      setMappingError("Some tables couldn't be saved. The reason is shown on each one.");
+    }
+  };
+  const failed = (e.extract_jobs ?? []).filter((j) => j.status === "failed");
+  const fileName = (uploadId: string) => e.uploads.find((u) => u.id === uploadId)?.filename ?? "a file";
+
   return (
     <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <span className="label">Source of truth · {e.status === "active" ? "confirmed" : "draft"}</span>
           <h1 className="display truncate text-[clamp(32px,4vw,56px)]">{company}</h1>
+          <SearchIndexStatus />
         </div>
         <Link href="/knowledge" className="flex items-center gap-1 text-[12px] text-ink-2 hover:text-ink">
           <ArrowLeft className="size-3.5" strokeWidth={1.5} /> Knowledge base
@@ -139,7 +172,9 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
                 No tables to map. Documents go straight to facts.
               </p>
             ) : (
-              e.datasets.map((d) => <MappingTable key={d.id} dataset={d} currency={currency} onChanged={res.reload} />)
+              e.datasets.map((d) => (
+                <MappingTable key={d.id} dataset={d} currency={currency} register={register} onChanged={res.reload} />
+              ))
             )}
             {e.uploads.length > 0 && (
               <p className="text-[11.5px] text-dim">
@@ -147,7 +182,8 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
               </p>
             )}
             <UploadDrop engagementId={e.id} onUploaded={res.mutate} compact />
-            <StepNav onBack={() => setStep(1)} onNext={() => setStep(3)} />
+            {mappingError && <ErrorNote message={mappingError} />}
+            <StepNav onBack={() => setStep(1)} onNext={() => void saveMappings()} busy={saving} />
           </div>
         )}
 
@@ -158,6 +194,16 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
               title="Facts"
               body="Figures your tables can't show: cash, customers, retention from the pack or a document. Remove anything that's wrong."
             />
+            {reading > 0 && (
+              <p role="status" className="flex items-center gap-2 text-[12px] text-ink-2">
+                <span className="size-1.5 shrink-0 rounded-full bg-ink animate-[pulse-dot_1.2s_ease-in-out_infinite]" aria-hidden />
+                Reading {reading} file{reading === 1 ? "" : "s"} for figures. New facts appear here as each one finishes; you can
+                continue meanwhile.
+              </p>
+            )}
+            {failed.map((j) => (
+              <ErrorNote key={j.id} message={`Couldn't read figures from ${fileName(j.upload_id)}. Add any that matter below.`} />
+            ))}
             <FactsTable engagement={e} onChanged={res.mutate} />
             <StepNav onBack={() => setStep(2)} onNext={() => setStep(4)} />
           </div>
@@ -209,11 +255,11 @@ function StepTitle({ n, title, body }: { n: number; title: string; body: string 
   );
 }
 
-function StepNav({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+function StepNav({ onBack, onNext, busy = false }: { onBack: () => void; onNext: () => void; busy?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
       <PillButton variant="ghost" label="Back" onClick={onBack} />
-      <PillButton variant="solid" label="Continue" onClick={onNext} />
+      <PillButton variant="solid" label={busy ? "Saving" : "Save and continue"} disabled={busy} onClick={onNext} />
     </div>
   );
 }
