@@ -9,7 +9,7 @@ import pytest
 
 from tests import llm_fakes
 from tests.llm_fakes import json_reply, queue
-from vicky.kb import convert
+from vicky.kb import autofill, convert
 from vicky.kb.autofill import Evidence, heuristic_profile, number_in, propose_profile, verify
 from vicky.kb.organize import claude_plan, guess_folder, heuristic_hubs, scrub_numbers
 from vicky.kb.store import Resolver, clean_path, wikilinks
@@ -208,6 +208,43 @@ async def test_claude_profile_values_must_quote_their_note(live_llm):
     assert values["round_size"] == 2_500_000  # the heuristic's verified value stands; Claude's $3M was rejected
     assert "stage" not in values and "one_liner" not in values  # unquoted, and an invented figure
     assert found["name"][1] == "From [[deck.md]]: “Northwind Labs Inc. builds”"
+
+
+def test_profile_batches_carry_every_note_in_full():
+    long_doc = {"path": "deck.md", "kind": "document", "format": "md", "content": "intro " * 100 + "Based in Toronto."}
+    table = {"path": "pl.csv", "kind": "table", "format": "csv",
+             "content": "month,revenue\n" + "".join(f"2025-{m:02d},{m}000\n" for m in range(1, 13))}
+    batches = autofill.note_batches([table, long_doc], budget=300)
+    joined = "".join(batches)
+    assert all(len(b) <= 300 for b in batches)
+    assert "part 1 of" in batches[0] and "Based in Toronto." in joined  # the long note is split, not cut
+    assert "2025-12,12000" in joined  # the whole table, not just its header
+    assert joined.index("deck.md") < joined.index("pl.csv")  # documents before tables
+
+
+async def test_claude_profile_reads_every_batch_and_takes_the_majority(live_llm, monkeypatch):
+    monkeypatch.setattr(autofill, "BATCH_CHARS", 12_000)
+    pad = "Notes. " * 1500  # each note fills its own batch, well past the old 6,000-character cut
+    notes = [{"path": f"{k}.md", "title": k, "kind": "document", "format": "md", "content": pad + body}
+             for k, body in (("a", "Acme Labs Inc. builds tools."), ("b", "Acme Labs Inc. again."),
+                             ("c", "Zenith Corp is a partner. Our office is in Lyon."))]
+    ev = lambda v, q, note: {"value": v, "note": note, "quote": q}  # noqa: E731
+    empty = dict.fromkeys(autofill.FIELDS)
+    replies = {"a.md": {**empty, "name": ev("Acme Labs Inc.", "Acme Labs Inc. builds", "a.md")},
+               "b.md": {**empty, "name": ev("Acme Labs Inc.", "Acme Labs Inc. again", "b.md")},
+               "c.md": {**empty, "name": ev("Zenith Corp", "Zenith Corp is a partner", "c.md"),
+                        "city": ev("Lyon", "Our office is in Lyon", "c.md")}}
+
+    def respond(call):
+        text = call["body"]["messages"][0]["content"]
+        text = text if isinstance(text, str) else " ".join(b.get("text", "") for b in text)
+        return json_reply(next(r for path, r in replies.items() if f"### {path}" in text))
+
+    rec = live_llm.install(respond)
+    found, by = await propose_profile(notes)
+    assert by == "claude" and len(rec.calls) == 3
+    assert found["name"][0] == "Acme Labs Inc."  # two batches agree over one
+    assert found["city"][0] == "Lyon"  # found past the old cut, in the last batch
 
 
 # ---------------------------------------------------------------- REST flow

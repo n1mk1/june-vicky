@@ -25,6 +25,8 @@ FIELDS = ("name", "one_liner", "country", "city", "currency", "stage", "round_ty
           "granularity", "fiscal_year_start_month")
 CURRENCY_COUNTRY = {"GBP": "GB", "CAD": "CA", "AUD": "AU", "USD": "US", "INR": "IN", "SGD": "SG", "NZD": "NZ"}
 UPLOAD_CONCURRENCY = 3
+BATCH_CHARS = 120_000  # one profile call reads this much of the vault
+PROFILE_CONCURRENCY = 3
 
 
 class Evidence(BaseModel):
@@ -229,43 +231,71 @@ def heuristic_profile(notes: list[dict]) -> dict[str, tuple[object, str]]:
 
 # ---------------------------------------------------------------- Claude
 
-def _notes_block(notes: list[dict]) -> str:
-    parts = []
-    budget = 120_000
-    for n in sorted(notes, key=lambda x: (x["format"] == "csv", -len(x["content"]))):
-        if n["format"] == "csv":
-            body = "\n".join(n["content"].splitlines()[:4])
-        else:
-            body = n["content"][:6000]
-        chunk = f"### {n['path']} ({n['kind']})\n{body}"
-        if budget - len(chunk) < 0:
-            break
-        budget -= len(chunk)
-        parts.append(chunk)
-    return "\n\n".join(parts)
+def note_batches(notes: list[dict], budget: int | None = None) -> list[str]:
+    """Every note in full, packed into blocks of at most `budget` characters. Documents come first,
+    then tables; a note longer than one block is split into numbered parts."""
+    budget = budget or BATCH_CHARS
+    chunks: list[str] = []
+    for n in sorted(notes, key=lambda x: (x["format"] == "csv", x["path"])):
+        body = n["content"]
+        room = budget - len(n["path"]) - 64
+        parts = [body[i:i + room] for i in range(0, len(body), room)] or [""]
+        for i, part in enumerate(parts, 1):
+            label = n["kind"] if len(parts) == 1 else f"{n['kind']}, part {i} of {len(parts)}"
+            chunks.append(f"### {n['path']} ({label})\n{part}")
+    batches: list[str] = []
+    cur: list[str] = []
+    size = 0
+    for c in chunks:
+        if cur and size + len(c) + 2 > budget:
+            batches.append("\n\n".join(cur))
+            cur, size = [], 0
+        cur.append(c)
+        size += len(c) + 2
+    if cur:
+        batches.append("\n\n".join(cur))
+    return batches
 
 
 async def propose_profile(notes: list[dict]) -> tuple[dict[str, tuple[object, str]], str]:
+    """Claude reads the whole vault, one batch per call. Each batch's values are checked against
+    their note; per field, the value most batches agree on wins (the earliest batch breaks ties)."""
     found = heuristic_profile(notes)
     if not llm.enabled():
         return found, "heuristic"
     from vicky.llm.client import get_llm, with_timeout
 
-    try:
-        out = await with_timeout(get_llm().parse(
-            "kb_profile", ProfileDraft, system=PROFILE_TASK,
-            messages=[{"role": "user", "content": f"Knowledge base notes:\n\n{_notes_block(notes)}"}]), 90)
-    except Exception as e:
-        log.warning("profile autofill fell back to the heuristic: %s", e)
+    batches = note_batches(notes)
+    sem = asyncio.Semaphore(PROFILE_CONCURRENCY)
+
+    async def read(i: int, block: str) -> ProfileDraft | None:
+        part = f" (part {i + 1} of {len(batches)}; a field not shown in this part stays null)" if len(batches) > 1 else ""
+        async with sem:
+            try:
+                return await with_timeout(get_llm().parse(
+                    "kb_profile", ProfileDraft, system=PROFILE_TASK,
+                    messages=[{"role": "user", "content": f"Knowledge base notes{part}:\n\n{block}"}]), 90)
+            except Exception as e:
+                log.warning("profile autofill: batch %d of %d failed: %s", i + 1, len(batches), e)
+                return None
+
+    outs = await asyncio.gather(*(read(i, b) for i, b in enumerate(batches)))
+    if not any(outs):
+        log.warning("profile autofill fell back to the heuristic: no batch returned")
         return found, "heuristic"
     by_path = {n["path"]: n for n in notes}
     for f in FIELDS:
-        ev = getattr(out, f)
-        if ev is None:
-            continue
-        ok = verify(f, ev, by_path)
-        if ok:
-            found[f] = ok  # a verified Claude value wins over the heuristic's guess
+        votes: Counter = Counter()
+        first: dict[object, tuple[object, str]] = {}
+        for out in outs:
+            ev = getattr(out, f) if out else None
+            ok = verify(f, ev, by_path) if ev is not None else None
+            if ok:
+                votes[ok[0]] += 1
+                first.setdefault(ok[0], ok)
+        if votes:
+            top = max(votes.values())
+            found[f] = next(first[v] for v in first if votes[v] == top)  # a verified Claude value beats the heuristic
     return found, "claude"
 
 
