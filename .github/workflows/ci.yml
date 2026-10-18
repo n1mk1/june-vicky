@@ -84,6 +84,10 @@ jobs:
         run: npm install -g npm@11.6.2
       - name: Install
         run: npm ci --no-audit --no-fund
+      # PageProps, LayoutProps and RouteContext are global types Next generates into .next/types;
+      # a fresh checkout has none until next dev, next build or next typegen runs.
+      - name: Route types
+        run: npx next typegen
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint
