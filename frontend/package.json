@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "screenshots": "tsx scripts/screenshots.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "demo:record": "playwright test -c playwright.demo.config.ts",
+    "demo:videos": "node scripts/demo-videos.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

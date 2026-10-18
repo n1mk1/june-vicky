@@ -46,6 +46,10 @@ npm run test:e2e
 
 Global setup signs in with `ACCESS_CODE` (default `vicky-demo`) and, if nothing is confirmed, imports a sample company's files (`E2E_SAMPLE`, default `harbor-labs`) into the knowledge base, fills the dashboard from it and confirms. Tests share the dashboard, run one at a time, and remove any widget they add and restore the time range afterwards. Set `BASE_URL` if the app isn't on port 3000.
 
+## Demo videos
+
+`demo/` holds one Playwright spec per tab that clicks through the app at a human pace, with a visible cursor and captions. `npm run demo:record` saves the recordings and `npm run demo:videos` encodes the MP4s and GIFs in `../docs/demo/` (needs ffmpeg). See "Recording the demos" in the [repo README](../README.md).
+
 ## The dashboard's building blocks
 
 - `components/dashboard/registry.tsx`: one renderer per widget template (`kpi`, `gauge_ring`, `line`, `bar`, …) plus the missing-data tile. Add a template here and the grid, dashboard and chat use it.

@@ -11,3 +11,7 @@ docs/challenge/
 frontend/docs/screenshots/reference/
 .claude/settings.local.json
 brand/_unsorted/
+
+# Demo recordings before encoding (npm run demo:record); the MP4s and GIFs are kept
+docs/demo/raw/
+frontend/demo/.out/
