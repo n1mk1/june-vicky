@@ -85,6 +85,13 @@ class JudgeScore(BaseModel):
     strong_answer: str = Field(description="a stronger answer in the founder's voice, using only the figures given")
 
 
+# ---------------------------------------------------------------- Ask Vicky (with knowledge-base tools)
+
+class QAReply(BaseModel):
+    reply: str = Field(description="the answer: at most four short sentences of plain prose; note quotes keep "
+                                   "their [kb:path] token")
+
+
 # ---------------------------------------------------------------- column mapper
 
 class MappedColumn(BaseModel):

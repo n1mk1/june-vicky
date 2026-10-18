@@ -4,6 +4,9 @@
    a quote of what the founder said.
 2. Benchmark language needs a `[src:id]` token that resolves in the source library.
 3. Valuation numbers and investment advice are blocked outright.
+4. A `[kb:path]` token cites a knowledge-base note: it must follow a quote, in double quotes, that
+   appears word for word in that note (one the agent's kb tools returned this turn). Numbers inside
+   that quote are the note's text, not a claim; anywhere else they still need a Figure.
 
 The result carries `citations[]` (footnotes) with offsets into the text.
 """
@@ -17,7 +20,7 @@ from vicky.model.figures import CURRENCY_UNITS, Figure
 from vicky.model.sources import source_by_id
 from vicky.model.truth import _tolerance
 
-FindingKind = Literal["number", "benchmark", "valuation", "advice", "source"]
+FindingKind = Literal["number", "benchmark", "valuation", "advice", "source", "note"]
 
 
 class Finding(BaseModel):
@@ -78,6 +81,9 @@ BENCHMARK_PATTERNS = [
 ]
 
 SRC_RE = re.compile(r"\[src:([a-z0-9_\-.]+)\]", re.I)
+KB_RE = re.compile(r"\[kb:([^\[\]\n]{1,400})\]")
+OPEN_QUOTES, CLOSE_QUOTES = "\"“", "\"”"
+NOTE_QUOTE_MAX = 1200
 MONEY_RE = re.compile(r"(?<![\w.])(?:(?:CA|C|US|AU|A|NZ)(?=\$))?([$£€])\s?(\d[\d,]*(?:\.\d+)?)\s*(k|m|mm|b|bn|thousand|million|billion)?\b", re.I)
 CODE_MONEY_RE = re.compile(r"\b(CAD|USD|GBP|EUR|AUD)\s?(\d[\d,]*(?:\.\d+)?)\s*(k|m|mm|b|bn|thousand|million|billion)?\b", re.I)
 PCT_RE = re.compile(r"(?<![\w.$£€])(-?\d[\d,]*(?:\.\d+)?)\s?(%|percent\b|per cent\b|pp\b|percentage points?\b)", re.I)
@@ -230,8 +236,38 @@ def _sentences(text: str) -> list[tuple[int, int, str]]:
     return out
 
 
+def _norm_quote(s: str) -> str:
+    """Case, curly quotes, markdown marks and whitespace don't matter when matching a note quote."""
+    s = s.lower().replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+    s = re.sub(r"[*_`#|>]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _note_quote(text: str, lo: int, token_start: int, content: str) -> tuple[int, int] | None:
+    """Span of the quote right before a `[kb:…]` token whose words are in the note, longest first."""
+    before = text[:token_start].rstrip()
+    if not before or before[-1] not in CLOSE_QUOTES:
+        return None
+    close = len(before) - 1
+    body = _norm_quote(content)
+    for i in range(max(lo, close - NOTE_QUOTE_MAX), close):
+        if text[i] in OPEN_QUOTES:
+            inner = _norm_quote(text[i + 1:close])
+            if len(inner) >= 2 and inner in body:
+                return i, close + 1
+    return None
+
+
+def _lookup_note(notes: dict[str, dict], path: str) -> dict | None:
+    if path in notes:
+        return notes[path]
+    low = path.lower()
+    return next((n for p, n in notes.items() if p.lower() == low or p.lower().rsplit(".", 1)[0] == low), None)
+
+
 def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | None = None,
-               extra_allowed: list[float] | None = None) -> AuditResult:
+               extra_allowed: list[float] | None = None, notes: dict[str, dict] | None = None) -> AuditResult:
+    """`notes` maps note path → {id, title, content} for the notes the agent's kb tools returned."""
     findings: list[Finding] = []
     citations: list[Citation] = []
     lower = text.lower()
@@ -262,9 +298,31 @@ def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | Non
                                   formula=src.get("claim", ""), kind="benchmark", url=src.get("url"),
                                   source={"kind": "benchmark", "ref": src.get("title") or "", "url": src.get("url"), "source_id": sid}))
 
+    note_spans: list[tuple[int, int]] = []
+    lo = 0
+    for m in KB_RE.finditer(text):
+        path = m.group(1).strip()
+        note_spans.append((m.start(), m.end()))  # numbers in the path are not claims
+        note = _lookup_note(notes or {}, path)
+        if note is None:
+            findings.append(Finding(kind="source", text=m.group(0),
+                                    detail=f"Unknown note '{path}'; cite only notes returned by kb_search or kb_read."))
+        elif (span := _note_quote(text, lo, m.start(), note.get("content") or "")) is None:
+            findings.append(Finding(kind="note", text=text[max(lo, m.start() - 120):m.end()].strip(),
+                                    detail=f"A [kb:{path}] cite must follow a word-for-word quote from that note in "
+                                           "double quotes; never restate a note's numbers."))
+        else:
+            note_spans.append(span)
+            marker += 1
+            npath = note.get("path") or path
+            citations.append(Citation(marker=marker, start=span[0], end=m.end(), text=text[span[0]:m.end()],
+                                      label=note.get("title") or npath, display=npath, kind="note",
+                                      source={"kind": "note", "ref": npath, "note_id": note.get("id")}))
+        lo = m.end()
+
     quote_spans = [(m.start(), m.end()) for m in QUOTE_RE.finditer(text)]
     quotes_lower = [q.lower() for q in founder_quotes or []]
-    src_spans = [(m.start(), m.end()) for m in SRC_RE.finditer(text)]
+    src_spans = [(m.start(), m.end()) for m in SRC_RE.finditer(text)] + note_spans
     allowed = extra_allowed or []
     valuation_spans = [(m.start(), m.end()) for f in findings if f.kind == "valuation"
                        for m in [re.search(re.escape(f.text.lower()), lower)] if m]

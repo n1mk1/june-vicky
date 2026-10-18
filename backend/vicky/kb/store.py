@@ -196,6 +196,45 @@ async def search(q: str, limit: int = 20) -> list[dict]:
     return [_row(r) for r in rows]
 
 
+async def keyword_search(terms: list[str], limit: int = 20) -> list[dict]:
+    """Notes matching any of `terms` (letters and digits only), best first; words of four or more
+    letters also match as prefixes (churn → churned). For agents, whose questions rarely match a
+    note word for word the way `search` needs."""
+    terms = [t for t in (re.sub(r"[^a-z0-9]", "", t.lower()) for t in terms) if t][:16]
+    if not terms:
+        return []
+    tsq = " | ".join(f"{t}:*" if len(t) >= 4 else t for t in terms)
+    rows = await db.fetch(
+        f"""select {LIST_COLS},
+                   ts_rank(to_tsvector('simple', title || ' ' || summary || ' ' || content),
+                           to_tsquery('simple', $1)) as rank
+            from kb_notes
+            where to_tsvector('simple', title || ' ' || summary || ' ' || content) @@ to_tsquery('simple', $1)
+            order by rank desc, updated_at desc limit $2""", tsq, limit)
+    return [_row(r) for r in rows]
+
+
+async def contents(ids: list[str]) -> dict[str, dict]:
+    """id → {id, path, title, kind, format, summary, content} for the given notes."""
+    rows = await db.fetch("select id::text, path, title, kind, format, summary, content from kb_notes "
+                          "where id = any($1::uuid[])", [_uuid(i) for i in ids])
+    return {r["id"]: r for r in rows}
+
+
+async def find_note(ref: str) -> dict | None:
+    """A note by id or by path (case-insensitive; the extension may be left off)."""
+    ref = ref.strip()
+    try:
+        nid = _uuid(ref)
+    except NoteNotFound:
+        nid = None
+    return await db.fetchrow(
+        "select id::text, path, title, kind, format, summary, content from kb_notes "
+        "where ($1::uuid is not null and id = $1) or lower(path) = lower($2) "
+        "or lower(regexp_replace(path, '\\.(md|csv)$', '')) = lower($2) "
+        "order by (lower(path) = lower($2)) desc limit 1", nid, ref)
+
+
 # ---------------------------------------------------------------- writes
 
 async def insert_draft(conn, d: Draft, *, path: str, file_id: str | None, author: str = "import",

@@ -6,6 +6,8 @@ min, total, average, change, list). Code computes every number; each stated numb
 (derived ones carry their formula and the source rows) and the reply passes the citation audit
 before it is returned. With an API key, `answer_llm` lets Claude phrase the answer from the same
 fact sheet, and anything it says is held to the same audit; failures fall back to this path.
+With notes in the knowledge base, Claude can also read them (`vicky.kb.tools`) and quote them verbatim,
+cited by path; offline, a question the data can't answer is looked up in the notes by keyword.
 """
 
 import difflib
@@ -812,24 +814,87 @@ def fact_sheet(ctx: TruthContext) -> tuple[str, list[Figure]]:
     return "\n".join(lines), extra
 
 
+QA_KB = """The founder's knowledge base (their own notes: decks, memos, board packs, tables) is open to you
+through kb_search and kb_read. Use it for what the data can't answer (plans, context, what a memo says).
+Quote a note only word for word inside double quotes, followed by its [kb:path] token. A number from a note
+may appear only inside such a quote: never restate, round, convert or compute it. Numbers outside quotes come
+only from the <data> block. Return the answer as `reply`."""
+
+
 async def answer_any(question: str, ctx: TruthContext) -> dict[str, Any]:
-    """The offline answer, or Claude's phrasing of the same data when a key is set and its answer passes the audit."""
+    """The offline answer, or Claude's phrasing of the same data when a key is set and its answer passes the audit.
+
+    With notes in the knowledge base, Claude also gets `kb_search` / `kb_read` and may quote notes (cited by
+    path). Offline, a question the data can't answer is looked up in the notes by keyword instead.
+    """
     offline = answer(question, ctx)
     from vicky import llm
 
-    if not llm.enabled() or offline["topic"] in ("valuation", "help"):
+    if offline["topic"] in ("valuation", "help") or (not llm.enabled() and offline["topic"] != "not_found"):
         return offline
+    from vicky.kb.tools import vault_for_agents
+
+    vault = await vault_for_agents()
+    if llm.enabled():
+        out = await _answer_llm(question, ctx, offline, vault)
+        if out is not None:
+            return out
+    if vault is not None and offline["topic"] == "not_found":
+        return await _answer_from_notes(question, ctx, offline, vault) or offline
+    return offline
+
+
+def _with_notes(out: dict[str, Any], res: Any) -> dict[str, Any]:
+    cited = [c.source for c in res.citations if c.kind == "note" and c.source]
+    if cited:
+        out["notes"] = list({c["ref"]: {"id": c.get("note_id"), "path": c["ref"]} for c in cited}.values())
+    return out
+
+
+async def _answer_llm(question: str, ctx: TruthContext, offline: dict[str, Any], vault: Any) -> dict[str, Any] | None:
     from vicky.llm.client import LLMError, get_llm, with_timeout
+    from vicky.llm.schemas import QAReply
 
     sheet, extra = fact_sheet(ctx)
     msg = (f"<data company=\"{ctx.company}\">\n{sheet}\n</data>\n\nQuestion: {question}\n\n"
            f"A deterministic draft answer (correct, but possibly clumsy): {offline['reply']}")
+    messages = [{"role": "user", "content": msg}]
     try:
-        text = await with_timeout(get_llm().text("qa", system=QA_SYSTEM, messages=[{"role": "user", "content": msg}]), 25)
+        if vault is None:
+            text = await with_timeout(get_llm().text("qa", system=QA_SYSTEM, messages=messages), 25)
+        else:
+            r = await with_timeout(get_llm().run_tools("qa", QAReply, system=[QA_SYSTEM, QA_KB], messages=messages,
+                                                       tools=vault.tools(), max_iterations=4), 25)
+            text = r.reply.strip()
     except LLMError:
-        return offline
-    res = audit_text(text, ctx.available() + extra)
+        return None
+    res = audit_text(text, ctx.available() + extra, notes=vault.notes() if vault is not None else None)
     if not res.passed or not text:
-        return offline
-    return {**offline, "reply": text, "citations": [c.model_dump(mode="json") for c in res.citations],
-            "audit": {"passed": True, "findings": []}, "llm": True}
+        return None
+    return _with_notes({**offline, "reply": text, "citations": [c.model_dump(mode="json") for c in res.citations],
+                        "audit": {"passed": True, "findings": []}, "llm": True}, res)
+
+
+async def _answer_from_notes(question: str, ctx: TruthContext, offline: dict[str, Any], vault: Any) -> dict[str, Any] | None:
+    """Offline: quote the best-matching lines of the notes, verbatim and cited, when the data has no answer."""
+    try:
+        found = await vault.search(question, limit=3)
+    except Exception:
+        return None
+    quotes: list[str] = []
+    for n in found["notes"]:
+        for ex in n["excerpts"]:
+            line = f"“{ex}” {n['cite']}"
+            if audit_text(line, ctx.available(), notes=vault.notes()).passed:
+                quotes.append(line)
+                break
+        if len(quotes) == 2:
+            break
+    if not quotes:
+        return None
+    reply = "Your numbers don't cover that, but your notes do: " + " ".join(quotes)
+    res = audit_text(reply, ctx.available(), notes=vault.notes())
+    if not res.passed:
+        return None
+    return _with_notes({**offline, "reply": reply, "citations": [c.model_dump(mode="json") for c in res.citations],
+                        "topic": "notes", "audit": {"passed": True, "findings": []}}, res)

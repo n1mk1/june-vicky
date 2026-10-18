@@ -46,7 +46,19 @@ Folders the organizer uses: company, financials, customers, product, market, tea
 - **Limits:** `KB_UPLOAD_MAX_BYTES` per file (50 MB), `KB_UNZIP_MAX_BYTES` per zip (200 MB). The web app sends files in batches of 20 / 40 MB.
 - **Spend:** organize calls Sonnet (medium) once per 40 new notes plus once for the hubs; autofill one Sonnet call for the profile, then the existing mapper and FR-7 calls per file.
 
+## Agents read the vault
+
+`backend/vicky/kb/tools.py` gives the agents two read-only tools for the Claude tool runner: `kb_search(query)` (Postgres full-text search, then an any-word keyword search with prefixes; returns each note's id, title, path, kind, summary, up to three verbatim excerpt lines and its cite token) and `kb_read(note)` (one note by id or path, up to 12 000 characters). A `Vault` object records every note its tools returned in the turn; only those can be cited.
+
+| Agent | What it gets |
+|---|---|
+| Ask Vicky (`qa.answer_any`) | With a key and notes in the vault, Claude answers through `run_tools` with the kb tools next to the fact sheet. Offline (or when Claude's answer fails the audit), a question the data can't answer (`topic: not_found`) is answered by quoting the best-matching note lines, verbatim and cited (`topic: notes`). |
+| Court memos (`llm.minds.build_memos`) | The kb tools are added to the investor's kit tools. Thesis, opening question, mind changers and new claims may quote notes; memos that do list them under `kb_notes`. Hypothesis evidence stays figure ids, so the no-concession rule is unchanged. |
+
+The citation rule (rule 4 of `audit_text`, given `notes=`): `[kb:path]` must follow a quote, in double quotes, that is in that note word for word (case, whitespace, curly quotes and markdown marks don't count). Numbers inside that quote are the note's text and pass; the citation (`kind: "note"`) spans the quote and the token. A number restated outside a quote, a quote the note doesn't contain, or a path the tools never returned is a finding, so the reply falls back as before. Valuation and benchmark rules still apply inside note quotes.
+
 ## Not built yet
 
-- Agents (Ask Vicky, the court) don't read the vault directly; they read the TruthPack built from it. A `kb_search` tool for them is the natural next step.
+- The live court (spoken lines, the judge, belief updates) doesn't call the kb tools; only the pre-meeting memos do, and a line has to pass the audit without note quotes.
+- No semantic (embedding) search: `kb_search` is full-text and keyword only.
 - No chart reading from images by a model: chart images are OCR'd (axis labels and data labels as printed), and Office charts are read from their XML.
