@@ -15,6 +15,7 @@ The docs in `docs/` win over any generic skill guidance:
 | `docs/05-BACKEND-SCHEMA.md` | Postgres tables, Redis keys, JSON shapes |
 | `docs/06-IMPLEMENTATION-PLAN.md` | Day-by-day build order, cut order, verification |
 | `docs/07-KNOWLEDGE-BASE.md` | Knowledge base: ingest, OCR, organizer, graph, autofill |
+| `docs/08-RAG.md` | Retrieval over the knowledge base: index built on Fill dashboard, BM25 + pgvector, caches, the Ask Vicky ladder and catch-all offer, live court (ADRs in `docs/adr/`) |
 | `docs/VICKY_PLAN.md` | Original product plan (metrics targets, agents, Areopagus) |
 | `docs/BACKEND_PLAN.md` | Backend plan and decisions (Render, Docker, dashboards) |
 
@@ -37,10 +38,11 @@ The docs in `docs/` win over any generic skill guidance:
 
 ## Skills in `.claude/skills/`
 
-Vendored from jeffallan/claude-skills (see `.claude/skills/_vendor-jeffallan/README.md`) plus `clone-website`. Use them for technique, but follow these overrides:
+Vendored from jeffallan/claude-skills (see `.claude/skills/_vendor-jeffallan/README.md`) plus `clone-website`, and the 50 QA skills from petrkindlmann/qa-skills (pinned in `skills-lock.json`; update with `npx skills update -p`). Use them for technique, but follow these overrides:
 
 - **nextjs-developer / react-expert:** the app runs Next.js 16 and React 19. Read `frontend/AGENTS.md` and the guides in `frontend/node_modules/next/dist/docs/` before writing Next code; they override the skill's Next 14 advice. Deployment is Docker on Render, not Vercel.
 - **fastapi-expert / postgres-pro:** use asyncpg with SQL migrations as in the schema doc, not SQLAlchemy ORM models.
 - **fullstack-guardian / architecture-designer:** write design notes and ADRs under `docs/`, not `specs/`. Auth is the shared access-code cookie, not JWT user accounts.
 - **devops-engineer:** infra is `render.yaml` + `docker-compose.yml` + GitHub Actions. No Kubernetes or Terraform.
 - **prompt-engineer:** also load the built-in `claude-api` skill for any Anthropic SDK or model detail.
+- **QA skills (qa-skills):** backend tests are pytest in `backend/tests/`; E2E is Playwright. Skip the Cypress, mobile, payment, email and analytics-tracking skills unless the app grows those features. `ci-cd-integration` targets GitHub Actions only. For the court and RAG agents, `ai-system-testing` must still honour the rule that figures come from the metrics engine.
