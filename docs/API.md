@@ -146,6 +146,37 @@ type Session = { id: string; status: "live"|"ended"; mode: "prepare"; panel: Per
 |---|---|---|
 | POST | `/pitch/start` | 409 `{detail}` without a confirmed TruthPack; otherwise 501 until the voice pipeline lands |
 
+## Knowledge base
+
+Design: [07-KNOWLEDGE-BASE.md](07-KNOWLEDGE-BASE.md). One global vault.
+
+```ts
+type KbNote = { id: string; path: string; folder: string; title: string; kind: "table"|"document"|"note"|"hub";
+  format: "md"|"csv"; tags: string[]; summary: string; links: string[];   // related-note paths
+  meta: {source?: string; pages?: number; ocr_pages?: number[]; rows?: number; columns?: string[]; slides?: number; charts?: number};
+  author: "import"|"ai"|"founder"; file_id: string|null; size: number; version: number;
+  organized_at: string|null; created_at: string; updated_at: string };
+type KbLinkRef = { id: string|null; path: string|null; title: string };   // id null: linked but not written
+```
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET | `/kb/status` | — | `{notes, hubs, tables, documents, unorganized, organized_at, files, failed, bytes, jobs: Job[], running, failures: {id, filename, error}[], ocr: boolean, llm: boolean}` |
+| GET | `/kb/notes` | — | `KbNote[]` (no content) |
+| GET | `/kb/notes/{id}` | — | `KbNote & {content, backlinks: KbLinkRef[], outlinks: KbLinkRef[], file?: {id, filename, kind, size, status}}` |
+| POST | `/kb/notes` | `{title, content?, path?, format?: "md"\|"csv", tags?, summary?, links?}` | the note (author `founder`) |
+| PUT | `/kb/notes/{id}` | any of `{content, title, path, tags, summary, links, version}` | the note; **409** when `version` is stale; a new `path` is made unique and related links follow it |
+| DELETE | `/kb/notes/{id}` | — | `{ok: true}`; the original goes too once no note uses it |
+| GET | `/kb/graph` | — | `{nodes: {id, title, path, kind, folder, tags, author, degree}[], links: {source, target, type: "link"\|"related"}[]}`; unresolved wikilinks are nodes with `kind: "missing"`, `id: "missing:<target>"` |
+| GET | `/kb/search?q=&limit=` | — | `(KbNote & {snippet})[]`, full text over title, summary and content |
+| POST | `/kb/import` | multipart `files` (≤ 200 per request, each ≤ `KB_UPLOAD_MAX_BYTES`, **413** over) | `{job_id: string\|null, files: {filename, status: "stored"\|"duplicate"\|"failed", error?, id?}[]}`; the `kb_ingest` job converts and organizes |
+| POST | `/kb/organize` | `{full?: boolean}` | `{job_id}`; `full` re-organizes every note, otherwise only new ones |
+| GET | `/kb/export?originals=` | — | `application/zip`: the vault (`.md` with frontmatter, `.csv`, `.vicky/meta.json`), plus `_originals/` when asked |
+| GET | `/kb/files/{id}` | — | the original file as uploaded |
+| POST | `/kb/autofill` | — | `{engagement: Engagement, by: "claude"\|"heuristic", profile: {field, value, evidence}[], added: {note, as}[], skipped: {note, reason}[]}`; a new **draft** engagement for the intake flow; **422** when the vault is empty |
+
+`Engagement` also carries `profile_sources: Record<field, string>`: where each autofilled profile value came from (`From [[path]]: “quote”`).
+
 ## Notes on shapes (as the frontend uses them)
 
 - **Score scales:** a turn's `accuracy` (session `scores[]`, report `questions[].scores.accuracy`) is the share of the answer's claims that match the data, 0–1. Report `verdict.dims.accuracy` is the same thing averaged and put on the 0–5 scale of the other dimensions so the verdict can average them.

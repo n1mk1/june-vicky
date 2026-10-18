@@ -54,7 +54,10 @@ const EMPTY: Profile = {
 /** Step 01: the company profile. Values prefilled from a sample or inferred from a file are editable. */
 export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; onSaved: (e: Engagement) => void }) {
   const guard = useAccessGuard();
-  const prefilled = !!engagement.profile?.name;
+  const sources = engagement.profile_sources ?? {};
+  const prefilled = !!engagement.profile?.name || Object.keys(sources).length > 0;
+  /** "From financials/P&L.csv: “…”" under a field the knowledge base filled in. */
+  const from = (k: string) => (sources[k] ? <SourceHint text={sources[k]} /> : undefined);
   const [p, setP] = useState<Profile>(() => {
     const merged = { ...EMPTY, ...(engagement.profile ?? {}) };
     return { ...merged, currency: (merged.currency || "usd").toLowerCase() };
@@ -93,14 +96,15 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
           <span className="rounded-full border border-dashed border-line-strong px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em]">
             Prefilled
           </span>
-          Vicky filled these in from your files. Check them before you continue.
+          Vicky filled these in from your {Object.keys(sources).length > 0 ? "knowledge base" : "files"}. Check them before you
+          continue.
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Company name" htmlFor="pf-name" className="sm:col-span-2">
+        <Field label="Company name" htmlFor="pf-name" className="sm:col-span-2" hint={from("name")}>
           <input id="pf-name" className={inputCls} value={p.name} onChange={(e) => set("name", e.target.value)} required />
         </Field>
-        <Field label="Country" htmlFor="pf-country">
+        <Field label="Country" htmlFor="pf-country" hint={from("country")}>
           <select id="pf-country" className={selectCls} value={p.country} onChange={(e) => set("country", e.target.value)}>
             {countries.map(([v, l]) => (
               <option key={v} value={v}>
@@ -109,7 +113,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             ))}
           </select>
         </Field>
-        <Field label="Currency" htmlFor="pf-currency">
+        <Field label="Currency" htmlFor="pf-currency" hint={from("currency")}>
           <select id="pf-currency" className={selectCls} value={p.currency} onChange={(e) => set("currency", e.target.value)}>
             {(CURRENCIES.includes(p.currency as (typeof CURRENCIES)[number]) ? CURRENCIES : [p.currency, ...CURRENCIES]).map((c) => (
               <option key={c} value={c}>
@@ -118,7 +122,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             ))}
           </select>
         </Field>
-        <Field label="Fiscal year starts" htmlFor="pf-fy">
+        <Field label="Fiscal year starts" htmlFor="pf-fy" hint={from("fiscal_year_start_month")}>
           <select
             id="pf-fy"
             className={selectCls}
@@ -132,7 +136,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             ))}
           </select>
         </Field>
-        <Field label="Stage" htmlFor="pf-stage">
+        <Field label="Stage" htmlFor="pf-stage" hint={from("stage")}>
           <select id="pf-stage" className={selectCls} value={p.stage} onChange={(e) => set("stage", e.target.value as Stage)}>
             {STAGES.map((s) => (
               <option key={s.value} value={s.value}>
@@ -141,7 +145,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             ))}
           </select>
         </Field>
-        <Field label="Round type" htmlFor="pf-round">
+        <Field label="Round type" htmlFor="pf-round" hint={from("round_type")}>
           <select id="pf-round" className={selectCls} value={p.round_type ?? "other"} onChange={(e) => set("round_type", e.target.value)}>
             {ROUND_TYPES.map(([v, l]) => (
               <option key={v} value={v}>
@@ -150,7 +154,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             ))}
           </select>
         </Field>
-        <Field label={`Round size (${p.currency.toUpperCase()})`} htmlFor="pf-size" hint="Leave empty if you aren't raising.">
+        <Field label={`Round size (${p.currency.toUpperCase()})`} htmlFor="pf-size" hint={from("round_size") ?? "Leave empty if you aren't raising."}>
           <input
             id="pf-size"
             className={inputCls}
@@ -162,7 +166,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             }}
           />
         </Field>
-        <Field label="Business model">
+        <Field label="Business model" hint={from("business_model")}>
           <Segmented
             label="Business model"
             value={p.business_model}
@@ -174,7 +178,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             className="self-start"
           />
         </Field>
-        <Field label="Your data is">
+        <Field label="Your data is" hint={from("granularity")}>
           <Segmented
             label="Granularity"
             value={p.granularity}
@@ -186,7 +190,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             className="self-start"
           />
         </Field>
-        <Field label="One line on what you do" htmlFor="pf-one" className="sm:col-span-2">
+        <Field label="One line on what you do" htmlFor="pf-one" className="sm:col-span-2" hint={from("one_liner")}>
           <textarea
             id="pf-one"
             rows={2}
@@ -201,5 +205,15 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
         <PillButton type="submit" variant="solid" label={busy ? "Saving" : "Save and continue"} disabled={busy} />
       </div>
     </form>
+  );
+}
+
+/** The note a value came from, without the wikilink brackets. */
+function SourceHint({ text }: { text: string }) {
+  const clean = text.replace(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, "$1");
+  return (
+    <span className="line-clamp-2" title={clean}>
+      {clean}
+    </span>
   );
 }

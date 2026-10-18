@@ -1,6 +1,7 @@
 """Job handlers registered with `vicky.jobs`. Reports are built inline at session end today;
 this hook re-builds one on demand (e.g. a Retry from the UI). `extract` reads cited facts out of
-PDF / DOCX / MD uploads (FR-7); memo, prescan and persona_gen attach as those pipelines land.
+PDF / DOCX / MD uploads (FR-7); `kb_ingest` converts and organizes knowledge-base imports and
+`kb_organize` re-runs the organizer. Memo, prescan and persona_gen attach as those pipelines land.
 """
 
 from vicky.areopagus import registry
@@ -43,3 +44,17 @@ async def extract_job(payload: dict) -> dict:
     added = await engagements.add_extracted_facts(uid, out["facts"])
     flagged = sum(1 for f in out["facts"] if f.source.verified is False)
     return {"added": added, "flagged": flagged, "dropped": out["dropped"], "lines": out["lines"]}
+
+
+@job("kb_ingest")
+async def kb_ingest_job(payload: dict) -> dict:
+    from vicky.kb.ingest import ingest_job
+
+    return await ingest_job(payload)
+
+
+@job("kb_organize")
+async def kb_organize_job(payload: dict) -> dict:
+    from vicky.kb.organize import organize
+
+    return await organize(full=bool(payload.get("full")))

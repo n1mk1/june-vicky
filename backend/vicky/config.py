@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     rate_limit_per_min: int = 240
     access_attempts_per_min: int = 5
     upload_max_bytes: int = 10 * 1024 * 1024
+    # Knowledge base imports: per file (a zip counts as one file) and the most a zip may expand to.
+    kb_upload_max_bytes: int = 50 * 1024 * 1024
+    kb_unzip_max_bytes: int = 200 * 1024 * 1024
+    # OCR: tesseract binary (blank = on PATH) and the most pages one PDF may send through it.
+    tesseract_cmd: str | None = None
+    ocr_max_pages: int = 80
     chair_timeout_s: float = 1.5
     interrupt_veto_timeout_s: float = 1.0
 

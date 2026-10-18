@@ -180,13 +180,19 @@ id, session_id FK unique, engagement_id, report jsonb (`Report`, §4), markdown 
 `recall(topic)` queries by engagement + lens/topic, newest first.
 
 ### 2.18 `jobs`
-id, engagement_id, session_id?, kind enum `memo | prescan | extract | report | persona_gen | audit`, status enum `queued | running | done | failed | stale`, payload jsonb, result jsonb, error text, attempts int, enqueued_at, started_at, finished_at. `stale` is set by a sweeper when `queued` exceeds its TTL (Key Value restart); the UI offers Retry.
+id, engagement_id, session_id?, kind enum `memo | prescan | extract | report | persona_gen | audit | kb_ingest | kb_organize`, status enum `queued | running | done | failed | stale`, payload jsonb, result jsonb, error text, attempts int, enqueued_at, started_at, finished_at. `stale` is set by a sweeper when `queued` exceeds its TTL (Key Value restart); the UI offers Retry.
 
 ### 2.19 `sources`
 id text PK (e.g. `sacks_burn_multiple`), publisher, claim text, url, as_of date, business_model text[], stage text[], topic text[], verified bool. Seeded from `data/sources.yaml` at migration time; the YAML is the source of truth.
 
 ### 2.20 `spend` (optional mirror of Redis)
 date PK, usd numeric, calls int — written at day end for reporting.
+
+### 2.21 `kb_files` (migration 0003)
+id, filename (path inside a dropped folder or zip), mime, bytes bytea, size, sha256 (indexed; a re-import of the same bytes is skipped), kind text (`csv | xlsx | pdf | docx | pptx | image | html | json | md | text | other`), status `stored → converted | failed`, error, created_at. Global: no engagement. See [07-KNOWLEDGE-BASE.md](07-KNOWLEDGE-BASE.md).
+
+### 2.22 `kb_notes` (migration 0003)
+id, path text unique (`folder/name.md|csv`), title, kind (`table | document | note | hub`), format (`md | csv`), content text, file_id? → kb_files (set null), tags text[], summary, links text[] (related-note paths set by the organizer or the founder; `[[wikilinks]]` in content are parsed on read), meta jsonb (provenance: source, pages, ocr_pages, unread_pages, rows, columns, sheet, slides, charts), author (`import | ai | founder`), organized_at, version int (optimistic concurrency on PUT), created_at, updated_at. Hubs with `author = ai` are rewritten after each import. `jobs.kind` gains `kb_ingest` and `kb_organize` (both with no engagement).
 
 ## 3. Indexes and constraints
 

@@ -63,7 +63,8 @@ async def run_job(job_id: str) -> dict | None:
                             "where id=$1 and status in ('queued','stale','failed') returning *", job_id)
     if row is None:
         return None
-    channel = f"session:{row['session_id']}" if row["session_id"] else f"engagement:{row['engagement_id']}"
+    channel = (f"session:{row['session_id']}" if row["session_id"] else
+               f"engagement:{row['engagement_id']}" if row["engagement_id"] else "kb")
     await publish(channel, "job.status", {"job_id": job_id, "kind": row["kind"], "status": "running"})
     handler = HANDLERS.get(row["kind"])
     try:

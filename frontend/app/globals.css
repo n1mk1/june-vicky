@@ -230,3 +230,143 @@ html[data-preloaded] .preloader {
     transform: translateX(300%);
   }
 }
+
+/* Knowledge base reading view (components/kb/Markdown.tsx) */
+.kb-prose {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.kb-prose > * + * {
+  margin-top: 0.75em;
+}
+.kb-prose h1,
+.kb-prose h2,
+.kb-prose h3,
+.kb-prose h4 {
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin-top: 1.4em;
+}
+.kb-prose h1 {
+  font-size: 30px;
+  margin-top: 0;
+}
+.kb-prose h2 {
+  font-size: 21px;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--line);
+}
+.kb-prose h3 {
+  font-size: 16px;
+}
+.kb-prose h4 {
+  font-size: 14px;
+}
+.kb-prose p,
+.kb-prose li {
+  color: var(--ink-2);
+}
+.kb-prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.kb-prose ul,
+.kb-prose ol {
+  padding-left: 1.3em;
+}
+.kb-prose ul {
+  list-style: disc;
+}
+.kb-prose ol {
+  list-style: decimal;
+}
+.kb-prose li + li {
+  margin-top: 0.2em;
+}
+.kb-prose li::marker {
+  color: var(--dim);
+}
+.kb-prose blockquote {
+  border-left: 2px solid var(--line-strong);
+  padding-left: 0.9em;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.kb-prose code {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.82em;
+  background: var(--surface-solid);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.05em 0.35em;
+}
+.kb-prose pre {
+  background: var(--surface-solid);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.kb-prose pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.kb-prose hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.kb-prose a,
+.kb-wikilink {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+  transition: color 0.2s, text-decoration-color 0.2s;
+}
+.kb-prose a:hover,
+.kb-wikilink:hover {
+  color: var(--ember);
+  text-decoration-color: var(--ember);
+}
+.kb-wikilink {
+  font: inherit;
+  cursor: pointer;
+}
+.kb-wikilink-missing {
+  color: var(--dim);
+  text-decoration-style: dashed;
+}
+.kb-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.kb-prose table {
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 100%;
+}
+.kb-prose th {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+  color: var(--ink-2);
+  text-align: left;
+  background: var(--surface-solid);
+}
+.kb-prose th,
+.kb-prose td {
+  padding: 0.35em 0.7em;
+  border-bottom: 1px solid var(--line);
+}
+.kb-prose tr:last-child td {
+  border-bottom: 0;
+}

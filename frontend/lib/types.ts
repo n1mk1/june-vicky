@@ -126,6 +126,8 @@ export interface Engagement {
   created_at: string;
   confirmed_at: string | null;
   profile: Profile | null;
+  /** Where each profile value came from when it was filled in for the founder (e.g. from the knowledge base). */
+  profile_sources?: Record<string, string>;
   uploads: Upload[];
   datasets: DatasetSummary[];
   facts: Fact[];
@@ -569,4 +571,98 @@ export interface Report {
   action_plan: { priority: number; text: string; drill_lens?: string | null }[];
   audit_notes?: { changed: string; why: string }[];
   sources: ReportSource[];
+}
+
+// ---------------------------------------------------------------- knowledge base
+
+export type KbKind = "table" | "document" | "note" | "hub";
+
+export interface KbNote {
+  id: string;
+  path: string;
+  folder: string;
+  title: string;
+  kind: KbKind;
+  format: "md" | "csv";
+  tags: string[];
+  summary: string;
+  /** Related-note paths set by the organizer or the founder (wikilinks in the content are separate). */
+  links: string[];
+  meta: Record<string, unknown>;
+  author: "import" | "ai" | "founder";
+  file_id: string | null;
+  size: number;
+  version: number;
+  organized_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KbLinkRef {
+  id: string | null;
+  path: string | null;
+  title: string;
+}
+
+export interface KbNoteDetail extends KbNote {
+  content: string;
+  backlinks: KbLinkRef[];
+  outlinks: KbLinkRef[];
+  file?: { id: string; filename: string; kind: string; size: number; status: string } | null;
+}
+
+export interface KbGraphNode {
+  id: string;
+  title: string;
+  path: string | null;
+  kind: KbKind | "missing";
+  folder: string;
+  tags: string[];
+  author: string | null;
+  degree: number;
+}
+
+export interface KbGraph {
+  nodes: KbGraphNode[];
+  links: { source: string; target: string; type: "link" | "related" }[];
+}
+
+export interface KbJob {
+  id: string;
+  kind: "kb_ingest" | "kb_organize";
+  status: "queued" | "running" | "done" | "failed" | "stale";
+  error: string | null;
+  result: Record<string, unknown> | null;
+  enqueued_at: string;
+  finished_at: string | null;
+}
+
+export interface KbStatus {
+  notes: number;
+  hubs: number;
+  tables: number;
+  documents: number;
+  unorganized: number;
+  organized_at: string | null;
+  files: number;
+  failed: number;
+  bytes: number;
+  jobs: KbJob[];
+  running: boolean;
+  failures: { id: string; filename: string; error: string | null }[];
+  ocr: boolean;
+  llm: boolean;
+}
+
+export interface KbImportResult {
+  job_id: string | null;
+  files: { filename: string; status: "stored" | "duplicate" | "failed"; error?: string; id?: string }[];
+}
+
+export interface KbAutofill {
+  engagement: Engagement;
+  by: "claude" | "heuristic";
+  profile: { field: string; value: unknown; evidence: string }[];
+  added: { note: string; as: string }[];
+  skipped: { note: string; reason: string }[];
 }

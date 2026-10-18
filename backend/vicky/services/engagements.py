@@ -467,11 +467,13 @@ async def resolve(engagement_id: str | None) -> str:
 
 async def detail(engagement_id: str, full: bool = True) -> dict:
     e = await _require(engagement_id)
-    prof = _profile_out(await db.fetchrow("select * from company_profiles where engagement_id = $1", engagement_id))
+    prof_row = await db.fetchrow("select * from company_profiles where engagement_id = $1", engagement_id)
+    prof = _profile_out(prof_row)
     pack = await db.fetchrow("select id, version, confirmed_at, facts from truthpacks where engagement_id = $1 "
                              "order by created_at desc limit 1", engagement_id)
     out = {"id": str(e["id"]), "name": e["name"] or (prof or {}).get("name") or "Untitled company",
            "status": e["status"], "created_at": e["created_at"], "confirmed_at": e["confirmed_at"], "profile": prof,
+           "profile_sources": (prof_row or {}).get("inferred") or {},
            "truthpack": {"id": str(pack["id"]), "version": pack["version"], "confirmed_at": pack["confirmed_at"]} if pack else None}
     if not full:
         return out

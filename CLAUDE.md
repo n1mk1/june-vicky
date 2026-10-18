@@ -14,6 +14,7 @@ The docs in `docs/` win over any generic skill guidance:
 | `docs/04-APP-FLOW.md` | Step-by-step user and system flows |
 | `docs/05-BACKEND-SCHEMA.md` | Postgres tables, Redis keys, JSON shapes |
 | `docs/06-IMPLEMENTATION-PLAN.md` | Day-by-day build order, cut order, verification |
+| `docs/07-KNOWLEDGE-BASE.md` | Knowledge base: ingest, OCR, organizer, graph, autofill |
 | `docs/VICKY_PLAN.md` | Original product plan (metrics targets, agents, Areopagus) |
 | `docs/BACKEND_PLAN.md` | Backend plan and decisions (Render, Docker, dashboards) |
 

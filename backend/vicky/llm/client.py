@@ -70,6 +70,9 @@ ROUTES: dict[str, Route] = {
     "doc_parse": Route("deep", "medium", 16000),
     "qa": Route("fast", "medium", 3000),
     "persona": Route("fast", "medium", 8000),
+    "kb_organize": Route("fast", "medium", 16000),
+    "kb_hubs": Route("fast", "medium", 12000),
+    "kb_profile": Route("fast", "medium", 6000),
 }
 
 # USD per million tokens: input, output, cache read, cache write (5-minute TTL). List prices.

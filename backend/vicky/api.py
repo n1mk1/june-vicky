@@ -19,6 +19,7 @@ from vicky.areopagus.registry import PersonaError
 from vicky.config import get_settings
 from vicky.court import session as court
 from vicky.court.session import CourtError
+from vicky.kb import routes as kb_routes
 from vicky.model import sources as src
 from vicky.model.figures import figure_dict
 from vicky.model.truth import check_claim
@@ -524,6 +525,7 @@ async def pitch_start() -> dict:
     raise HTTPException(501, "The voice simulation is not built yet. Practice in Preparation meanwhile.")
 
 
+api.include_router(kb_routes.router)
 app.include_router(open_api)
 app.include_router(api)
 

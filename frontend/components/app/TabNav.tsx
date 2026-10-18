@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 export const TABS = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/knowledge", label: "Knowledge base" },
   { href: "/preparation", label: "Preparation" },
   { href: "/simulation", label: "Simulation" },
   { href: "/areopagus", label: "Areopagus" },

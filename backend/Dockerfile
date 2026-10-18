@@ -35,6 +35,10 @@ RUN uv sync --frozen --no-dev
 
 # ---- runtime ----
 FROM ${PYTHON_IMAGE} AS runtime
+# tesseract reads scanned PDF pages and images for the knowledge base (vicky/kb/ocr.py).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+ && rm -rf /var/lib/apt/lists/*
 RUN groupadd --system --gid 10001 vicky \
  && useradd --system --uid 10001 --gid vicky --home-dir /app --no-create-home --shell /usr/sbin/nologin vicky
 COPY --from=uv /uv /usr/local/bin/uv
