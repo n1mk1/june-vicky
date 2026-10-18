@@ -49,7 +49,7 @@ export function LandingHero() {
       >
         Get started
       </Link>
-      <p className="mt-5 text-[11px] text-white/35">Synthetic data. No investment advice.</p>
+      <p className="mt-5 text-[11px] text-white/35">No investment advice.</p>
     </main>
   );
 }

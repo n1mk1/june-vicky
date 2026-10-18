@@ -395,7 +395,7 @@ export function ReportDoc({ id }: { id: string }) {
             </Section>
           )}
 
-          <p className="border-t border-line pt-4 text-center text-[11.5px] text-dim">Synthetic data. No investment advice.</p>
+          <p className="border-t border-line pt-4 text-center text-[11.5px] text-dim">No investment advice.</p>
         </article>
       </div>
     </div>

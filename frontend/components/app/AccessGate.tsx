@@ -9,9 +9,9 @@ import { ApiError, enterAccessCode } from "@/lib/api";
 import { errorText } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 
-/** Only same-site paths are allowed as the return target. */
+/** Only same-site paths are allowed as the return target; without one, start in the knowledge base. */
 function safeNext(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/access")) return "/";
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/access") || raw === "/") return "/knowledge";
   return raw;
 }
 
