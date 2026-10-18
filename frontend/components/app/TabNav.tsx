@@ -5,13 +5,14 @@ import { usePathname } from "next/navigation";
 import { RollLabel } from "@/components/ui/RollLabel";
 import { cn } from "@/lib/utils";
 
+/** `flagship` tabs (the dashboard, the prep court and the simulator) are the product: they wear the ember accent. */
 export const TABS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/knowledge", label: "Knowledge base" },
-  { href: "/preparation", label: "Preparation" },
-  { href: "/simulation", label: "Simulation" },
-  { href: "/areopagus", label: "Areopagus" },
-  { href: "/reports", label: "Reports" },
+  { href: "/knowledge", label: "Knowledge base", flagship: false },
+  { href: "/dashboard", label: "Dashboard", flagship: true },
+  { href: "/preparation", label: "Preparation", flagship: true },
+  { href: "/simulation", label: "Simulation", flagship: true },
+  { href: "/areopagus", label: "Areopagus", flagship: false },
+  { href: "/reports", label: "Reports", flagship: false },
 ] as const;
 
 /** Tabs with the current one marked. Reads the URL, so the header renders it inside Suspense. */
@@ -34,13 +35,28 @@ function Tabs({ pathname }: { pathname: string }) {
             key={tab.href}
             href={tab.href}
             aria-current={active ? "page" : undefined}
+            data-flagship={tab.flagship || undefined}
             className={cn(
-              "group relative inline-flex h-8 shrink-0 items-center rounded-full border px-3.5 font-display text-[12.5px] uppercase tracking-[-0.02em] transition-colors duration-300",
-              active ? "border-invert-bg bg-invert-bg text-invert-ink" : "border-line-strong text-ink-2 hover:border-ink hover:text-ink",
+              "group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3.5 font-display text-[12.5px] uppercase tracking-[-0.02em] transition-colors duration-300",
+              tab.flagship
+                ? active
+                  ? "border-ember bg-ember text-white"
+                  : "border-ember/55 bg-ember/10 text-ink hover:border-ember hover:bg-ember/20"
+                : active
+                  ? "border-invert-bg bg-invert-bg text-invert-ink"
+                  : "border-line-strong text-ink-2 hover:border-ink hover:text-ink",
             )}
           >
+            {tab.flagship && (
+              <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", active ? "bg-white" : "bg-ember")} />
+            )}
             <RollLabel text={tab.label} />
-            {active && <span aria-hidden className="absolute -bottom-[11px] left-1/2 h-px w-6 -translate-x-1/2 bg-ember" />}
+            {active && (
+              <span
+                aria-hidden
+                className={cn("absolute -bottom-[11px] left-1/2 h-px w-6 -translate-x-1/2", tab.flagship ? "bg-ink" : "bg-ember")}
+              />
+            )}
           </Link>
         );
       })}

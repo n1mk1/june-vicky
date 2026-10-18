@@ -250,7 +250,8 @@ async def insert_draft(conn, d: Draft, *, path: str, file_id: str | None, author
 def clean_tags(tags: list[Any]) -> list[str]:
     out: list[str] = []
     for t in tags or []:
-        s = re.sub(r"[^a-z0-9/_-]+", "-", str(t).strip().lstrip("#").lower()).strip("-")[:40]
+        # Letters and digits in any script (founders tag in their own language), "/" for nesting.
+        s = re.sub(r"[^\w/-]+", "-", str(t).strip().lstrip("#").lower()).strip("-_")[:40]
         if s and s not in out:
             out.append(s)
     return out[:12]

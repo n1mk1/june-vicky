@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["--directory", "backend", "run", "uvicorn", "vicky.api:app", "--host", "127.0.0.1", "--port", "8000", "--reload", "--reload-dir", "vicky"],
+      "port": 8000,
+      "autoPort": false
     }
   ]
 }
