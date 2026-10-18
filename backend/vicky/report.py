@@ -179,3 +179,19 @@ def to_markdown(r: dict) -> str:
 
 def lens_label(lens: str | None) -> str:
     return LENS_LABELS.get(lens or "", lens or "")
+
+
+def describe(lenses: list[str | None] | None, focus: str | None = None) -> str:
+    """One phrase for the reports list: the founder's focus if they set one, else the two lenses
+    the panel pressed hardest. No figures."""
+    if focus and focus.strip():
+        f = " ".join(focus.split())
+        return f"Focus: {f[:80].rstrip()}{'…' if len(f) > 80 else ''}"
+    counts: dict[str, int] = {}
+    for lens in lenses or []:
+        if lens:
+            counts[lens] = counts.get(lens, 0) + 1
+    top = [lens_label(k).lower() for k, _ in sorted(counts.items(), key=lambda kv: -kv[1])[:2]]
+    if not top:
+        return "Open questions from the panel"
+    return "Pressed on " + ", ".join(top)

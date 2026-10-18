@@ -89,9 +89,21 @@ export function ReportsList() {
                       <span className="rounded-[3px] border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] justify-self-start text-ink-2">
                         Prepare
                       </span>
-                      <span className="col-span-2 text-[12.5px] text-ink-2 sm:col-span-1">
-                        {fmtDate(r.created_at, true)}
-                        {r.readiness ? ` · ${humanize(r.readiness)}` : ""}
+                      <span className="col-span-2 flex min-w-0 flex-col gap-1.5 sm:col-span-1">
+                        <span className="text-[12.5px] text-ink-2">
+                          {fmtDate(r.created_at, true)}
+                          {r.readiness ? ` · ${humanize(r.readiness)}` : ""}
+                        </span>
+                        {r.summary && <span className="truncate text-[13px] text-ink">{r.summary}</span>}
+                        {!!r.vcs?.length && (
+                          <span className="flex flex-wrap gap-1">
+                            {r.vcs.map((v) => (
+                              <span key={v.id} className="rounded-[3px] bg-surface-solid px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2">
+                                {v.name || v.id}
+                              </span>
+                            ))}
+                          </span>
+                        )}
                       </span>
                       <span className="font-display text-[22px] tracking-[-0.04em] tabular-nums">
                         {fmtScore(r.overall)}

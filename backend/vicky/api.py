@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from vicky import auth, db, jobs, kv, migrate, realtime
+from vicky import auth, db, jobs, kv, migrate, realtime, report
 from vicky.areopagus import builder, registry
 from vicky.areopagus.registry import PersonaError
 from vicky.config import get_settings
@@ -472,10 +472,19 @@ async def session_report(sid: str) -> dict:
 
 @api.get("/reports")
 async def reports() -> list[dict]:
-    return await db.fetch(
+    rows = await db.fetch(
         """select r.id::text, r.session_id::text, r.created_at, r.overall::float, r.readiness, e.name as company,
-                  r.dims, r.delta_vs_previous::float as delta
-           from reports r join engagements e on e.id = r.engagement_id order by r.created_at desc limit 50""")
+                  r.dims, r.delta_vs_previous::float as delta, s.settings->>'focus' as focus,
+                  coalesce((select jsonb_agg(jsonb_build_object('id', v->>'vc_id', 'name', v->>'name'))
+                            from jsonb_array_elements(coalesce(r.report->'per_vc', '[]'::jsonb)) v), '[]'::jsonb) as vcs,
+                  (select array_agg(q->>'lens')
+                     from jsonb_array_elements(coalesce(r.report->'questions', '[]'::jsonb)) q) as lenses
+           from reports r join engagements e on e.id = r.engagement_id
+           left join sessions s on s.id = r.session_id
+           order by r.created_at desc limit 50""")
+    for r in rows:
+        r["summary"] = report.describe(r.pop("lenses"), r.pop("focus"))
+    return rows
 
 
 @api.get("/reports/{rid}.md", response_class=PlainTextResponse)

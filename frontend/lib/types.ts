@@ -516,6 +516,9 @@ export interface ReportSummary {
   company: string;
   dims?: ReportDims;
   delta?: number | null;
+  /** One phrase built by code: the session focus, or the lenses pressed hardest. */
+  summary?: string;
+  vcs?: { id: string; name: string | null }[];
 }
 
 export interface ReportDims {
