@@ -21,7 +21,7 @@ const MAX_FILE = 50 * 1024 * 1024;
 const BATCH_FILES = 20;
 const BATCH_BYTES = 40 * 1024 * 1024;
 const ACCEPTS =
-  "CSV, Excel, PDF (scanned too), Word, PowerPoint, images, HTML, JSON, markdown, text, or a zip of all of it";
+  "any file: spreadsheets, PDFs (scanned too), Word, PowerPoint, OpenDocument, emails, images, recordings (transcribed), HTML, JSON, text, or a zip of all of it";
 
 interface Picked {
   file: File;
@@ -55,18 +55,19 @@ async function filesFromDrop(dt: DataTransfer): Promise<Picked[]> {
   return out;
 }
 
-/** "Filed 5 notes, wrote 4 hubs (offline rules)." from a finished job's result. */
+const ORGANIZING = "Organizing…";
+
+/** "Done: 5 notes." from a finished job's result. */
 function jobSummary(job: KbJob): string | null {
   const r = (job.result ?? {}) as Record<string, number | string | Record<string, number | string>>;
   const org = (job.kind === "kb_ingest" ? r.organize : r) as Record<string, number | string> | undefined;
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
-  const by = org?.by === "claude" ? "Claude" : "offline rules";
   if (job.kind === "kb_ingest") {
     const notes = Number(r.notes ?? 0);
     const failed = Number(r.failed ?? 0);
-    return `Done: ${plural(notes, "note")} made${failed ? `, ${failed} couldn't be read` : ""}, ${plural(Number(org?.moved ?? 0), "note")} filed, ${plural(Number(org?.hubs ?? 0), "hub")} written (${by}).`;
+    return `Done: ${plural(notes, "note")}${failed ? `, ${failed} unreadable` : ""}.`;
   }
-  return `Done: ${plural(Number(org?.organized ?? 0), "note")} re-organized, ${plural(Number(org?.hubs ?? 0), "hub")} written (${by}).`;
+  return `Done: ${plural(Number(org?.organized ?? 0), "note")} organized.`;
 }
 
 /** Start a file download (the API answers with content-disposition: attachment). */
@@ -97,7 +98,7 @@ function batches(files: Picked[]): Picked[][] {
 /**
  * The knowledge base tab: drop any files in, Vicky converts them to markdown and CSV notes, files and
  * links them, and the vault shows as a tree, a graph and an editor. "Fill dashboard" builds a draft
- * source of truth from it for the founder to check and confirm.
+ * source of truth from it for the founder to check; "Confirm knowledge base" (its last step) rebuilds search.
  */
 export function KnowledgeView() {
   const router = useRouter();
@@ -213,7 +214,7 @@ export function KnowledgeView() {
     }
     const bits = [];
     if (stored) bits.push(`${stored} file${stored === 1 ? "" : "s"} added.`);
-    if (dupes) bits.push(`${dupes} already in the knowledge base, skipped.`);
+    if (dupes) bits.push(`${dupes} skipped (duplicate).`);
     if (failed.length) bits.push(`Couldn't read: ${failed.slice(0, 4).join(", ")}${failed.length > 4 ? "…" : ""}.`);
     setNotice(bits.join(" ") || null);
     if (stored) await kick();
@@ -255,7 +256,7 @@ export function KnowledgeView() {
     setError(null);
     try {
       await apiPost("kb/organize", { full: true });
-      setNotice("Re-organizing every note.");
+      setNotice(ORGANIZING);
       await kick();
     } catch (err) {
       if (!guard(err)) setError(errorText(err));
@@ -315,20 +316,11 @@ export function KnowledgeView() {
           <h1 className="display text-[clamp(28px,3.2vw,44px)]">Everything Vicky knows.</h1>
           {s && (
             <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-ink-2">
-              <span>
-                {s.notes} note{s.notes === 1 ? "" : "s"} · {s.tables} table{s.tables === 1 ? "" : "s"} · {s.documents} document
-                {s.documents === 1 ? "" : "s"} · {s.files} original{s.files === 1 ? "" : "s"} ({fmtBytes(s.bytes)})
+              <span title={`${s.files} original${s.files === 1 ? "" : "s"} (${fmtBytes(s.bytes)}) · organizer: ${s.llm ? "Claude" : "offline rules"}`}>
+                {s.notes} note{s.notes === 1 ? "" : "s"} · {s.tables} table{s.tables === 1 ? "" : "s"} · {s.documents} doc
+                {s.documents === 1 ? "" : "s"}
               </span>
-              <span aria-hidden className="text-dim">
-                ·
-              </span>
-              <span title={s.ocr ? "Scanned pages and images are read with tesseract" : "tesseract isn't installed on this server"}>
-                OCR {s.ocr ? "on" : "off"}
-              </span>
-              <span aria-hidden className="text-dim">
-                ·
-              </span>
-              <span>Organizer: {s.llm ? "Claude" : "offline rules"}</span>
+              {!s.ocr && <span title="tesseract isn't installed on this server">· OCR off</span>}
             </p>
           )}
           {s && <SearchIndexStatus banner key={`${s.organized_at ?? ""}-${s.notes}`} />}
@@ -367,7 +359,7 @@ export function KnowledgeView() {
             icon={<LayoutDashboard className="size-3.5" strokeWidth={1.5} />}
             onClick={() => void fill()}
             disabled={filling || running || list.length === 0}
-            title="Build a source of truth from the knowledge base: profile, column mappings and facts, for you to check"
+            title="Autofill the profile, column mappings and facts from the knowledge base; confirming them updates search"
           />
         </div>
       </div>
@@ -376,10 +368,10 @@ export function KnowledgeView() {
         <div className="relative flex items-center gap-2 overflow-hidden rounded-[3px] border border-line px-3 py-1.5 text-[12px] text-ink-2" role="status">
           <span className="size-1.5 shrink-0 animate-[pulse-dot_1.2s_ease-in-out_infinite] rounded-full bg-ember" aria-hidden />
           {filling
-            ? "Filling the profile, mapping every table and reading every document. This takes a minute."
+            ? "Filling…"
             : uploading
               ? `${uploading}…`
-              : "Reading, converting and organizing. OCR on scanned pages can take a while."}
+              : "Working…"}
           <span aria-hidden className="absolute inset-x-0 bottom-0 h-px overflow-hidden">
             <span className="block h-full w-1/3 animate-[progress-slide_1.1s_var(--ease-soft)_infinite] bg-ember" />
           </span>
@@ -389,7 +381,7 @@ export function KnowledgeView() {
         <p className="flex items-start gap-2 text-[12px] text-ink-2">
           <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-ink-2" aria-hidden />
           <span>
-            {notice} {lastDone ?? (running ? "Reading and filing…" : "")}{" "}
+            {notice === ORGANIZING ? (lastDone ?? ORGANIZING) : `${notice} ${lastDone ?? ""}`}{" "}
             <button type="button" className="text-dim underline underline-offset-2 hover:text-ink" onClick={() => setNotice(null)}>
               Dismiss
             </button>
@@ -535,8 +527,8 @@ function DropHero({ onPick, onFolder, onNew }: { onPick: () => void; onFolder: (
       <p className="max-w-[58ch] text-[13.5px] leading-snug text-ink-2">
         Drop files or whole folders anywhere on this page: {ACCEPTS}. Vicky turns each one into a markdown or CSV note (scanned
         pages and chart images are read with OCR, chart values come straight from the file), files it, tags it, links it to the
-        rest and writes a hub for each area. Then <span className="text-ink">Fill dashboard</span> builds your source of truth
-        from it.
+        rest and writes a hub for each area. Then <span className="text-ink">Fill dashboard</span> autofills your source of
+        truth from it, and <span className="text-ink">Confirm knowledge base</span> updates search for every agent.
       </p>
       <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
         <PillButton variant="solid" label="Choose files" icon={<Upload className="size-3.5" strokeWidth={1.5} />} onClick={onPick} />

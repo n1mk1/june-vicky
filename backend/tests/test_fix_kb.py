@@ -594,10 +594,10 @@ async def test_kb16_export_entry_names_never_traverse(kb):
 
 @pytestmark_db
 async def test_kb17_deleting_a_note_keeps_failed_file_records(kb):
-    await _import(kb, [("files", ("blob.bin", bytes(range(256)) * 4, "application/octet-stream"))])
+    await _import(kb, [("files", ("broken.xlsx", b"PK not a workbook", "application/octet-stream"))])
     n = await store.create_note({"title": "Scratch", "content": "x"})
     await store.delete_note(n["id"])
-    assert [f["filename"] for f in (await kb.get("/kb/status")).json()["failures"]] == ["blob.bin"]
+    assert [f["filename"] for f in (await kb.get("/kb/status")).json()["failures"]] == ["broken.xlsx"]
 
 
 @pytestmark_db

@@ -190,6 +190,77 @@ def _line_with(text: str, pattern: str) -> str | None:
     return None
 
 
+# Where a company is: country names and the cities and regions that place it, counted across the documents.
+# Generic geography only; the most-mentioned country wins when it is mentioned at least twice.
+PLACES: dict[str, tuple[str, str | None]] = {
+    "canada": ("CA", None),
+    "canadian": ("CA", None),
+    "ontario": ("CA", None),
+    "quebec": ("CA", None),
+    "british columbia": ("CA", None),
+    "alberta": ("CA", None),
+    "toronto": ("CA", "Toronto"),
+    "waterloo": ("CA", "Waterloo"),
+    "ottawa": ("CA", "Ottawa"),
+    "montreal": ("CA", "Montreal"),
+    "vancouver": ("CA", "Vancouver"),
+    "calgary": ("CA", "Calgary"),
+    "united states": ("US", None),
+    "u.s.": ("US", None),
+    "usa": ("US", None),
+    "delaware": ("US", None),
+    "california": ("US", None),
+    "new york": ("US", "New York"),
+    "san francisco": ("US", "San Francisco"),
+    "boston": ("US", "Boston"),
+    "austin": ("US", "Austin"),
+    "seattle": ("US", "Seattle"),
+    "united kingdom": ("GB", None),
+    "england": ("GB", None),
+    "london": ("GB", "London"),
+    "ireland": ("IE", None),
+    "dublin": ("IE", "Dublin"),
+    "germany": ("DE", None),
+    "berlin": ("DE", "Berlin"),
+    "france": ("FR", None),
+    "paris": ("FR", "Paris"),
+    "india": ("IN", None),
+    "bangalore": ("IN", "Bangalore"),
+    "singapore": ("SG", "Singapore"),
+    "australia": ("AU", None),
+    "sydney": ("AU", "Sydney"),
+}
+
+
+def place_in(docs: list[dict]) -> dict[str, tuple[object, str]]:
+    """Country (ISO alpha-2) and city from how often the documents name them, each with a line that shows it."""
+    countries: Counter = Counter()
+    cities: Counter = Counter()
+    lines: dict[str, tuple[str, str]] = {}
+    for n in docs:
+        for ln in n["content"].splitlines():
+            low = ln.lower()
+            for word, (cc, city) in PLACES.items():
+                if not re.search(rf"(?<![a-z]){re.escape(word)}(?![a-z])", low):
+                    continue
+                countries[cc] += 1
+                lines.setdefault(cc, (n["path"], ln.strip()[:200]))
+                if city:
+                    cities[city] += 1
+                    lines.setdefault(city, (n["path"], ln.strip()[:200]))
+    out: dict[str, tuple[object, str]] = {}
+    if countries:
+        cc, hits = countries.most_common(1)[0]
+        if hits >= 2:
+            path, line = lines[cc]
+            out["country"] = (cc, f"From [[{path}]]: “{line}”")
+            top = [c for c, _ in cities.most_common() if PLACES[c.lower()][0] == cc]
+            if top:
+                path, line = lines[top[0]]
+                out["city"] = (top[0], f"From [[{path}]]: “{line}”")
+    return out
+
+
 def heuristic_profile(notes: list[dict]) -> dict[str, tuple[object, str]]:
     out: dict[str, tuple[object, str]] = {}
     docs = [n for n in notes if n["format"] == "md"]
@@ -248,6 +319,10 @@ def heuristic_profile(notes: list[dict]) -> dict[str, tuple[object, str]]:
         if m:
             out["name"] = (m.group(0).rstrip(".,"), f"From [[{n['path']}]]: “{m.group(0)}”")
             break
+
+    where = place_in(docs)
+    for field_, hit in where.items():
+        out.setdefault(field_, hit)
 
     for n in docs:
         m = re.search(
@@ -396,9 +471,11 @@ async def _upload_for(n: dict) -> tuple[str, bytes, str] | None:
     stem = stem_of(n["path"])
     if n["format"] == "csv":
         return f"{stem}.csv", n["content"].encode("utf-8"), "text/csv"
-    if n["kind"] == "hub" or not n["content"].strip():
-        return None
     meta = n.get("meta") or {}
+    # Hubs, empty notes, stubs of files no converter could read, and the vault's own confirmed-knowledge note
+    # (written from a previous confirm) have nothing for the intake to read.
+    if n["kind"] == "hub" or not n["content"].strip() or meta.get("stub") or meta.get("generated"):
+        return None
     # The original only while the note is still what the converter made of it: a founder's edit (a
     # correction, a removed paragraph) must reach the intake, so an edited note goes as its markdown.
     # Notes imported before the digest was kept count as unedited until the founder saves them.
@@ -455,11 +532,8 @@ async def autofill() -> dict:
     )
     if not notes:
         raise Invalid("The knowledge base is empty. Import some files first.")
-    # Fill means the founder is done adding knowledge: rebuild the search index from the vault as it is now,
-    # alongside the profile and uploads (docs/08-RAG.md §Indexing).
-    from vicky.kb import index
-
-    build = await index.start_build()
+    # The search index is rebuilt when the founder confirms the knowledge base (step 04), not here: Fill only
+    # drafts the intake from the vault (docs/08-RAG.md §Indexing).
     found, by = await propose_profile(notes)
     await round_in_reporting_currency(found, "cad")
     found["currency"] = (
@@ -495,13 +569,12 @@ async def autofill() -> dict:
     await asyncio.gather(*(send(n) for n in notes if n["format"] == "csv"))
     await asyncio.gather(*(send(n) for n in notes if n["format"] != "csv"))
     await _granularity_from_tables(eid, found, added)
-    await db.execute(
-        "update kb_index_builds set engagement_id = $2 where id = $1::uuid", build["build_id"], eid
-    )
+    from vicky.kb import index
+
     return {
         "engagement": await engagements.detail(eid),
         "by": by,
-        "index": build,
+        "index": await index.status(),
         "profile": [{"field": f, "value": v, "evidence": why} for f, (v, why) in found.items()],
         "added": added,
         "skipped": skipped,

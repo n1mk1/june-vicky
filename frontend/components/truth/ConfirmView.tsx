@@ -20,7 +20,6 @@ import { ModelNotes } from "./ModelNotes";
 import { FactsTable } from "./FactsTable";
 import { MappingTable, type MappingSaver } from "./MappingTable";
 import { ProfileForm } from "./ProfileForm";
-import { UploadDrop } from "./UploadDrop";
 import { normCurrency } from "@/lib/currency";
 
 const STEPS = ["Profile", "Mapping", "Facts", "Confirm"] as const;
@@ -144,7 +143,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
     <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="label">Source of truth · {e.status === "active" ? "confirmed" : "draft"}</span>
+          <span className="label">Knowledge base · {e.status === "active" ? "confirmed" : "draft"}</span>
           <h1 className="display truncate text-[clamp(32px,4vw,56px)]">{company}</h1>
           <SearchIndexStatus />
         </div>
@@ -192,7 +191,6 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
                 Files: {e.uploads.map((u) => `${u.filename} (${fmtBytes(u.size)}${u.status && u.status !== "parsed" ? `, ${u.status}` : ""})`).join(" · ")}
               </p>
             )}
-            <UploadDrop engagementId={e.id} onUploaded={res.mutate} compact />
             {mappingError && <ErrorNote message={mappingError} />}
             <StepNav onBack={() => setStep(1)} onNext={() => void saveMappings()} busy={saving} />
           </div>
@@ -222,7 +220,11 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
 
         {step === 4 && (
           <div className="flex flex-col gap-5">
-            <StepTitle n={4} title="Coverage" body="What the panel can check you on, and what it can't yet." />
+            <StepTitle
+              n={4}
+              title="Confirm knowledge base"
+              body="What the panel can check you on, and what it can't yet. Confirming makes this the source of truth and rebuilds search over your whole knowledge base, so Ask Vicky, the panel and the pitch room work from it."
+            />
             <CoverageList items={e.coverage} />
             <ModelNotes notes={e.model_notes} />
             {unconfirmed > 0 && (
@@ -244,7 +246,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
                 )}
                 <PillButton
                   variant="solid"
-                  label={confirming ? "Confirming" : e.status === "active" ? "Confirm again" : "Confirm source of truth"}
+                  label={confirming ? "Confirming" : e.status === "active" ? "Confirm knowledge base again" : "Confirm knowledge base"}
                   disabled={confirming}
                   onClick={() => void confirm()}
                 />
@@ -278,7 +280,8 @@ function StepNav({ onBack, onNext, busy = false }: { onBack: () => void; onNext:
 
 /**
  * Checking a draft source of truth before it is confirmed: 01 profile → 02 mapping → 03 facts → 04 confirm.
- * Drafts come from the knowledge base ("Fill dashboard") or a file attached on the dashboard.
+ * Drafts come from the knowledge base ("Fill dashboard"); new files go into the knowledge base first.
+ * "Confirm knowledge base" makes the draft the source of truth and rebuilds search (docs/08-RAG.md).
  */
 export function ConfirmView() {
   const router = useRouter();

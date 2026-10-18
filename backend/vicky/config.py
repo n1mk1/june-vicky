@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
 
     anthropic_api_key: str | None = None
+    # Needed when the key is not scoped to one workspace (sent as the anthropic-workspace-id header).
+    anthropic_workspace_id: str | None = None
     elevenlabs_api_key: str | None = None
     # "auto" uses Claude when a key is set and the offline agents otherwise.
     llm_mode: Literal["auto", "live", "offline"] = "auto"
@@ -33,6 +35,10 @@ class Settings(BaseSettings):
     model_deep: str = "claude-opus-5-5"
     model_fast: str = "claude-sonnet-5-5"
     model_tiny: str = "claude-haiku-5-5"
+    # The court's agents: Vicky orchestrates (chair, line review, scoring, knowledge checks); the investors
+    # research the company and question the founder. Both run at low effort (llm/client.py ROUTES).
+    model_vicky: str = "claude-opus-5-5"
+    model_investor: str = "claude-sonnet-5-5"
 
     rate_limit_per_min: int = 240
     access_attempts_per_min: int = 5
@@ -60,10 +66,13 @@ class Settings(BaseSettings):
     rag_conf_min: float = 0.55
     rag_full_max_tokens: int = 300_000
     rag_reuse_embeddings: bool = True
-    chair_timeout_s: float = 1.5
+    # Vicky's pick of the next speaker; on Opus thinking can't be turned off, so this allows a short think.
+    chair_timeout_s: float = 6.0
     interrupt_veto_timeout_s: float = 1.0
 
+    # ElevenLabs voice for Vicky (unset = a premade voice); investors use their persona's voice_id.
     vicky_voice_id: str | None = Field(default=None)
+    elevenlabs_tts_model: str = "eleven_flash_v2_5"
 
     def max_request_bytes(self) -> int:
         if self.request_max_bytes:

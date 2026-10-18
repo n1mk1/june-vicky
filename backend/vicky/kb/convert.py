@@ -9,6 +9,12 @@
 | PPTX | `## Slide n` per slide: text, tables, chart data as tables, OCR of pictures, speaker notes |
 | Images | OCR text |
 | HTML / JSON / text / markdown | markdown (a JSON list of records becomes a CSV note) |
+| ODT / ODS / ODP | markdown / one CSV note per sheet / `## Slide n` per slide |
+| RTF | markdown (plain text) |
+| EML | headers and body as markdown; each attachment converted as its own note |
+| DOC / XLS / PPT (legacy binary Office) | the text runs the file holds (save as the modern format for tables) |
+| Audio / video | a transcript (ElevenLabs Scribe, when `ELEVENLABS_API_KEY` is set) |
+| Anything else | a stub note naming the file, so it is in the vault and its original can be downloaded |
 | ZIP | expanded first (by `expand`), each entry converted on its own; folders are kept |
 
 Chart numbers come from the chart XML's cached values (what the chart draws), never from a model.
@@ -48,7 +54,36 @@ KINDS = {
     ".html": "html",
     ".htm": "html",
     ".zip": "zip",
+    ".odt": "odt",
+    ".ods": "ods",
+    ".odp": "odp",
+    ".rtf": "rtf",
+    ".eml": "eml",
+    ".doc": "legacy",
+    ".xls": "legacy",
+    ".ppt": "legacy",
 }
+MEDIA_EXT = {
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".ogg",
+    ".oga",
+    ".opus",
+    ".flac",
+    ".aac",
+    ".wma",
+    ".webm",
+    ".mp4",
+    ".m4v",
+    ".mov",
+    ".mkv",
+    ".avi",
+    ".mpeg",
+    ".mpga",
+}
+STT_MODELS = ("scribe_v2", "scribe_v1")  # the batch models, newest first
+STT_TIMEOUT_S = 300.0
 MAX_TABLE_ROWS = 100_000
 MAX_TEXT_CHARS = 2_000_000
 MAX_ZIP_ENTRIES = 1000
@@ -83,6 +118,8 @@ def file_kind(filename: str) -> str:
         return KINDS[ext]
     if ext in IMAGE_EXT:
         return "image"
+    if ext in MEDIA_EXT:
+        return "media"
     if ext in (".md", ".markdown"):
         return "md"
     if ext in TEXT_EXT:
@@ -809,6 +846,359 @@ def from_text(stem: str, folder: str, text: str, source: str, lang: str | None =
     ]
 
 
+# ---------------------------------------------------------------- other formats
+
+
+def _doc(stem: str, folder: str, source: str, body: str, meta: dict | None = None, title: str = "") -> Draft:
+    title = (title or stem)[:200]
+    return Draft(
+        name=f"{stem}.md",
+        title=title,
+        kind="document",
+        format="md",
+        content=f"# {title}\n\n> Source: `{source}`\n\n{body}"[:MAX_TEXT_CHARS],
+        folder=folder,
+        meta={"source": source, **(meta or {})},
+    )
+
+
+_RTF_DEST = re.compile(
+    r"\\\*|\\(fonttbl|colortbl|stylesheet|info|pict|themedata|colorschememapping|latentstyles|datastore|xmlnstbl|listtable|listoverridetable|rsidtbl|generator|header|footer)\b"
+)
+_RTF_TOKEN = re.compile(
+    r"\\u(-?\d+) ?|\\'([0-9a-fA-F]{2})|\\([a-zA-Z]+)(-?\d+)? ?|\\([{}\\])|([{}])|([^\\{}]+)", re.S
+)
+
+
+def rtf_text(rtf: str) -> str:
+    """Plain text of an RTF document: groups that hold no body text (font tables, pictures, `\\*` destinations)
+    are dropped, paragraph and line breaks kept, `\\'hh` and `\\uN` escapes decoded."""
+    out: list[str] = []
+    stack: list[bool] = []
+    skip = False
+    pending_skip = 0  # characters to drop after a \uN (its ANSI fallback)
+    for m in _RTF_TOKEN.finditer(rtf):
+        uni, hexc, word, _arg, esc, brace, text = m.groups()
+        if brace == "{":
+            stack.append(skip)
+            # A destination that holds no body text starts this group.
+            if _RTF_DEST.match(rtf, m.end()):
+                skip = True
+            continue
+        if brace == "}":
+            skip = stack.pop() if stack else False
+            continue
+        if skip:
+            continue
+        if uni is not None:
+            n = int(uni)
+            out.append(chr(n + 65536 if n < 0 else n))
+            pending_skip = 1
+        elif hexc is not None:
+            if pending_skip:
+                pending_skip -= 1
+                continue
+            out.append(bytes([int(hexc, 16)]).decode("cp1252", errors="replace"))
+        elif word is not None:
+            if word in ("par", "line", "row"):
+                out.append("\n")
+            elif word == "tab" or word == "cell":
+                out.append("\t")
+        elif esc is not None:
+            out.append(esc)
+        elif text is not None:
+            t = text.replace("\r", "").replace("\n", "")
+            if pending_skip and t:
+                t, pending_skip = t[1:], 0
+            out.append(t)
+    return tidy_text("".join(out))
+
+
+def from_rtf(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
+    text = rtf_text(decode(data))
+    if not text.strip():
+        raise Unreadable(f"{source}: the RTF file holds no text")
+    return [_doc(stem, folder, source, text)]
+
+
+_ODF_NS = {
+    "text": "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
+    "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+    "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
+    "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+}
+
+
+def _odf_q(prefix: str, tag: str) -> str:
+    return f"{{{_ODF_NS[prefix]}}}{tag}"
+
+
+def _odf_text(el) -> str:
+    """The text of an ODF element, with <text:s/> spaces, tabs and line breaks."""
+    parts = [el.text or ""]
+    for c in el:
+        if c.tag == _odf_q("text", "s"):
+            parts.append(" " * int(c.get(_odf_q("text", "c"), "1")))
+        elif c.tag == _odf_q("text", "tab"):
+            parts.append("\t")
+        elif c.tag == _odf_q("text", "line-break"):
+            parts.append("\n")
+        else:
+            parts.append(_odf_text(c))
+        parts.append(c.tail or "")
+    return "".join(parts)
+
+
+def _odf_rows(table) -> list[list[str]]:
+    rows = []
+    for r in table.iter(_odf_q("table", "table-row")):
+        reps = min(int(r.get(_odf_q("table", "number-rows-repeated"), "1")), 1000)
+        cells: list[str] = []
+        for c in r:
+            if c.tag not in (_odf_q("table", "table-cell"), _odf_q("table", "covered-table-cell")):
+                continue
+            n = min(int(c.get(_odf_q("table", "number-columns-repeated"), "1")), 200)
+            val = c.get(_odf_q("office", "value"))
+            text = "\n".join(_odf_text(p) for p in c.iter(_odf_q("text", "p"))).strip()
+            # A typed number keeps the stored value (code reads it, not the formatted display).
+            cells += [
+                val
+                if val is not None
+                and c.get(_odf_q("office", "value-type")) in ("float", "percentage", "currency")
+                else text
+            ] * n
+        rows += [cells] * reps
+    return trim_rows(rows)
+
+
+def _odf_blocks(el, out: list[str]) -> None:
+    for c in el:
+        if c.tag == _odf_q("text", "h"):
+            lvl = int(c.get(_odf_q("text", "outline-level"), "2") or 2)
+            t = _odf_text(c).strip()
+            if t:
+                out.append(f"{'#' * min(6, max(2, lvl + 1))} {t}")
+        elif c.tag == _odf_q("text", "p"):
+            t = _odf_text(c).strip()
+            if t:
+                out.append(t)
+        elif c.tag == _odf_q("text", "list"):
+            items = [_odf_text(p).strip() for p in c.iter(_odf_q("text", "p"))]
+            items = [i for i in items if i]
+            if items:
+                out.append("\n".join(f"- {i}" for i in items))
+        elif c.tag == _odf_q("table", "table"):
+            rows = _odf_rows(c)
+            if rows:
+                out.append(md_table(rows))
+        else:
+            _odf_blocks(c, out)
+
+
+def from_odf(kind: str, stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            root = _xml(z.read("content.xml"))
+    except (zipfile.BadZipFile, KeyError, ValueError) as e:
+        raise Unreadable(f"{source}: not a readable OpenDocument file ({e})") from e
+    body = root.find(_odf_q("office", "body"))
+    if body is None:
+        raise Unreadable(f"{source}: the OpenDocument file has no body")
+    if kind == "ods":
+        out = []
+        for t in body.iter(_odf_q("table", "table")):
+            rows = _odf_rows(t)
+            if not rows:
+                continue
+            name = t.get(_odf_q("table", "name")) or f"Sheet {len(out) + 1}"
+            sheet = f"{stem} - {safe_name(name)}" if name else stem
+            out.append(
+                Draft(
+                    name=f"{sheet}.csv",
+                    title=sheet,
+                    kind="table",
+                    format="csv",
+                    content=to_csv(rows[:MAX_TABLE_ROWS]),
+                    folder=folder,
+                    meta={"source": source, "sheet": name, "rows": len(rows) - 1},
+                )
+            )
+        if not out:
+            raise Unreadable(f"{source}: the spreadsheet has no cells")
+        return out
+    parts: list[str] = []
+    if kind == "odp":
+        for i, page in enumerate(body.iter(_odf_q("draw", "page")), 1):
+            name = page.get(_odf_q("draw", "name")) or ""
+            parts.append(
+                f"## Slide {i}" + (f": {name}" if name and not name.lower().startswith("page") else "")
+            )
+            _odf_blocks(page, parts)
+    else:
+        _odf_blocks(body, parts)
+    return [_doc(stem, folder, source, "\n\n".join(parts))]
+
+
+def from_eml(stem: str, folder: str, data: bytes, source: str, depth: int = 0) -> list[Draft]:
+    from email import policy
+    from email.parser import BytesParser
+
+    msg = BytesParser(policy=policy.default).parsebytes(data)
+    head = [f"**{h}:** {msg[h]}" for h in ("From", "To", "Cc", "Date", "Subject") if msg[h]]
+    body_part = msg.get_body(preferencelist=("plain", "html"))
+    body = ""
+    if body_part is not None:
+        try:
+            raw = body_part.get_content()
+        except (LookupError, ValueError):
+            raw = (body_part.get_payload(decode=True) or b"").decode("utf-8", errors="replace")
+        if body_part.get_content_subtype() == "html":
+            p = _Html()
+            p.feed(raw)
+            body = tidy_text("".join(p.out))
+        else:
+            body = tidy_text(raw)
+    extra: list[Draft] = []
+    names: list[str] = []
+    for att in msg.iter_attachments():
+        fname = safe_name(att.get_filename() or "attachment")
+        payload = att.get_payload(decode=True) or b""
+        names.append(fname)
+        if not payload or depth > 1:
+            continue
+        try:
+            for d in _convert(f"{stem} - {fname}", payload, depth + 1):
+                d.folder = d.folder or folder
+                extra.append(d)
+        except Unreadable as e:
+            log.info("eml attachment %s unreadable: %s", fname, e)
+    if names:
+        head.append("**Attachments:** " + ", ".join(names))
+    title = str(msg["Subject"] or stem)[:200]
+    return [_doc(stem, folder, source, "\n".join(head) + "\n\n" + body, {"email": True}, title=title), *extra]
+
+
+_UTF16_RUN = re.compile(rb"(?:[\x20-\x7e\xa0-\xff]\x00){4,}")
+_ANSI_RUN = re.compile(rb"[\x20-\x7e\xa0-\xff\t]{6,}")
+
+
+def legacy_text(data: bytes) -> str:
+    """The readable runs of a legacy binary Office file (Word, Excel, PowerPoint 97-2003): their text is stored
+    as UTF-16 or as single-byte runs. Layout and table structure are lost."""
+    runs: list[str] = []
+    seen: set[str] = set()
+    for m in _UTF16_RUN.finditer(data):
+        t = m.group(0).decode("utf-16-le", errors="ignore").strip()
+        if len(t) >= 4 and re.search(r"[A-Za-z]{3}", t) and t not in seen:
+            seen.add(t)
+            runs.append(t)
+    if sum(len(r) for r in runs) < 200:  # Word often stores body text as single-byte runs
+        for m in _ANSI_RUN.finditer(data):
+            t = m.group(0).decode("cp1252", errors="ignore").strip()
+            if len(t) >= 6 and len(re.findall(r"[A-Za-z]", t)) >= len(t) * 0.6 and t not in seen:
+                seen.add(t)
+                runs.append(t)
+    return "\n\n".join(runs)
+
+
+def from_legacy(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
+    text = legacy_text(data)
+    if not text.strip():
+        return from_stub(stem, folder, data, source, "it is a legacy Office file with no readable text")
+    note = (
+        "_Text recovered from a legacy binary Office file: layout and tables are lost. "
+        "Save it as the modern format (.docx, .xlsx, .pptx) and import that for tables and figures._"
+    )
+    return [_doc(stem, folder, source, f"{note}\n\n{text}", {"legacy": True})]
+
+
+def transcribe(data: bytes, filename: str) -> dict:
+    """ElevenLabs batch speech-to-text (blocking: the converter runs in a thread). Returns the response JSON."""
+    import httpx
+
+    key = get_settings().elevenlabs_api_key
+    if not key:
+        raise Unreadable("transcription needs ELEVENLABS_API_KEY")
+    last = ""
+    with httpx.Client(base_url="https://api.elevenlabs.io", timeout=STT_TIMEOUT_S) as c:
+        for model in STT_MODELS:
+            r = c.post(
+                "/v1/speech-to-text",
+                headers={"xi-api-key": key},
+                data={"model_id": model, "diarize": "true", "tag_audio_events": "false"},
+                files={"file": (filename, data)},
+            )
+            if r.status_code == 200:
+                return {**r.json(), "model": model}
+            last = f"HTTP {r.status_code}: {r.text[:200]}"
+            if r.status_code not in (400, 404, 422):  # a model this account lacks: try the next one
+                break
+    raise Unreadable(f"the transcription failed ({last})")
+
+
+def _speaker_lines(words: list[dict]) -> str:
+    """Words grouped into lines by speaker (diarized), each line prefixed with its speaker and start time."""
+    lines: list[str] = []
+    cur, who, start = [], None, 0.0
+    for w in words:
+        if w.get("type") not in (None, "word", "spacing"):
+            continue
+        sp = w.get("speaker_id")
+        if who is not None and sp != who and cur:
+            lines.append(
+                f"**{who or 'Speaker'}** [{int(start // 60)}:{int(start % 60):02d}] {''.join(cur).strip()}"
+            )
+            cur = []
+        if not cur:
+            start = float(w.get("start") or 0.0)
+        who = sp
+        cur.append(w.get("text") or "")
+    if cur:
+        lines.append(
+            f"**{who or 'Speaker'}** [{int(start // 60)}:{int(start % 60):02d}] {''.join(cur).strip()}"
+        )
+    return "\n\n".join(lines)
+
+
+def from_media(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
+    if not get_settings().elevenlabs_api_key:
+        return from_stub(stem, folder, data, source, "transcription needs ELEVENLABS_API_KEY on the server")
+    try:
+        out = transcribe(data, source)
+    except Unreadable as e:
+        return from_stub(stem, folder, data, source, str(e))
+    words = out.get("words") or []
+    speakers = {w.get("speaker_id") for w in words if w.get("speaker_id")}
+    body = _speaker_lines(words) if len(speakers) > 1 else tidy_text(out.get("text") or "")
+    if not body.strip():
+        return from_stub(stem, folder, data, source, "the recording has no speech")
+    head = f"_Transcript (ElevenLabs {out.get('model')}, {out.get('language_code') or 'auto'})._"
+    return [
+        _doc(stem, folder, source, f"{head}\n\n{body}", {"transcript": True, "stt_model": out.get("model")})
+    ]
+
+
+def from_stub(stem: str, folder: str, data: bytes, source: str, why: str = "") -> list[Draft]:
+    """A file no converter can read still enters the vault: a note naming it, linked to its original."""
+    ext = PurePosixPath(source.lower()).suffix.lstrip(".") or "unknown"
+    reason = f" ({why})" if why else ""
+    body = (
+        f"No text could be read from this {ext.upper()} file{reason}, so only its name is searchable. "
+        "The original is kept in the knowledge base and can be downloaded from this note."
+    )
+    return [
+        Draft(
+            name=f"{stem}.md",
+            title=stem,
+            kind="note",
+            format="md",
+            content=f"# {stem}\n\n> Source: `{source}` · {len(data):,} bytes\n\n{body}",
+            folder=folder,
+            meta={"source": source, "stub": True, "reason": why[:200]},
+        )
+    ]
+
+
 # ---------------------------------------------------------------- entry points
 
 
@@ -856,7 +1246,7 @@ def convert(filename: str, data: bytes) -> list[Draft]:
     return drafts
 
 
-def _convert(filename: str, data: bytes) -> list[Draft]:
+def _convert(filename: str, data: bytes, depth: int = 0) -> list[Draft]:
     folder, stem = split_name(filename)
     source = PurePosixPath(filename.replace("\\", "/")).name
     kind = file_kind(filename)
@@ -872,6 +1262,16 @@ def _convert(filename: str, data: bytes) -> list[Draft]:
         return from_pptx(stem, folder, data, source)
     if kind == "image":
         return from_image(stem, folder, data, source)
+    if kind in ("odt", "ods", "odp"):
+        return from_odf(kind, stem, folder, data, source)
+    if kind == "rtf":
+        return from_rtf(stem, folder, data, source)
+    if kind == "eml":
+        return from_eml(stem, folder, data, source, depth)
+    if kind == "legacy":
+        return from_legacy(stem, folder, data, source)
+    if kind == "media":
+        return from_media(stem, folder, data, source)
     if kind == "html":
         return from_html(stem, folder, decode(data), source)
     if kind == "json":
@@ -883,4 +1283,4 @@ def _convert(filename: str, data: bytes) -> list[Draft]:
         return from_text(stem, folder, decode(data), source, lang=lang)
     if not looks_binary(data):
         return from_text(stem, folder, decode(data), source, lang="text")
-    raise Unreadable(f"{source}: no text could be read from this file type")
+    return from_stub(stem, folder, data, source)

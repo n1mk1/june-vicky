@@ -1,7 +1,8 @@
 """Async Anthropic wrapper: one place for model choice, effort, fallbacks, refusals, errors and spend.
 
 - Each route names a model tier and an effort (TRD §5.2); thinking stays adaptive (it can't be turned
-  off on the 5.5 models) except the latency-bound chair, which uses `between_tools` on Sonnet 5.5.
+  off on the 5.5 models). The court's agents have their own tiers: Vicky, the orchestrator, runs on
+  `model_vicky` (Opus 5.5) and the five investors on `model_investor` (Sonnet 5.5), both at low effort.
 - Structured outputs go through `messages.parse()`; tool loops through the SDK tool runner.
 - `stop_reason` is checked before any content is read: `refusal` → `LLMRefusal`, `max_tokens` →
   `LLMError`. Opus/Sonnet requests opt into server-side fallbacks (`fallbacks: "default"`).
@@ -38,6 +39,25 @@ T = TypeVar("T", bound=pydantic.BaseModel)
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
+# The last live call's outcome in this process, for GET /kb/status: a failing key or a spent budget would
+# otherwise only show as agents quietly running offline.
+HEALTH: dict[str, Any] = {"ok": None, "error": None, "at": None}
+
+
+def note_health(e: BaseException | None) -> None:
+    import time
+
+    if e is None:
+        HEALTH.update(ok=True, error=None, at=time.time())
+    elif (
+        not isinstance(e, LLMError)
+        or isinstance(e, LLMUnavailable | BudgetExceeded)
+        or "bad request" in str(e)
+    ):
+        # A malformed structured output is the model's, not the connection's: it doesn't count.
+        HEALTH.update(ok=False, error=f"{type(e).__name__}: {str(e)[:300]}", at=time.time())
+
+
 class LLMError(Exception):
     """Any failure on the LLM path; callers fall back to the deterministic code path."""
 
@@ -59,7 +79,7 @@ class BudgetExceeded(LLMError):
 
 @dataclass(frozen=True)
 class Route:
-    tier: Literal["deep", "fast", "tiny"]
+    tier: Literal["vicky", "investor", "deep", "fast", "tiny"]
     effort: Literal["low", "medium", "high", "xhigh", "max"]
     max_tokens: int
     thinking_off: bool = False  # Sonnet 5.5 only: `between_tools` (no thinking) for sub-second routes
@@ -67,21 +87,26 @@ class Route:
 
 
 # TRD §5.2 roster. The court routes run inside /court/start and /court/{sid}/answer, so each has a timeout
-# after which the offline mind answers (the chair has its own, `chair_timeout_s`).
+# after which the offline mind answers (the chair has its own, `chair_timeout_s`). Adaptive thinking counts
+# against `max_tokens`, so even short replies leave room for it.
+VICKY_ROUTES = ("chair", "review", "judge", "verify", "probes")
+INVESTOR_ROUTES = ("memo", "update_bid", "speak", "ask_knowledge")
 ROUTES: dict[str, Route] = {
-    "memo": Route("deep", "high", 16000, timeout_s=60),  # the whole tool loop
-    "update_bid": Route("fast", "low", 4000, timeout_s=12),
-    "speak": Route("fast", "medium", 4000, timeout_s=12),
-    "chair": Route("fast", "low", 1024, thinking_off=True),
-    "judge": Route("deep", "high", 8000, timeout_s=20),  # Vicky scores the answer
-    "review": Route(
-        "tiny", "low", 2000, timeout_s=12
-    ),  # Vicky reviews an investor's draft line before it is spoken
+    # Vicky, the orchestrator: picks who speaks, reviews every drafted line, scores each answer, schedules
+    # and verifies the knowledge checks.
+    "chair": Route("vicky", "low", 4000),
+    "review": Route("vicky", "low", 4000, timeout_s=12),  # an investor's draft line, before it is spoken
+    "judge": Route("vicky", "low", 8000, timeout_s=20),  # Vicky scores the answer
+    "verify": Route("vicky", "low", 4000, timeout_s=12),  # a knowledge answer against the notes
     "probes": Route(
-        "fast", "medium", 6000, timeout_s=30
+        "vicky", "low", 8000, timeout_s=30
     ),  # knowledge questions from the founder's notes, at start
-    "ask_knowledge": Route("fast", "low", 2000, timeout_s=12),
-    "verify": Route("tiny", "low", 2000, timeout_s=12),  # Vicky checks a knowledge answer against the notes
+    # The investors: research the company before the meeting (a read-only tool loop), then question the founder.
+    "memo": Route("investor", "low", 16000, timeout_s=60),  # the whole tool loop
+    "update_bid": Route("investor", "low", 4000, timeout_s=12),
+    "speak": Route("investor", "low", 4000, timeout_s=12),
+    "ask_knowledge": Route("investor", "low", 4000, timeout_s=12),
+    # Utilities around the court and the rest of the app.
     "claims": Route("tiny", "low", 4000, timeout_s=12),
     "mapper": Route("fast", "medium", 8000),
     "doc_facts": Route("deep", "medium", 16000),
@@ -95,6 +120,9 @@ ROUTES: dict[str, Route] = {
     "kb_organize": Route("fast", "medium", 16000),
     "kb_hubs": Route("fast", "medium", 12000),
     "kb_profile": Route("fast", "medium", 6000),
+    # The pitch room: checkable statements in a slide or a spoken segment, then each rated against the notes.
+    "pitch_assertions": Route("tiny", "low", 2000, timeout_s=12),
+    "pitch_kb": Route("fast", "low", 6000, timeout_s=20),
 }
 
 # USD per million tokens: input, output, cache read, cache write (5-minute TTL). List prices.
@@ -167,7 +195,13 @@ async def over_budget() -> bool:
 
 def model_for(route: Route) -> str:
     s = get_settings()
-    return {"deep": s.model_deep, "fast": s.model_fast, "tiny": s.model_tiny}[route.tier]
+    return {
+        "vicky": s.model_vicky,
+        "investor": s.model_investor,
+        "deep": s.model_deep,
+        "fast": s.model_fast,
+        "tiny": s.model_tiny,
+    }[route.tier]
 
 
 def supports_fallbacks(model: str) -> bool:
@@ -271,11 +305,23 @@ class LLM:
     ) -> Any:
         """Run one call (or tool loop) with errors mapped to `LLMError`. With a `hold`, `reserve_usd` is
         reserved first, and whatever is still held when the call ends (it failed) is handed back."""
-        if hold is None:
-            if await over_budget():
-                raise BudgetExceeded("daily LLM budget reached")
-        else:
-            hold.usd = await self._reserve(reserve_usd)
+        try:
+            if hold is None:
+                if await over_budget():
+                    raise BudgetExceeded("daily LLM budget reached")
+            else:
+                hold.usd = await self._reserve(reserve_usd)
+            out = await self._mapped(call, limit_s)
+        except Exception as e:
+            note_health(e)
+            raise
+        finally:
+            if hold is not None:
+                await self._release(hold.take())
+        note_health(None)
+        return out
+
+    async def _mapped(self, call: Callable[[], Awaitable[Any]], limit_s: float | None) -> Any:
         try:
             return await (asyncio.wait_for(call(), limit_s) if limit_s else call())
         except pydantic.ValidationError as e:
@@ -292,9 +338,6 @@ class LLM:
             raise LLMUnavailable(f"connection: {e}") from e
         except TimeoutError as e:
             raise LLMUnavailable(f"timed out after {limit_s}s" if limit_s else "timed out") from e
-        finally:
-            if hold is not None:
-                await self._release(hold.take())
 
     def _client(self, timeout: float | None):
         return self.client.with_options(timeout=timeout, max_retries=0) if timeout else self.client

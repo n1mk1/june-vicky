@@ -29,14 +29,18 @@ from vicky.llm import docs, mapper
 from vicky.llm import minds as agents
 from vicky.llm.client import (
     FALLBACK_BETA,
+    INVESTOR_ROUTES,
+    ROUTES,
+    VICKY_ROUTES,
     BudgetExceeded,
     LLMError,
     LLMRefusal,
     LLMUnavailable,
     get_llm,
+    model_for,
     usage_usd,
 )
-from vicky.llm.schemas import ChairDecision, ClaimList, DocFact, DocFactList
+from vicky.llm.schemas import ChairDecision, ClaimList, DocFact, DocFactList, Memo, MemoHypothesis
 from vicky.model.context import sample_context
 from vicky.model.loader import parse_upload
 
@@ -87,7 +91,14 @@ async def test_parse_sends_route_settings_and_records_spend(live_llm):
     assert live_llm.spend == pytest.approx((1000 * 0.10 + 200 * 0.50) / 1e6)
 
 
-async def test_sonnet_routes_opt_into_fallbacks_and_the_chair_skips_thinking(live_llm):
+def test_vicky_runs_on_opus_and_the_investors_on_sonnet_at_low_effort():
+    for name in VICKY_ROUTES:
+        assert (model_for(ROUTES[name]), ROUTES[name].effort) == ("claude-opus-5-5", "low"), name
+    for name in INVESTOR_ROUTES:
+        assert (model_for(ROUTES[name]), ROUTES[name].effort) == ("claude-sonnet-5-5", "low"), name
+
+
+async def test_vicky_chairs_on_opus_with_fallbacks_and_adaptive_thinking(live_llm):
     decision = {
         "action": "call_on",
         "vc_id": "a",
@@ -95,15 +106,24 @@ async def test_sonnet_routes_opt_into_fallbacks_and_the_chair_skips_thinking(liv
         "hypothesis_id": "a.h1",
         "note": None,
     }
-    rec = live_llm.install(queue(json_reply(decision)))
+    rec = live_llm.install(queue(json_reply(decision, model="claude-opus-5-5")))
     await get_llm().parse("chair", ChairDecision, system="chair", messages=[{"role": "user", "content": "x"}])
     call = rec.calls[0]
     assert call["body"]["fallbacks"] == "default" and FALLBACK_BETA in call["headers"].get(
         "anthropic-beta", ""
     )
-    assert (
-        call["body"]["thinking"] == {"type": "between_tools"} and call["body"]["model"] == "claude-sonnet-5-5"
-    )
+    # Thinking can't be turned off on Opus 5.5: effort is the only control.
+    assert call["body"]["model"] == "claude-opus-5-5" and "thinking" not in call["body"]
+    assert call["body"]["output_config"]["effort"] == "low"
+
+
+async def test_investor_lines_go_to_sonnet_with_the_investor_role(live_llm):
+    rec = live_llm.install(queue(text_reply("Which months is that?")))
+    await get_llm().text("speak", system="speak", messages=[{"role": "user", "content": "x"}])
+    body = rec.calls[0]["body"]
+    assert body["model"] == "claude-sonnet-5-5" and body["output_config"]["effort"] == "low"
+    assert "Your role" in agents.INVESTOR_ROLE and "foresight" in agents.INVESTOR_ROLE
+    assert "Vicky" in agents.VICKY_ROLE
 
 
 async def test_refusal_is_checked_before_content(live_llm):
@@ -150,7 +170,7 @@ async def test_budget_blocks_calls_and_routes(live_llm, monkeypatch):
 
 
 def test_enabled_needs_a_key_and_respects_offline(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # beats a key in a local .env
     monkeypatch.setenv("LLM_MODE", "auto")
     get_settings.cache_clear()
     assert llm.enabled() is False
@@ -268,6 +288,37 @@ async def test_memo_uses_kit_tools_and_code_keeps_only_anchored_hypotheses(live_
         if b.get("type") == "tool_result"
     )
     assert json.loads(result["content"])["id"] == "arr"
+    # the investor researches on Sonnet, in role; its framing of an attack-list doubt is kept as its angle
+    assert rec.calls[0]["body"]["model"] == "claude-sonnet-5-5"
+    assert "Your role" in rec.calls[0]["body"]["system"][0]["text"]
+    assert first["angle"] == "Growth is decelerating" and "angle" not in new
+
+
+async def test_an_angle_with_a_number_is_dropped_and_a_kept_one_reaches_the_line(live_llm, ctx, james):
+    base = offline.build_memos([james], ctx)["aristotle"]
+    owned = base["hypotheses"][0]
+    m = Memo(
+        thesis="x",
+        hypotheses=[
+            MemoHypothesis(
+                attack_id=owned["attack_id"],
+                claim="Growth fell 40% last quarter",
+                lens=owned["lens"],
+                evidence=owned["evidence"],
+                severity=0.5,
+                confidence=0.5,
+            )
+        ],
+        mind_changers=[],
+        opening_question="",
+    )
+    assert "angle" not in agents.memo_from_llm(m, james, ctx, base, set())["hypotheses"][0]
+    rec = live_llm.install(by_task(speak=[text_reply("What do you do if the slowdown is the new normal?")]))
+    await agents.speak(james, {**owned, "angle": "The plan ignores the slowdown"}, ctx, "new_topic", set())
+    assert (
+        "Your angle, from your research: The plan ignores the slowdown"
+        in rec.calls[0]["body"]["messages"][0]["content"]
+    )
 
 
 async def test_memo_failure_falls_back_per_investor(live_llm, ctx, james):

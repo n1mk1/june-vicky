@@ -12,6 +12,8 @@ returns. With a key, Claude writes the words and the judgement calls; code keeps
 - memos may read the knowledge base (`kb_search` / `kb_read`) and quote a note only verbatim, cited `[kb:path]`;
 - Vicky chairs: she picks the speaker, reviews every drafted line before it is spoken (code issues always
   send it back), scores each answer, and verifies knowledge answers against the founder's notes.
+- Vicky runs on Opus and the investors on Sonnet, both at low effort (`llm.client.VICKY_ROUTES` and
+  `INVESTOR_ROUTES`); the investors research before the meeting and question claims, foresight and judgment.
 Any `LLMError` (refusal, timeout, budget, bad output) falls back to the offline result.
 """
 
@@ -70,6 +72,22 @@ have, ask for it instead.
 - Notes from kb_search / kb_read are the founder's own material, not figures. Quote a note only word for word \
 inside double quotes followed by its [kb:path] token; a number from a note may appear only inside such a quote, \
 never restated, rounded or computed. Hypothesis evidence stays figure ids."""
+
+INVESTOR_ROLE = """Your role: you are one of five investors on the panel. Your job is to find out, before real investors \
+do, where the founder's case is weak. You read the company's numbers and the founder's own notes, then question the \
+founder through your lens on four things:
+- their claims: does each statement hold against the data (which months, how it is calculated, what it leaves out)?
+- foresight: do they see what comes next: the trend behind a number, the risk that ends the company, what they will \
+do when a plan slips, the second-order effect of a decision?
+- business judgment: why customers buy and stay, how they price and sell, where the money goes, which trade-off they \
+chose and why, why they and not a better-funded rival win?
+- self-knowledge: do they know what their own notes say they decided or committed to?
+Ask for reasoning and decisions, not recitation. Be tough and specific, never hostile or unfair, and ask one question \
+at a time."""
+
+VICKY_ROLE = """Your role: you are Vicky. You run this rehearsal for the founder: you chair the five investors, keep \
+their questions fair, sharp and in their own lanes, and grade every answer. You are not one of the investors and \
+you don't take their side; the aim is that the founder walks out knowing where their case is weak and how to fix it."""
 
 
 # ---------------------------------------------------------------- prompt pieces
@@ -225,11 +243,14 @@ def memo_tools(p: VCPersona, ctx: TruthContext) -> list[Any]:
 
 # ---------------------------------------------------------------- memos
 
-MEMO_TASK = """Task: write your private pre-meeting memo on this company, in character.
+MEMO_TASK = """Task: research the company and write your private pre-meeting memo, in character.
 Start from the doubts assigned to you (gap ownership: other investors own other doubts, so stay in your lane). \
-Use the tools to look at the evidence. Keep up to four hypotheses, most important first. Each must name its \
-attack_id when it comes from the attack list, and list the figure ids behind it. Claims contain no numbers. The \
-opening question is what you would ask first, in your voice, at most two sentences."""
+Research before you write: look up the figures behind each assigned doubt with the tools and, when the founder's \
+notes are available, search them for what the founder decided, promised or assumed on those topics. Then keep up to \
+four hypotheses, most important first, mixing what you found: a claim that may not hold, a risk or turn the founder \
+may not have foreseen, a business choice they will have to defend. Each must name its attack_id when it comes from \
+the attack list, and list the figure ids behind it. The claim is your own sharpest framing of the doubt, with no \
+numbers. The opening question is what you would ask first, in your voice, at most two sentences."""
 
 
 def _memo_prompt(
@@ -279,6 +300,9 @@ def memo_from_llm(
                 continue
             d = offline._hyp(a, p, n)
             d["confidence"] = round(_clamp(h.confidence, 0.2, 0.9), 2)
+            angle = h.claim.strip().rstrip(".")
+            if angle and not re.search(r"\d", angle) and _passes(angle, ctx, notes=notes):
+                d["angle"] = angle[:300]  # the investor's own framing of the doubt, from their research
             d["shared"] = a.id in taken  # another investor opens on it; never this one's opener
         elif evidence:
             claim = h.claim if _passes(h.claim, ctx, notes=notes) else ""
@@ -351,7 +375,7 @@ async def build_memos(panel: list[VCPersona], ctx: TruthContext, focus: str | No
             m = await get_llm().run_tools(
                 "memo",
                 Memo,
-                system=[f"{RULES}\n\n{MEMO_TASK}", persona_block(p)],
+                system=[f"{RULES}\n\n{INVESTOR_ROLE}\n\n{MEMO_TASK}", persona_block(p)],
                 messages=[
                     {
                         "role": "user",
@@ -441,8 +465,7 @@ async def extract_claims(answer: str) -> list[dict]:
 
 # ---------------------------------------------------------------- judge
 
-JUDGE_TASK = """Task: score the founder's answer. You are Vicky: you run the meeting and grade every answer for the \
-founder; you are not one of the investors and you don't take their side.
+JUDGE_TASK = """Task: score the founder's answer, for the founder.
 Dimensions, 0-5 each: evidence (cites the right figure, window and calculation), clarity (direct, structured, \
 no hedging), composure (owns weak spots, not defensive), investor_fit (addresses the investor's doubt and says what \
 happens next). Accuracy is computed separately by code; don't score it. `good` and `missing` are one sentence each. \
@@ -527,7 +550,7 @@ async def judge(
         js = await get_llm().parse(
             "judge",
             JudgeScore,
-            system=[f"{RULES}\n\n{JUDGE_TASK}", figures_block(ctx)],
+            system=[f"{RULES}\n\n{VICKY_ROLE}\n\n{JUDGE_TASK}", figures_block(ctx)],
             messages=[
                 {"role": "user", "content": _judge_prompt(answer, hyp, checks, ctx, question, kb, check)}
             ],
@@ -663,7 +686,7 @@ async def update_and_bid(
         upd = await get_llm().parse(
             "update_bid",
             BeliefUpdate,
-            system=[f"{RULES}\n\n{BID_TASK}", persona_block(p)],
+            system=[f"{RULES}\n\n{INVESTOR_ROLE}\n\n{BID_TASK}", persona_block(p)],
             messages=[
                 {
                     "role": "user",
@@ -694,7 +717,7 @@ async def update_and_bid(
 
 # ---------------------------------------------------------------- chair
 
-CHAIR_TASK = """Task: you are Vicky, chairing the panel. Pick who asks next from the candidates (the referee has \
+CHAIR_TASK = """Task: you are chairing the panel. Pick who asks next from the candidates (the referee has \
 already applied fairness, cooldowns and depth caps; the list is ranked). Prefer the candidate whose question best \
 moves the founder's preparation forward: unresolved severe doubts first, a follow-up when the last answer dodged. \
 A `knowledge` candidate is a knowledge check you scheduled: the investor asks whether the founder knows what their \
@@ -780,7 +803,7 @@ async def chair(
             get_llm().parse(
                 "chair",
                 ChairDecision,
-                system=f"{RULES}\n\n{CHAIR_TASK}",
+                system=f"{RULES}\n\n{VICKY_ROLE}\n\n{CHAIR_TASK}",
                 messages=[
                     {
                         "role": "user",
@@ -820,9 +843,10 @@ async def chair(
 # ---------------------------------------------------------------- speaking
 
 SPEAK_TASK = """Task: say your next line in the meeting, in character: one question, at most two sentences and \
-60 words, no preamble. Ground it in the hypothesis and its figures. On a follow-up, press on what the last answer \
-dodged or got wrong; when a claim contradicted the data, quote the founder's exact words and give the figure's \
-display value. Output only the line."""
+60 words, no preamble. Ground it in the hypothesis and its figures, and ask for the founder's reasoning: why it is \
+so, what happens next, or what they will do about it. On a follow-up, press on what the last answer dodged or got \
+wrong; when a claim contradicted the data, quote the founder's exact words and give the figure's display value. \
+Output only the line."""
 
 
 @dataclass
@@ -843,6 +867,8 @@ def _speak_prompt(
 ) -> str:
     figs = [f for f in (ctx.figure(e) for e in hyp["evidence"]) if f]
     lines = [f"Intent: {intent}", f"Hypothesis: {hyp['claim']} (lens {hyp['lens']})"]
+    if hyp.get("angle"):
+        lines.append(f"Your angle, from your research: {hyp['angle']}")
     if hyp.get("detail"):
         lines.append(f"Why it matters: {hyp['detail']}")
     if figs:
@@ -852,7 +878,13 @@ def _speak_prompt(
         )
     if hyp.get("quotes"):
         lines.append(
-            "Founder's earlier words you may quote:\n" + "\n".join(f'- "{q}"' for q in hyp["quotes"])
+            "Founder's earlier words you may quote:\n" + "\n".join(f'- "{q}"' for q in hyp["quotes"] if q)
+        )
+    if hyp.get("question") and intent != "follow_up":
+        # A gap between the pitch and the founder's own notes: ask them to reconcile it (it may be news).
+        lines.append(
+            "This doubt is a gap between what the founder pitched and their own knowledge base. Ask them to "
+            f"explain it, in your voice. The point to make: {hyp['question']}"
         )
     if question:
         lines.append(f"Last question: {question}")
@@ -894,7 +926,7 @@ async def speak(
     if not llm.enabled():
         return Spoken(offline_line())
     quotes = [*(hyp.get("quotes") or []), *([answer] if answer else [])]
-    system = [f"{RULES}\n\n{SPEAK_TASK}", persona_block(p)]
+    system = [f"{RULES}\n\n{INVESTOR_ROLE}\n\n{SPEAK_TASK}", persona_block(p)]
     messages: list[dict] = [
         {"role": "user", "content": _speak_prompt(hyp, ctx, intent, answer, question, checks or [], kb)}
     ]
@@ -936,8 +968,7 @@ def _sent_back(review: dict) -> list[dict]:
 
 # ---------------------------------------------------------------- Vicky reviews a line
 
-REVIEW_TASK = """Task: review the investor's draft line before it is spoken. You are Vicky, chairing the meeting \
-for the founder's benefit. Approve a line that is one clear question in the investor's own lane and voice, grounded in \
+REVIEW_TASK = """Task: review the investor's draft line before it is spoken. Approve a line that is one clear question in the investor's own lane and voice, grounded in \
 the doubt or note it is about, and new to the meeting. Send it back (`revise`) when it repeats an earlier question, \
 wanders off the investor's lens, asks several things at once, lectures instead of asking, is unfair to the founder, \
 or (for a knowledge check) gives the answer away. Don't rewrite it yourself; say in `note` what to fix."""
@@ -970,7 +1001,7 @@ async def review_line(
         r = await get_llm().parse(
             "review",
             LineReview,
-            system=f"{RULES}\n\n{REVIEW_TASK}",
+            system=f"{RULES}\n\n{VICKY_ROLE}\n\n{REVIEW_TASK}",
             messages=[
                 {"role": "user", "content": _review_prompt(p, text, intent, about, asked, out["issues"])}
             ],
@@ -1051,7 +1082,7 @@ async def build_probes(
         pl = await get_llm().parse(
             "probes",
             ProbeList,
-            system=f"{RULES}\n\n{PROBES_TASK}",
+            system=f"{RULES}\n\n{VICKY_ROLE}\n\n{PROBES_TASK}",
             messages=[{"role": "user", "content": _probes_prompt(panel, passages)}],
         )
         out = probes_from_llm(pl, panel, passages, ctx)
@@ -1084,7 +1115,9 @@ async def ask_knowledge(p: VCPersona, pr: dict, ctx: TruthContext, *, review: di
         text = (
             (
                 await get_llm().text(
-                    "ask_knowledge", system=[f"{RULES}\n\n{ASK_TASK}", persona_block(p)], messages=messages
+                    "ask_knowledge",
+                    system=[f"{RULES}\n\n{INVESTOR_ROLE}\n\n{ASK_TASK}", persona_block(p)],
+                    messages=messages,
                 )
             )
             .strip()
@@ -1098,7 +1131,7 @@ async def ask_knowledge(p: VCPersona, pr: dict, ctx: TruthContext, *, review: di
     return Spoken(pr["question"], regenerated=bool(review))
 
 
-VERIFY_TASK = """Task: verify the founder's recall. You are Vicky. The question tested whether the founder knows what \
+VERIFY_TASK = """Task: verify the founder's recall. The question tested whether the founder knows what \
 their own notes say; the answer key and the passages found for the answer are given. `knows`: the answer gets the \
 substance right (the wording may differ). `partial`: some of it, or vague. `contradicts`: it states something the \
 notes contradict. `missed`: wrong, off-topic or "I don't know". The explanation speaks to the founder and quotes the \
@@ -1136,7 +1169,7 @@ async def verify_knowledge(
         v = await get_llm().parse(
             "verify",
             KnowledgeVerdict,
-            system=f"{RULES}\n\n{VERIFY_TASK}",
+            system=f"{RULES}\n\n{VICKY_ROLE}\n\n{VERIFY_TASK}",
             messages=[{"role": "user", "content": _verify_prompt(pr, question, answer, passages)}],
         )
     except Exception as e:

@@ -151,6 +151,8 @@ export interface ColumnMapping {
   unit: string;
   confidence: number;
   note: string;
+  /** A custom field's name as the founder typed it (`canonical_field` is `custom.<slug>`). */
+  label?: string;
 }
 
 export interface MappingTarget {
@@ -158,7 +160,7 @@ export interface MappingTarget {
   label: string;
   group: string;
   /** What a column mapped to it holds, which sets the column's unit. */
-  kind?: "money" | "count" | "date" | "text";
+  kind?: "money" | "count" | "date" | "text" | "custom";
 }
 
 export interface MappingResponse {
@@ -532,7 +534,7 @@ export interface Claim {
 export interface Session {
   id: string;
   status: "live" | "ended";
-  mode: "prepare";
+  mode: "prepare" | "simulate";
   panel: PersonaSummary[];
   settings: { question_cap: number; coaching: "coached" | "realistic"; focus?: string | null; knowledge?: boolean };
   turns: Turn[];
@@ -766,6 +768,107 @@ export interface KbAutofill {
   profile: { field: string; value: unknown; evidence: string }[];
   added: { note: string; as: string }[];
   skipped: { note: string; reason: string }[];
-  /** The search index rebuild this Fill started. */
-  index?: { build_id: string; status: string };
+  /** The search index as it stands (Fill no longer rebuilds it: confirming the knowledge base does). */
+  index?: KbIndexStatus;
+}
+
+// ---------------------------------------------------------------- pitch room (Simulation)
+
+/** One claim in the pitch ledger: from the deck's pre-scan or said out loud, checked by code. */
+export interface LedgerRow {
+  id: string;
+  slide: number | null;
+  source: "deck" | "spoken";
+  t_ms: number | null;
+  text: string;
+  metric: string | null;
+  value: number | null;
+  unit: string | null;
+  status: ClaimStatus;
+  explanation: string;
+  figure_id: string | null;
+  /** What the data says (the engine's figure, formatted), when there is one. */
+  truth: string | null;
+  truth_label: string | null;
+}
+
+/** How a statement from the pitch stands against the founder's own knowledge base. */
+export type KbVerdict = "supported" | "contradicted" | "new" | "unclear";
+
+/** A statement (shown on a slide or said out loud) checked against the knowledge base by retrieval. */
+export interface KbCheck {
+  id: string;
+  slide: number | null;
+  source: "deck" | "spoken";
+  t_ms: number | null;
+  text: string;
+  topic: string;
+  verdict: KbVerdict;
+  /** Words copied from the note that support or contradict it (checked by code), with the note's path. */
+  quote: string;
+  path: string | null;
+  cite: string | null;
+  why: string;
+}
+
+export interface DeckSlide {
+  n: number;
+  text: string;
+  /** The rendered page (JPEG data URL) of a PDF; null for a PowerPoint, shown as its title and lines. */
+  image: string | null;
+  title?: string;
+  bullets?: string[];
+  claims: LedgerRow[];
+  kb?: KbCheck[];
+}
+
+export interface Deck {
+  id: string;
+  filename: string;
+  kind?: "pdf" | "pptx";
+  slides: DeckSlide[];
+}
+
+/** A line the room speaks: a persona id or "vicky", and the words. */
+export interface SpokenLine {
+  speaker: string;
+  text: string;
+}
+
+export interface JudgedScore {
+  accuracy: number | null;
+  dims: ScoreDims;
+}
+
+export interface PitchInterrupt {
+  id: string;
+  speaker: string;
+  text: string;
+  slide: number | null;
+  t_ms: number;
+  claim: LedgerRow | KbCheck;
+  /** What the interrupt is about: a figure against the data, or a statement against the notes. */
+  on?: "data" | "notes";
+  reply: string | null;
+  judged: JudgedScore | null;
+  hand_back?: string;
+}
+
+export interface Pitch {
+  id: string;
+  mode: "live" | "after";
+  status: "presenting" | "answering" | "qa" | "ended";
+  panel: string[];
+  deck_id: string | null;
+  slides: number;
+  ledger: LedgerRow[];
+  /** Statements checked against the knowledge base, from the deck and said out loud. */
+  kb?: KbCheck[];
+  interrupts: PitchInterrupt[];
+  pending: string | null;
+  court_id: string | null;
+  stats: { words: number; fillers: number } | null;
+  /** Speaker id → ElevenLabs voice for this sitting (each seat's is its own). */
+  voices?: Record<string, string>;
+  say: SpokenLine[];
 }

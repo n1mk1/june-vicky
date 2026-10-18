@@ -214,10 +214,11 @@ def build_series(ctx: TruthContext) -> dict[str, Series]:
         )
     for key, by_p in m.raw.items():
         ds_id, col = m.raw_source.get(key, (None, key.split(":")[-1]))
+        unit = m.raw_unit.get(key, "")
         out[f"raw:{key}"] = Series(
             f"raw:{key}",
-            _human(col).capitalize(),
-            cur,
+            m.raw_label.get(key) or _human(col).capitalize(),
+            unit if unit in ("count", "pct", "months", "ratio", "x") else cur,
             "sum",
             dict(by_p),
             "raw",

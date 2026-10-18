@@ -49,6 +49,14 @@ class DatasetInput:
     upload_kind: str = "csv"
 
 
+CUSTOM_PREFIX = "custom."
+
+
+def custom_label(field_id: str) -> str:
+    """`custom.active_pilots` → "Active pilots"."""
+    return field_id[len(CUSTOM_PREFIX) :].replace("_", " ").strip().capitalize() or field_id
+
+
 @dataclass
 class CanonicalModel:
     currency: str
@@ -57,6 +65,10 @@ class CanonicalModel:
     cells: dict[str, dict[str, Cell]] = field(default_factory=dict)
     raw: dict[str, dict[str, float]] = field(default_factory=dict)
     raw_source: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # A custom field the founder named in the mapping (`custom.<slug>`): its label and unit; columns mapped to
+    # the same custom field in several tables add up under one key.
+    raw_label: dict[str, str] = field(default_factory=dict)
+    raw_unit: dict[str, str] = field(default_factory=dict)
     customer_mrr: dict[str, dict[str, float]] = field(default_factory=dict)
     cohort_mrr: dict[str, dict[str, float]] = field(default_factory=dict)
     table_sources: dict[str, str] = field(default_factory=dict)
@@ -198,6 +210,11 @@ def build_model(
     for d in datasets:
         model.datasets[d.id] = d
         m_by_col = {m["source_column"]: m.get("canonical_field") for m in d.mapping}
+        custom_by_col = {
+            m["source_column"]: m
+            for m in d.mapping
+            if str(m.get("canonical_field") or "").startswith(CUSTOM_PREFIX)
+        }
         cur_by_col = {m["source_column"]: column_currency(m, model.currency) for m in d.mapping}
         foreign = {
             c for c, u in cur_by_col.items() if u != model.currency
@@ -259,9 +276,14 @@ def build_model(
                         val, rate = conv
                     if target in (None, "period") or target not in FIELDS:
                         key = f"{d.name}:{col}"
+                        if col in custom_by_col:
+                            key = str(target)
+                            cm = custom_by_col[col]
+                            model.raw_label[key] = str(cm.get("label") or "").strip() or custom_label(key)
+                            model.raw_unit[key] = str(cm.get("unit") or "")
                         model.raw.setdefault(key, {})
                         model.raw[key][p] = model.raw[key].get(p, 0.0) + float(val)
-                        model.raw_source[key] = (d.id, col)
+                        model.raw_source.setdefault(key, (d.id, col))
                         continue
                     agg = FIELDS[target].agg
                     cell = accum[target].get(p)

@@ -13,6 +13,7 @@ from vicky import db, jobs, llm
 from vicky.config import get_settings
 from vicky.kb import autofill, ingest, ocr, store
 from vicky.kb.store import NoteConflict, NoteInvalid, NoteNotFound
+from vicky.llm import client as llm_client
 
 router = APIRouter(prefix="/kb")
 MAX_IMPORT_FILES = 200
@@ -94,6 +95,8 @@ async def status() -> dict:
         "failures": failures,
         "ocr": ocr.available(),
         "llm": llm.enabled(),
+        # The last live Claude call in this process: {ok, error, at}; ok false means agents are running offline.
+        "llm_health": dict(llm_client.HEALTH),
         "index": idx,
         "rag": rag_out,
     }

@@ -63,7 +63,7 @@ templates:
       clarity: 0.15
       composure: 0.05
       investor_fit: 0.25
-    voice_id: null
+    voice_id: XrExE9yKIg1WjnnlVkGX  # premade "Matilda": warm, rigorous
     kits: [Governance, Milestone]
     base_archetype: null
     builtin: false
@@ -131,7 +131,7 @@ templates:
       clarity: 0.2
       composure: 0.15
       investor_fit: 0.2
-    voice_id: null
+    voice_id: pFZP5JQG7iQjIQuC4Bku  # premade "Lily": composed, patient
     kits: [Cash, Terms]
     base_archetype: null
     builtin: false
@@ -197,7 +197,7 @@ templates:
       clarity: 0.3
       composure: 0.1
       investor_fit: 0.2
-    voice_id: null
+    voice_id: cgSgspJ2msm6clMCkdW9  # premade "Jessica": fast, direct
     kits: [Milestone, Customer]
     base_archetype: null
     builtin: false
@@ -264,7 +264,7 @@ templates:
       clarity: 0.1
       composure: 0.05
       investor_fit: 0.15
-    voice_id: null
+    voice_id: SAz9YHcvj6GT2YYXdXww  # premade "River": neutral, numerical
     kits: [QuantAudit, Cash]
     base_archetype: null
     builtin: false

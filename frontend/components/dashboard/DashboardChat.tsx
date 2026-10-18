@@ -35,9 +35,6 @@ interface DashboardChatProps {
   onUndo: (widgetId: string) => Promise<boolean>;
   onShow: (widgetId: string) => void;
   onResetRange: () => void;
-  onAttach?: (file: File) => void;
-  attachBusy?: boolean;
-  attachError?: string | null;
 }
 
 /** Results that change the dashboard itself: the overlay steps aside so the change can be seen. */
@@ -64,7 +61,7 @@ function Action({ onClick, children, icon }: { onClick: () => void; children: Re
  * up room to it. Esc, the close button or a click on the dashboard closes it; the thread is kept.
  */
 export function DashboardChat(props: DashboardChatProps) {
-  const { dashboardId, engagementId, query = "", track, onResult, onUndo, onShow, onResetRange, onAttach, attachBusy, attachError } = props;
+  const { dashboardId, engagementId, query = "", track, onResult, onUndo, onShow, onResetRange } = props;
   const guard = useAccessGuard();
   const [thread, setThread] = useState<Exchange[]>([]);
   const [open, setOpen] = useState(false);
@@ -340,12 +337,9 @@ export function DashboardChat(props: DashboardChatProps) {
         placeholder="Ask anything about your data, e.g. which month had the highest burn?"
         onSubmit={(t) => void send(t)}
         maxLength={500}
-        onAttach={onAttach}
-        busy={busy || attachBusy}
+        busy={busy}
         hint={
-          attachError ? (
-            <span className="text-ember">{attachError}</span>
-          ) : !open && thread.length > 0 ? (
+          !open && thread.length > 0 ? (
             <button
               type="button"
               onClick={() => setOpen(true)}

@@ -13,6 +13,15 @@ import pytest
 from vicky.config import get_settings
 
 
+@pytest.fixture(autouse=True)
+def _no_real_voyage(monkeypatch):
+    """Tests never reach Voyage: a key in a developer's .env would otherwise send real embedding calls."""
+    monkeypatch.setenv("VOYAGE_API_KEY", "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 def _test_dsn() -> tuple[str, str, str]:
     base = os.environ.get("DATABASE_URL", get_settings().database_url)
     u = urlparse(base)

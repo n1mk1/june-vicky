@@ -100,6 +100,10 @@ def _expected_passage(pr: dict) -> dict:
     }
 
 
+async def _nothing_remembered() -> dict[str, list[dict]]:
+    return {"drills": [], "weaknesses": []}
+
+
 async def _no_probes() -> list[dict]:
     return []
 
@@ -209,7 +213,12 @@ async def start(
     focus: str | None,
     knowledge_on: bool = True,
     drills: list[str] | None = None,
+    mode: str = "prepare",
+    discrepancies: list[dict] | None = None,
 ) -> str:
+    """`mode="simulate"` is the Q&A after a pitch (vicky.pitch.session): the claims the founder made on the
+    slides and out loud are already on the TruthPack as deck claims, so they are on the attack list, and
+    founder memory stays out of it (no drills, no carried weak spots), so the questions are about the pitch."""
     eid = await engagements.require_confirmed()
     ctx = await engagements.context(eid)
     panel = await registry.panel(panel_ids)
@@ -227,7 +236,7 @@ async def start(
     memos, lens_found, remembered = await asyncio.gather(
         agents.build_memos(panel, ctx, focus),
         asyncio.gather(*(_court_kb(q, k=3) for _, _, q in lens_q)),
-        memory.recall(eid, drills),
+        memory.recall(eid, drills) if mode != "simulate" else _nothing_remembered(),
     )
     carried, drill_agenda = memory.carry_over(memos, panel, ctx, remembered, cap)
     state: dict[str, Any] = {
@@ -258,6 +267,8 @@ async def start(
         state["kb_build"] = build
         state["probes"] = probes
         memory.carry_probes(carried, probes)
+    if discrepancies:
+        seat_discrepancies(state, panel, discrepancies)
     # Opening: the referee ranks opening bids; the chair picks; that VC speaks.
     bids = []
     for p in panel:
@@ -285,9 +296,10 @@ async def start(
     async with db.acquire() as conn, conn.transaction():
         sid = await conn.fetchval(
             """insert into sessions (engagement_id, truthpack_id, mode, panel, settings, agenda, state, status)
-               values ($1, $2, 'prepare', $3, $4, $5, $6, 'live') returning id::text""",
+               values ($1, $2, $3::session_mode, $4, $5, $6, $7, 'live') returning id::text""",
             eid,
             ctx.truthpack_id,
+            mode if mode in ("prepare", "simulate") else "prepare",
             [p.id for p in panel],
             {"question_cap": cap, "coaching": coaching, "focus": focus, "knowledge": knowledge_on},
             _agenda(memos, drill_agenda),
@@ -303,15 +315,62 @@ async def start(
                 ctx.version,
                 memos[p.id],
             )
-        await _add_turn(
-            conn, sid, "vicky", "intro", minds.intro(panel, ctx, coaching, cap, bool(state["probes"])), ctx
+        opening = (
+            minds.pitch_intro(panel)
+            if mode == "simulate"
+            else minds.intro(panel, ctx, coaching, cap, bool(state["probes"]))
         )
+        await _add_turn(conn, sid, "vicky", "intro", opening, ctx)
         line_turn = await _store_line(conn, sid, line, ctx, ranked, after_seq=1)
         await conn.execute("update sessions set state = $2, question_count = 1 where id = $1", sid, state)
     await memory.mark_used([r["id"] for r in remembered["drills"]], sid)
     await _publish_line(sid, line, line_turn)
     await publish(f"session:{sid}", "vc.turn.done", {"turn": "opening"})
     return sid
+
+
+def seat_discrepancies(state: dict, panel: list[VCPersona], items: list[dict]) -> None:
+    """After a pitch, each statement the founder's notes contradict or don't cover becomes a doubt owned by an
+    investor (the claims lane first, round robin), with a question written by code: the founder must explain
+    the gap (the claim may be new and justified). A contradiction quotes the note word for word with its cite
+    token, and its passage rides on the doubt so the speaker and the judge see it."""
+    order = sorted(panel, key=lambda p: -p.weight("claims"))
+    for i, k in enumerate(items):
+        p = order[i % len(order)]
+        said = str(k.get("text") or "").strip().rstrip(".")
+        if not said:
+            continue
+        contra = k.get("verdict") == "contradicted" and k.get("quote") and k.get("cite")
+        quote = str(k.get("quote") or "").strip()
+        end = "" if quote[-1:] in ".!?" else "."
+        # No cite token here: this line is audited without the note; the speaker, who has it, may cite it.
+        question = (
+            f'Your pitch says "{said}", but your own notes say: "{quote}"{end} '
+            "Which is right, and what changed since you wrote it?"
+            if contra
+            else f'Your pitch says "{said}", and nothing in your notes covers it. Is that new since your notes '
+            "were written? What's the evidence?"
+        )
+        state["vcs"][p.id]["hyps"].append(
+            {
+                "id": f"{p.id}.kb{i + 1}",
+                "attack_id": f"kb:{k.get('id') or i}",
+                "claim": ("The pitch contradicts the notes: " if contra else "Not in the notes: ")
+                + said[:160],
+                "detail": "",
+                "lens": "claims",
+                "quotes": [k["text"], k.get("quote") or ""],
+                "evidence": [],
+                "severity": 0.85 if contra else 0.6,
+                "confidence": 0.85 if contra else 0.65,
+                "source_id": None,
+                "status": "open",
+                "asked": 0,
+                "weak_answers": 0,
+                "question": question,
+                "kb": [k["chunk"]] if k.get("chunk") else [],
+            }
+        )
 
 
 def _agenda(memos: dict[str, dict], drill_agenda: list[str]) -> list[dict]:

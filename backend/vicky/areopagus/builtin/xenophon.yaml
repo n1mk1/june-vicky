@@ -59,7 +59,7 @@ scoring_weights:
   clarity: 0.15
   composure: 0.15
   investor_fit: 0.3
-voice_id: null
+voice_id: cjVigY5qzO86Huf0OWal  # premade "Eric": smooth, patient
 kits: [Channel, Terms]
 base_archetype: null
 builtin: true

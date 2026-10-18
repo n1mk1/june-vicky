@@ -239,7 +239,7 @@ test("search filters titles and finds words inside notes", async ({ page }) => {
 test("organize re-files everything and export downloads the vault", async ({ page }) => {
   await page.goto("/knowledge");
   await page.getByRole("button", { name: "Organize", exact: true }).click();
-  await expect(page.getByText(/re-organized/)).toBeVisible({ timeout: JOB_MS });
+  await expect(page.getByText(/notes? organized/)).toBeVisible({ timeout: JOB_MS });
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export", exact: true }).click();
   const file = await download;

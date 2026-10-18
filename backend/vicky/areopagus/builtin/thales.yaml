@@ -40,6 +40,7 @@ question_seeds:
   - "What share of new revenue comes through partners, and who owns the renewal on those accounts?"
   - "How long does a new rep take to ramp, and how do you know?"
   - "Without looking: what is your {metric}?"
+  - "Why do customers pay what they pay? What happens to your pipeline if you raise the price?"
   - "Why are you the right people to build {company}?"
 example_exchanges:
   - founder: "Churn is mostly early customers on the old product."
@@ -58,7 +59,7 @@ scoring_weights:
   clarity: 0.2
   composure: 0.2
   investor_fit: 0.15
-voice_id: null
+voice_id: iP95p4xoKVk53GoZ742B  # premade "Chris": casual operator
 kits: [Customer, Channel]
 base_archetype: null
 builtin: true

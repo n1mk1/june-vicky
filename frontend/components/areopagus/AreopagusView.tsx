@@ -304,10 +304,6 @@ export function AreopagusView() {
             <h1 className="display text-[clamp(34px,3.8vw,60px)]">The Areopagus</h1>
           </div>
           <div className="flex flex-col items-start gap-3 lg:items-end lg:pb-1.5">
-            <p className="max-w-[58ch] text-[13px] leading-snug text-ink-2 lg:text-right">
-              Every investor who can sit on your panel reads your numbers through their own lenses. Hover or tap a card for their method;
-              describe a new one, or fork a built-in to make a copy you can tune.
-            </p>
             <PillButton
               label="New investor"
               variant="solid"

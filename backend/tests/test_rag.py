@@ -312,15 +312,51 @@ async def test_a_new_fill_cancels_a_running_build_and_a_failed_build_keeps_the_o
 
 
 @pytest.mark.db
-async def test_fill_dashboard_starts_a_build_and_status_reports_it(vault, api_client):
+async def test_fill_drafts_and_confirm_knowledge_base_builds_search(vault, api_client):
+    """Fill dashboard only drafts the intake; confirming the knowledge base rebuilds search, with the confirmed
+    profile and mappings written into the vault as a note (docs/08-RAG.md §Indexing)."""
     await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    table = await store.create_note(
+        {
+            "title": "KPIs",
+            "path": "financials/KPIs",
+            "format": "csv",
+            "content": "month,mrr\n2025-01,100\n2025-02,120\n",
+        }
+    )
+    active = await db.fetchval("select id::text from engagements where status = 'active'")
+    before = await db.fetchval("select count(*) from kb_index_builds")
     r = await api_client.post("/kb/autofill")
     assert r.status_code == 200, r.text
-    b = r.json()["index"]
+    assert await db.fetchval("select count(*) from kb_index_builds") == before  # Fill builds nothing
+    eid = r.json()["engagement"]["id"]
+    c = await api_client.post(f"/engagements/{eid}/confirm")
+    assert c.status_code == 200, c.text
+    b = c.json()["index"]
     job = await db.fetchval("select job_id::text from kb_index_builds where id = $1::uuid", b["build_id"])
     await jobs.wait_for([job], 60)
     st = (await api_client.get("/kb/status")).json()["index"]
     assert st["status"] == "ready" and st["build_id"] == b["build_id"] and st["chunks"] > 0
+    note = await db.fetchrow(
+        "select path, content, meta from kb_notes where meta->>'generated' = 'confirmed_kb'"
+    )
+    assert note and note["path"] == "company/Confirmed knowledge base.md"
+    indexed = await db.fetchval(
+        "select count(*) from kb_chunks c join kb_notes n on n.id = c.note_id "
+        "where c.build_id = $1::uuid and n.meta->>'generated' = 'confirmed_kb'",
+        b["build_id"],
+    )
+    assert indexed > 0
+    # A second Fill never sends the confirmed note back to the intake.
+    again = (await api_client.post("/kb/autofill")).json()
+    assert all(a["note"] != note["path"] for a in again["added"])
+    await db.execute(
+        "delete from engagements where id::text = any($1::text[])", [eid, again["engagement"]["id"]]
+    )
+    if active:  # the sample stays the source of truth for the tests after this one
+        await db.execute("update engagements set status = 'active' where id::text = $1", active)
+    await db.execute("delete from kb_notes where meta->>'generated' = 'confirmed_kb'")
+    await store.delete_note(table["id"])
 
 
 @pytest.mark.db

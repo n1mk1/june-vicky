@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-// The Preparation page's roster and prompt bar. The court API is stubbed where a test needs it to
-// fail, so no session is opened and nothing is written.
+// The Preparation page's roster, setup and prompt bar. The court and sessions API are stubbed where a
+// test needs them, so no session is opened and nothing is written.
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -17,16 +17,58 @@ test.describe("Preparation", () => {
     await expect(count).toHaveText("Panel · 1/5");
   });
 
-  test("a send that fails gives the typed text back", async ({ page }) => {
-    await page.route("**/api/v1/court/start", (route) =>
-      route.fulfill({ status: 502, contentType: "application/json", body: '{"detail":"The panel is unavailable."}' }),
+  test("before a session the composer is off; Start session is the way in", async ({ page }) => {
+    await page.goto("/preparation");
+    await expect(page.getByRole("heading", { name: "Prepare." })).toBeVisible();
+    await expect(page.getByLabel("Focus")).toHaveCount(0);
+    await expect(page.getByLabel("Your answer")).toBeDisabled();
+  });
+
+  test("recent sessions sit behind a button", async ({ page }) => {
+    const at = "2026-01-01T09:00:00Z";
+    await page.route("**/api/v1/sessions", (route) =>
+      route.fulfill({
+        json: [
+          { id: "e2e-live", mode: "prepare", status: "live", started_at: at, question_count: 2, report_id: null },
+          { id: "e2e-done", mode: "prepare", status: "ended", started_at: at, question_count: 3, report_id: "e2e-report" },
+        ],
+      }),
     );
     await page.goto("/preparation");
+    await expect(page.getByTestId("recent-sessions")).toHaveCount(0);
+    await page.getByRole("button", { name: /recent sessions/i }).click();
+    const list = page.getByTestId("recent-sessions");
+    await expect(list.getByRole("button", { name: "Resume" })).toBeVisible();
+    await expect(list.getByRole("link", { name: "Report" })).toHaveAttribute("href", "/reports/e2e-report");
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Prepare." })).toBeVisible();
+  });
+
+  test("an answer that fails gives the typed text back", async ({ page }) => {
+    const session = {
+      id: "e2e-stub",
+      status: "live",
+      mode: "prepare",
+      panel: [],
+      settings: { question_cap: 8, coaching: "coached", knowledge: false },
+      turns: [],
+      scores: [],
+      claims: [],
+      question_count: 0,
+      awaiting: "founder",
+      next_speaker: null,
+      report_id: null,
+    };
+    await page.route("**/api/v1/court/e2e-stub", (route) => route.fulfill({ json: session }));
+    await page.route("**/api/v1/court/e2e-stub/answer", (route) =>
+      route.fulfill({ status: 502, contentType: "application/json", body: '{"detail":"The panel is unavailable."}' }),
+    );
+    await page.goto("/preparation?s=e2e-stub");
     const input = page.getByLabel("Your answer");
     await expect(input).toBeEnabled();
-    await input.fill("Grill me on retention");
+    await input.fill("Retention is 92% from the cohort table");
     await input.press("Enter");
     await expect(page.getByText("The panel is unavailable.")).toBeVisible();
-    await expect(input).toHaveValue("Grill me on retention");
+    await expect(input).toHaveValue("Retention is 92% from the cohort table");
   });
 });

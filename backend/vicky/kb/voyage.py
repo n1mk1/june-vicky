@@ -5,6 +5,7 @@ API: POST /v1/embeddings {input, model, input_type, output_dimension} → {data:
 POST /v1/rerank {query, documents, model, top_k} → {data: [{index, relevance_score}], usage}.
 """
 
+import asyncio
 import logging
 from typing import Literal
 
@@ -44,12 +45,19 @@ def _client(timeout: float) -> httpx.AsyncClient:
     )
 
 
-async def _post(path: str, body: dict, timeout_s: float) -> dict:
-    try:
-        async with _client(timeout_s) as c:
-            r = await c.post(path, json=body)
-    except httpx.HTTPError as e:
-        raise VoyageError(f"voyage {path}: {e}") from e
+async def _post(path: str, body: dict, timeout_s: float, retries: int = 0) -> dict:
+    """`retries`: how many times to wait out a 429 (accounts without billing get 3 requests a minute)."""
+    for attempt in range(retries + 1):
+        try:
+            async with _client(timeout_s) as c:
+                r = await c.post(path, json=body)
+        except httpx.HTTPError as e:
+            raise VoyageError(f"voyage {path}: {e}") from e
+        if r.status_code != 429 or attempt == retries:
+            break
+        wait = min(float(r.headers.get("retry-after") or 21), 60.0)
+        log.warning("voyage %s: rate limited, retrying in %.0fs", path, wait)
+        await asyncio.sleep(wait)
     if r.status_code != 200:
         raise VoyageError(f"voyage {path}: HTTP {r.status_code} {r.text[:200]}")
     return r.json()
@@ -75,6 +83,7 @@ async def embed(
             "/embeddings",
             {"input": batch, "model": model, "input_type": input_type, "output_dimension": DIMS},
             timeout_s,
+            retries=3 if input_type == "document" else 0,
         )
         vecs = sorted(data.get("data") or [], key=lambda d: d["index"])
         if len(vecs) != len(batch) or any(len(v["embedding"]) != DIMS for v in vecs):

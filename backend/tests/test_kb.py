@@ -112,9 +112,10 @@ def test_zip_expands_with_folders_and_skips_junk():
     assert [n for n, _ in convert.expand("dump.zip", b.getvalue())] == ["data/a.csv"]
 
 
-def test_binary_without_text_is_unreadable():
-    with pytest.raises(convert.Unreadable):
-        convert.convert("blob.bin", bytes(range(256)) * 10)
+def test_binary_without_text_becomes_a_stub_note():
+    # Any file enters the vault: one no converter reads is a note naming it, linked to its original.
+    (d,) = convert.convert("blob.bin", bytes(range(256)) * 10)
+    assert d.meta["stub"] and d.format == "md" and "blob.bin" in d.content
 
 
 # ---------------------------------------------------------------- the number guard and heuristics
@@ -365,6 +366,11 @@ async def _wait(api_client, job_id):
 async def test_kb_import_organize_graph_edit_export_autofill(api_client):
     if not (await api_client.get("/auth/session")).json()["ok"]:  # run alone: no cookie from test_api yet
         assert (await api_client.post("/auth/access", json={"code": "vicky-demo"})).status_code == 200
+    # Files posted to /uploads by earlier tests are mirrored into the vault: start from an empty one.
+    from vicky import db
+
+    await db.execute("delete from kb_notes")
+    await db.execute("delete from kb_files")
     assert (await api_client.get("/kb/status")).json()["notes"] == 0
 
     csv_bytes = (SAMPLES_DIR / "harbor-labs" / "financials_quarterly.csv").read_bytes()

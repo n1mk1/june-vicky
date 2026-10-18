@@ -1,10 +1,8 @@
 "use client";
 
-import { ArrowUp, Paperclip } from "lucide-react";
-import { useId, useRef, useState, type ReactNode } from "react";
+import { ArrowUp } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-
-export const ATTACH_ACCEPT = ".csv,.xlsx,.pdf,.docx,.md";
 
 interface PromptBarProps {
   placeholder: string;
@@ -14,9 +12,7 @@ interface PromptBarProps {
    * the send failed and the text comes back into the bar, unless something new was typed meanwhile.
    */
   onSubmit: (text: string) => void | boolean | Promise<void | boolean>;
-  /** Called with the picked file; the attach button only appears when this is set (or `leading` replaces it). */
-  onAttach?: (file: File) => void;
-  /** Replaces the attach button on the left, e.g. a microphone. */
+  /** A tool on the left, e.g. a microphone. Files are never attached here: they go into the knowledge base. */
   leading?: ReactNode;
   hint?: ReactNode;
   /** Shows a thin progress line under the bar (upload, waiting for the panel). */
@@ -27,11 +23,10 @@ interface PromptBarProps {
   className?: string;
 }
 
-/** Glass input bar with a tool button on the left and send on the right, as in the wireframe. */
-export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hint, busy, disabled, maxLength, className }: PromptBarProps) {
+/** Glass input bar with an optional tool on the left and send on the right, as in the wireframe. */
+export function PromptBar({ placeholder, label, onSubmit, leading, hint, busy, disabled, maxLength, className }: PromptBarProps) {
   const [value, setValue] = useState("");
   const id = useId();
-  const file = useRef<HTMLInputElement>(null);
 
   return (
     <form
@@ -48,34 +43,7 @@ export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hin
       }}
     >
       <div className="flex items-center gap-2 rounded-[4px] border border-line bg-surface-solid/60 p-1.5">
-        {leading ??
-          (onAttach && (
-            <>
-              <button
-                type="button"
-                onClick={() => file.current?.click()}
-                disabled={busy}
-                className="flex size-8 shrink-0 items-center justify-center rounded-[3px] border border-line text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-40"
-                aria-label="Attach a file (CSV, XLSX, PDF, DOCX or MD)"
-                title="Attach CSV, XLSX, PDF, DOCX or MD"
-              >
-                <Paperclip className="size-4" strokeWidth={1.5} />
-              </button>
-              <input
-                ref={file}
-                type="file"
-                accept={ATTACH_ACCEPT}
-                className="sr-only"
-                tabIndex={-1}
-                aria-hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) onAttach(f);
-                }}
-              />
-            </>
-          ))}
+        {leading}
         <label htmlFor={id} className="sr-only">
           {label}
         </label>

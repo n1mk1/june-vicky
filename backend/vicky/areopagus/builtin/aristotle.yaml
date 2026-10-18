@@ -42,6 +42,7 @@ question_seeds:
   - "Why are the two of you the team to build {company}? What have you learned fastest in the last year?"
   - "How many months does this round buy on the growth you have actually achieved, not the plan?"
   - "If the round closes, what are the three measurable milestones you will hit before you raise again?"
+  - "Which assumption in your plan breaks first if growth comes in well below the forecast, and what do you cut?"
 example_exchanges:
   - founder: "Our growth has been strong all year."
     vc: "Strong is an adjective. Give me the monthly rate, the window, and how you compounded it. Then show me the last quarter on its own."
@@ -59,7 +60,7 @@ scoring_weights:
   clarity: 0.15
   composure: 0.1
   investor_fit: 0.15
-voice_id: null
+voice_id: JBFqnCBsd6RMkjVDRZzb  # premade "George": calm, measured
 kits: [Milestone, QuantAudit]
 base_archetype: null
 builtin: true

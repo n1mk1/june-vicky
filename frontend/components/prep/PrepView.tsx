@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useActiveEngagement } from "@/components/app/EngagementProvider";
 import { PromptBar } from "@/components/app/PromptBar";
 import { MAX_PANEL, VcRoster } from "@/components/app/VcRoster";
@@ -19,17 +19,6 @@ import { type DrillPick, QuestionList } from "./QuestionList";
 import { SessionSetup, type SetupValue } from "./SessionSetup";
 
 const DEFAULT_PANEL = ["aristotle", "thales", "xenophon", "plato", "socrates"];
-const QUESTION_KEY = "vicky-question";
-
-// A question typed on the landing page or dashboard waits in sessionStorage until the next session starts.
-const noSubscribe = () => () => {};
-const readPending = () => {
-  try {
-    return sessionStorage.getItem(QUESTION_KEY);
-  } catch {
-    return null;
-  }
-};
 
 export function PrepView() {
   const router = useRouter();
@@ -44,7 +33,6 @@ export function PrepView() {
   const [live, setLive] = useState<Session | null>(null);
   const session = live && live.id === sid ? live : fetched.data && fetched.data.id === sid ? fetched.data : null;
 
-  const pending = useSyncExternalStore(noSubscribe, readPending, () => null);
   // Back from the Areopagus builder: `?panel=` carries the seats (new investor included), `?added=` who was built.
   // The page's state survives navigation (cacheComponents keeps it), so take each new hand-off as it arrives.
   const panelParam = () => params.get("panel")?.split(",").filter(Boolean).slice(0, MAX_PANEL) ?? null;
@@ -57,12 +45,7 @@ export function PrepView() {
     setAdded(handoff);
     setChosen(panelParam());
   }
-  const [setup, setSetup] = useState<Omit<SetupValue, "focus"> & { focus: string | null }>({
-    cap: 8,
-    coaching: "coached",
-    focus: null,
-    knowledge: true,
-  });
+  const [setup, setSetup] = useState<SetupValue>({ cap: 8, coaching: "coached", knowledge: true });
   const [filter, setFilter] = useState<FeedFilter>("all");
   const [busy, setBusy] = useState<"start" | "answer" | "end" | "drill" | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
@@ -104,27 +87,20 @@ export function PrepView() {
     router.replace(`/preparation?s=${encodeURIComponent(s.id)}`, { scroll: false });
   };
 
-  const start = async (focusOverride?: string): Promise<boolean> => {
+  const start = async () => {
     setBusy("start");
     setError(null);
     setGate(null);
-    const focus = (focusOverride ?? setup.focus ?? pending ?? "").trim();
     try {
       const s = await apiPost<Session>("court/start", {
         panel: selected.slice(0, MAX_PANEL),
         question_cap: setup.cap,
         coaching: setup.coaching,
         knowledge: setup.knowledge,
-        ...(focus ? { focus } : {}),
       });
-      try {
-        sessionStorage.removeItem(QUESTION_KEY);
-      } catch {}
       opened(s);
-      return true;
     } catch (err) {
       fail(err);
-      return false;
     } finally {
       setBusy(null);
     }
@@ -157,7 +133,7 @@ export function PrepView() {
 
   /** Resolves to false when the answer didn't reach the panel, so the bar gives the text back. */
   const answer = async (text: string): Promise<boolean> => {
-    if (!session) return start(text);
+    if (!session) return false;
     setBusy("answer");
     setError(null);
     setDraft(text);
@@ -240,8 +216,8 @@ export function PrepView() {
   } else if (!session) {
     body = (
       <SessionSetup
-        value={{ cap: setup.cap, coaching: setup.coaching, knowledge: setup.knowledge, focus: setup.focus ?? pending ?? "" }}
-        onChange={(v) => setSetup(v)}
+        value={setup}
+        onChange={setSetup}
         onStart={() => void start()}
         seated={seatedNames}
         starting={busy === "start"}
@@ -256,7 +232,7 @@ export function PrepView() {
   const ended = session?.status === "ended";
   const placeholder = !session
     ? selected.length
-      ? "Press Start, or tell Vicky what to focus on."
+      ? "Press Start session to open the court."
       : "Pick at least one investor to start."
     : ended
       ? "Session ended."
@@ -327,7 +303,7 @@ export function PrepView() {
           label="Your answer"
           placeholder={placeholder}
           onSubmit={answer}
-          disabled={!!busy || ended || (!session && selected.length === 0) || (!!session && !awaitingFounder)}
+          disabled={!session || !!busy || ended || !awaitingFounder}
           busy={busy === "answer" || busy === "start" || busy === "drill"}
           hint={
             session?.settings.coaching === "realistic"

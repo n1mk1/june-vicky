@@ -9,9 +9,9 @@ import { cn } from "@/lib/utils";
 const POLL_MS = 2000;
 
 /**
- * The knowledge-base search index that Fill dashboard builds (docs/08-RAG.md §Indexing): "Building
- * search…", "Search ready · 214 notes", or "Search failed" with Retry. With `banner`, also says when
- * notes changed since the last Fill, since search shows the vault as of that Fill.
+ * The knowledge-base search index that confirming the knowledge base builds (docs/08-RAG.md §Indexing):
+ * "Building search…", "Search ready · 214 notes", or "Search failed" with Retry. With `banner`, also says
+ * when notes changed since search was last built, since search shows the vault as of that confirm.
  */
 export function SearchIndexStatus({ banner = false, className }: { banner?: boolean; className?: string }) {
   const guard = useAccessGuard();
@@ -59,12 +59,12 @@ export function SearchIndexStatus({ banner = false, className }: { banner?: bool
             </button>
           </>
         )}
-        {idx.status === "none" && <span>Search builds when you press Fill dashboard</span>}
+        {idx.status === "none" && <span>Search builds when you confirm the knowledge base</span>}
       </span>
       {banner && idx.status === "ready" && idx.changed_since > 0 && (
         <span className="text-[12px] text-ink-2" data-testid="search-index-stale">
-          {idx.changed_since} note{idx.changed_since === 1 ? "" : "s"} changed since the last Fill. Fill dashboard again to
-          update search.
+          {idx.changed_since} note{idx.changed_since === 1 ? "" : "s"} changed since the last Fill. Fill dashboard and
+          confirm the knowledge base to update search.
         </span>
       )}
       {error && <span className="text-[12px] text-ember">{error}</span>}

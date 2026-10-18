@@ -1,6 +1,6 @@
 /**
- * Offline preview for the Simulation stage, shown until the voice pipeline lands (POST /pitch/start
- * returns 501). Illustrative only: no company, no customers and no computed figures. The UI labels
+ * Offline preview for the Simulation stage's slide view and ledger, shown until deck upload lands.
+ * Illustrative only: no company, no customers and no computed figures. The UI labels
  * it "Preview" wherever it appears.
  */
 

@@ -1,17 +1,15 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ModelNotes } from "@/components/truth/ModelNotes";
 import { PillButton, PillLink } from "@/components/ui/Pill";
 import { EmptyState, ErrorNote, Loading } from "@/components/ui/States";
-import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api";
+import { ApiError, apiDelete, apiGet, apiPatch } from "@/lib/api";
 import { pack } from "@/lib/dashboard-layout";
 import { useChannel, useSocketStatus, type Envelope } from "@/lib/socket";
 import { CURRENCIES, DEFAULT_CURRENCY, isCurrency } from "@/lib/currency";
-import { confirmHref } from "@/lib/kb";
-import type { ChatResult, Dashboard, Engagement, ReportSummary, TimeRange, Truth } from "@/lib/types";
+import type { ChatResult, Dashboard, ReportSummary, TimeRange, Truth } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { themeName } from "@/lib/echarts-theme";
 import { useTheme } from "@/lib/use-theme";
@@ -135,7 +133,6 @@ function CurrencySwitch({
 }
 
 export function DashboardView() {
-  const router = useRouter();
   const guard = useAccessGuard();
   const { theme } = useTheme();
   const tname = themeName(theme);
@@ -146,8 +143,6 @@ export function DashboardView() {
   const ready = !!dash.data;
   const truth = useApi<Truth>(ready ? "truth" : null);
   const reports = useApi<ReportSummary[]>(ready ? "reports" : null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -257,21 +252,6 @@ export function DashboardView() {
   useChannel(did ? `dashboard:${did}` : null, (e) => void onEvent(e), () => void refetch());
 
   // ---- actions
-  const attach = async (file: File) => {
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      if (dash.data) form.append("engagement_id", dash.data.engagement_id);
-      const e = await apiPost<Engagement>("uploads", form);
-      router.push(confirmHref(e.id, 2));
-    } catch (err) {
-      setUploading(false);
-      if (!guard(err)) setUploadError(errorText(err));
-    }
-  };
-
   const remove = async (wid: string): Promise<boolean> => {
     if (!dash.data) return false;
     const id = dash.data.id;
@@ -439,9 +419,6 @@ export function DashboardView() {
           onUndo={remove}
           onShow={flash}
           onResetRange={() => setRange(null)}
-          onAttach={attach}
-          attachBusy={uploading}
-          attachError={uploadError}
         />
       </div>
 

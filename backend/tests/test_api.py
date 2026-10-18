@@ -206,4 +206,95 @@ async def test_prepare_court_round_trip(api_client):
 
 
 async def test_fr10_pitch_after_confirm_is_not_a_gate_error(api_client):
-    assert (await api_client.post("/pitch/start")).status_code == 501
+    r = await api_client.post("/pitch/start")
+    assert r.status_code == 200, r.text
+    assert isinstance(r.json()["voice"], bool) and r.json()["stt"]["model_id"] == "scribe_v2_realtime"
+
+
+def _blank_deck(pages: int) -> bytes:
+    import io
+
+    from pypdf import PdfWriter
+
+    w = PdfWriter()
+    for _ in range(pages):
+        w.add_blank_page(width=960, height=540)
+    buf = io.BytesIO()
+    w.write(buf)
+    return buf.getvalue()
+
+
+async def test_fr11_live_pitch_interrupts_on_a_contradiction(api_client):
+    deck = await api_client.post(
+        "/pitch/deck", files={"file": ("deck.pdf", _blank_deck(3), "application/pdf")}
+    )
+    assert deck.status_code == 200, deck.text
+    d = deck.json()
+    assert len(d["slides"]) == 3 and d["slides"][0]["image"].startswith("data:image/jpeg")
+    assert (
+        await api_client.post("/pitch/deck", files={"file": ("deck.txt", b"hello", "text/plain")})
+    ).status_code == 415
+
+    r = await api_client.post(
+        "/pitch/start", json={"mode": "live", "panel": ["aristotle", "socrates"], "deck_id": d["id"]}
+    )
+    assert r.status_code == 200, r.text
+    p = r.json()["pitch"]
+    assert p["status"] == "presenting" and p["say"][0]["speaker"] == "vicky"
+    # Everyone in the room has a voice for this sitting, and nobody shares one.
+    assert set(p["voices"]) == {"vicky", "aristotle", "socrates"} and len(set(p["voices"].values())) == 3
+
+    seg = (
+        await api_client.post(
+            f"/pitch/{p['id']}/segment",
+            json={"text": "We're growing 10% a month.", "slide": 2, "t_ms": 40_000},
+        )
+    ).json()
+    assert seg["claims"][0]["status"] == "contradicts" and seg["claims"][0]["truth"]
+    it = seg["interrupt"]
+    assert it and it["speaker"] in ("aristotle", "socrates") and seg["claims"][0]["truth"] in it["text"]
+    assert seg["pitch"]["status"] == "answering"
+    # One interrupt per slide, and none inside the cooldown, even while the answer is open.
+    again = (
+        await api_client.post(
+            f"/pitch/{p['id']}/segment", json={"text": "Growing 10% a month.", "slide": 3, "t_ms": 45_000}
+        )
+    ).json()
+    assert again["interrupt"] is None
+
+    back = (
+        await api_client.post(f"/pitch/{p['id']}/reply", json={"text": "Fair, it's closer to 3%."})
+    ).json()
+    assert back["say"][0]["speaker"] == it["speaker"] and back["pitch"]["status"] == "presenting"
+    assert not re.search(r"\d", back["say"][0]["text"])
+    assert (await api_client.post(f"/pitch/{p['id']}/reply", json={"text": "again"})).status_code == 409
+
+    end = (await api_client.post(f"/pitch/{p['id']}/end")).json()
+    assert end["court"] is None and end["pitch"]["status"] == "ended" and end["pitch"]["stats"]["words"] > 0
+    assert (
+        await api_client.post(f"/pitch/{p['id']}/segment", json={"text": "more", "slide": 1, "t_ms": 1})
+    ).status_code == 409
+
+
+async def test_after_pitch_qa_asks_about_what_was_said(api_client):
+    p = (
+        await api_client.post("/pitch/start", json={"mode": "after", "panel": ["aristotle", "thales"]})
+    ).json()["pitch"]
+    seg = (
+        await api_client.post(
+            f"/pitch/{p['id']}/segment",
+            json={"text": "We're growing 10% a month.", "slide": None, "t_ms": 5_000},
+        )
+    ).json()
+    assert seg["interrupt"] is None  # questions wait for the end
+    end = (await api_client.post(f"/pitch/{p['id']}/end")).json()
+    s = end["court"]
+    assert end["pitch"]["status"] == "qa" and s["mode"] == "simulate" and s["status"] == "live"
+    assert [t["kind"] for t in s["turns"]] == ["intro", "question"]
+    assert s["turns"][0]["text"].startswith("That was the pitch.")
+    # The Q&A is spoken in the voices the pitch cast: every panel line has its speaker's.
+    assert all(t["speaker"] in p["voices"] for t in s["turns"] if t["speaker"] != "founder")
+    assert len(set(p["voices"].values())) == len(p["voices"]) == 3
+    assert (await api_client.post(f"/court/{s['id']}/end")).status_code == 200
+    # The spoken claim stays on the TruthPack as a deck claim until the next deck replaces it.
+    await api_client.post("/pitch/deck", files={"file": ("deck.pdf", _blank_deck(1), "application/pdf")})

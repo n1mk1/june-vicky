@@ -13,6 +13,19 @@ import { cn } from "@/lib/utils";
 
 const LOW = 0.6;
 const RAW = "__raw__";
+const NEW_CUSTOM = "__new_custom__";
+const CUSTOM = "custom.";
+
+/** The id the API gives a custom field named `label` ("Active pilots" → custom.active_pilots). */
+function customId(label: string): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+  return slug ? CUSTOM + slug : "";
+}
 const FIGURE_UNITS = ["count", "pct", "months", "ratio", "x"];
 const UNIT_LABEL: Record<string, string> = {
   "": "—",
@@ -37,6 +50,7 @@ function unitLabel(u: string): string {
 
 /** The unit a column takes once it maps to a field of this kind; a raw column says what its values are. */
 function unitFor(kind: Kind | undefined, col: DatasetColumn | undefined, currency: string): string {
+  if (kind === "custom") kind = undefined; // a custom field takes the unit its values are in
   if (kind === "money") return (col?.currency || currency).toLowerCase();
   if (kind === "count") return "count";
   if (kind === "date" || kind === "text") return kind;
@@ -47,6 +61,7 @@ function unitFor(kind: Kind | undefined, col: DatasetColumn | undefined, currenc
 }
 
 function unitOptions(kind: Kind | undefined, current: string, currency: string): string[] {
+  if (kind === "custom") kind = undefined;
   const list =
     kind === "date" || kind === "text"
       ? [kind]
@@ -112,20 +127,40 @@ function MappingEditor({ data, currency, register, onSaved }: EditorProps) {
   );
   const ds = data.dataset;
   const columns = useMemo(() => new Map(ds.columns.map((c) => [c.name, c])), [ds.columns]);
-  const kinds = useMemo(() => new Map(data.targets.map((t) => [t.id, t.kind])), [data.targets]);
+  // Custom fields: the engagement's own (from the API) plus any this table names before it is saved.
+  const [custom, setCustom] = useState<MappingTarget[]>(() => {
+    const out = data.targets.filter((t) => t.kind === "custom");
+    for (const r of data.confirmed ?? data.proposed) {
+      if (r.canonical_field?.startsWith(CUSTOM) && !out.some((t) => t.id === r.canonical_field)) {
+        out.push({ id: r.canonical_field, label: r.label || r.canonical_field.slice(CUSTOM.length), group: "custom", kind: "custom" });
+      }
+    }
+    return out;
+  });
+  const [naming, setNaming] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const standard = useMemo(() => data.targets.filter((t) => t.kind !== "custom"), [data.targets]);
+  const kinds = useMemo(() => new Map([...standard, ...custom].map((t) => [t.id, t.kind])), [standard, custom]);
   const groups = useMemo(() => {
     const g = new Map<string, MappingTarget[]>();
-    for (const t of data.targets) g.set(t.group, [...(g.get(t.group) ?? []), t]);
+    for (const t of standard) g.set(t.group, [...(g.get(t.group) ?? []), t]);
     return [...g.entries()];
-  }, [data.targets]);
+  }, [standard]);
 
   const setTarget = (i: number, field: string | null) => {
     setDirty(true);
+    const label = field?.startsWith(CUSTOM) ? custom.find((t) => t.id === field)?.label : undefined;
     setRows((rs) =>
       rs.map((r, j) => {
         if (j === i) {
           const kind = field ? kinds.get(field) : undefined;
-          return { ...r, canonical_field: field, unit: unitFor(kind, columns.get(r.source_column), currency), confidence: 1 };
+          return {
+            ...r,
+            canonical_field: field,
+            label: label ?? "",
+            unit: unitFor(kind, columns.get(r.source_column), currency),
+            confidence: 1,
+          };
         }
         // One date axis per table: the column that had it goes back to raw.
         if (field === "period" && r.canonical_field === "period") {
@@ -133,6 +168,20 @@ function MappingEditor({ data, currency, register, onSaved }: EditorProps) {
         }
         return r;
       }),
+    );
+  };
+  const addCustom = (i: number) => {
+    const label = draft.trim().slice(0, 80);
+    const id = customId(label);
+    if (!id) return;
+    setCustom((cs) => (cs.some((c) => c.id === id) ? cs : [...cs, { id, label, group: "custom", kind: "custom" }]));
+    setNaming(null);
+    setDraft("");
+    setDirty(true);
+    setRows((rs) =>
+      rs.map((r, j) =>
+        j === i ? { ...r, canonical_field: id, label, unit: unitFor(undefined, columns.get(r.source_column), currency), confidence: 1 } : r,
+      ),
     );
   };
   const setUnit = (i: number, unit: string) => {
@@ -213,13 +262,20 @@ function MappingEditor({ data, currency, register, onSaved }: EditorProps) {
                     <select
                       id={`map-${ds.id}-${i}`}
                       className={cn(selectCls, "h-8 min-w-[180px] text-[12.5px]")}
-                      value={r.canonical_field ?? RAW}
-                      onChange={(e) => setTarget(i, e.target.value === RAW ? null : e.target.value)}
+                      value={naming === i ? NEW_CUSTOM : (r.canonical_field ?? RAW)}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === NEW_CUSTOM) {
+                          setNaming(i);
+                          setDraft("");
+                          return;
+                        }
+                        if (naming === i) setNaming(null);
+                        setTarget(i, v === RAW ? null : v);
+                      }}
                     >
                       <option value={RAW}>Keep as raw column</option>
-                      {r.canonical_field && !data.targets.some((t) => t.id === r.canonical_field) && (
-                        <option value={r.canonical_field}>{r.canonical_field}</option>
-                      )}
+                      {r.canonical_field && !kinds.has(r.canonical_field) && <option value={r.canonical_field}>{r.canonical_field}</option>}
                       {groups.map(([group, targets]) => (
                         <optgroup key={group} label={humanize(group)}>
                           {targets.map((t) => (
@@ -229,7 +285,51 @@ function MappingEditor({ data, currency, register, onSaved }: EditorProps) {
                           ))}
                         </optgroup>
                       ))}
+                      <optgroup label="Custom">
+                        {custom.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.label}
+                          </option>
+                        ))}
+                        <option value={NEW_CUSTOM}>+ New custom field…</option>
+                      </optgroup>
                     </select>
+                    {naming === i && (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <label className="sr-only" htmlFor={`custom-${ds.id}-${i}`}>
+                          Name of the custom field for {r.source_column}
+                        </label>
+                        <input
+                          id={`custom-${ds.id}-${i}`}
+                          autoFocus
+                          value={draft}
+                          maxLength={80}
+                          placeholder="e.g. Active pilots"
+                          onChange={(e) => setDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addCustom(i);
+                            } else if (e.key === "Escape") setNaming(null);
+                          }}
+                          className="h-8 w-[150px] rounded-[3px] border border-line-strong bg-transparent px-2 text-[12.5px] text-ink placeholder:text-dim focus:border-ink focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          disabled={!customId(draft)}
+                          onClick={() => addCustom(i)}
+                          className="h-8 rounded-[3px] border border-line-strong px-2 font-mono text-[10.5px] uppercase text-ink hover:border-ink disabled:opacity-40"
+                        >
+                          Add
+                        </button>
+                        <button type="button" onClick={() => setNaming(null)} className="h-8 px-1 text-[11.5px] text-ink-2 hover:text-ink">
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    {r.canonical_field?.startsWith(CUSTOM) && naming !== i && (
+                      <span className="mt-1 block text-[11px] text-ink-2">Custom field: charted and searchable, not used in standard metrics.</span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <label className="sr-only" htmlFor={`unit-${ds.id}-${i}`}>

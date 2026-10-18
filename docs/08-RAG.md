@@ -7,7 +7,7 @@
 - **Recovery:** a second, wider pass when the first one is unsure.
 - **Caches** keyed to the index build and the vault version.
 
-**The index is built when the founder presses Fill dashboard.** That button means "I'm done adding knowledge", so chunking, embedding and the BM25 index all run then, not on every import or edit. Going back to change the knowledge base means pressing Fill dashboard again: that **rebuilds the index from scratch** from the current vault and discards the old one.
+**The index is built when the founder confirms the knowledge base** (step 04 of the intake, *Confirm knowledge base*). The flow is: add files to the knowledge base (any file type; a file uploaded anywhere else in the app lands there too) → **Fill dashboard** autofills a draft (profile, column mappings, facts) → the founder checks it with as little editing as possible → **Confirm knowledge base**. Confirming writes what was confirmed into the vault as a note (`company/Confirmed knowledge base.md`: the profile with its sources, how each table's columns are read, custom fields included, and which facts were kept; no figures) and **rebuilds the index from scratch** from the whole vault, discarding the old one. Chunking, embedding and the BM25 index run then, not on every import or edit.
 
 **A whole-vault LLM call exists only as the worst-case catch-all, and it never runs without the user's go-ahead.** When retrieval can't answer, Vicky says so and offers to search every note; the call runs only if the user accepts. Every offer is logged as a retrieval miss and becomes a regression case, so retrieval improves until the offer is almost never needed.
 
@@ -48,9 +48,11 @@ The measured rows come from `evals/rag/run.py` on the fixture vault in `backend/
 | **Voyage** embeddings (`voyage-4`, 1024 dims) and reranker (`rerank-2.5`; `rerank-2.5-lite` in court) over `httpx` | Anthropic has no embeddings endpoint and recommends Voyage. A local model doesn't fit next to the API on a 512 MB instance. |
 | Hybrid ranking with **reciprocal rank fusion**, then a **reranker** | Fusion needs no score calibration between BM25 and cosine. A cross-encoder reranker is the biggest single precision gain over fused lists. |
 | Query expansion by **code** (`kb/glossary.yaml`), not by an LLM | Deterministic, free and cacheable, and it keeps LLM calls out of the main path. Generic finance vocabulary only: no company-specific terms. |
-| The index is built on **Fill dashboard**, not on every note write | Fill is the founder's signal that the vault is complete. Embedding once per Fill avoids paying for chunks that are about to change, and gives one clear "search is ready" moment. The build runs in the background, so Fill returns as quickly as before. |
-| Every Fill is a **full rebuild that replaces the old index** | Search always matches one known state of the vault: the one at the last Fill. Nothing from an earlier build lingers. The new build is made beside the old one and swapped in only when ready, so search never goes empty. |
-| Between Fills, search shows the vault **as of the last Fill** | Edits and new notes reach search at the next Fill. A chunk whose note was edited since is skipped (the note's `md5` no longer matches), because its quote could no longer be verified. |
+| The index is built on **Confirm knowledge base**, not on every note write (and no longer on Fill) | Confirming is the founder's signal that the vault and its reading are right. Embedding once per confirm avoids paying for chunks that are about to change, and gives one clear "search is ready" moment. The build runs in the background, so confirm returns as quickly as before. |
+| Every confirm is a **full rebuild that replaces the old index** | Search always matches one known state of the vault: the one at the last confirm. Nothing from an earlier build lingers. The new build is made beside the old one and swapped in only when ready, so search never goes empty. |
+| Between confirms, search shows the vault **as of the last confirm** | Edits and new notes reach search at the next confirm. A chunk whose note was edited since is skipped (the note's `md5` no longer matches), because its quote could no longer be verified. |
+| The confirmed reading is **written into the vault** (`company/Confirmed knowledge base.md`) | What the founder fixed in the wizard (a custom column, a removed fact, a corrected profile field) is knowledge too, so retrieval can quote it. It carries no figures: numbers come from the metrics engine, and a stale copy in a note could be quoted instead. Fill never sends it back to the intake; each confirm rewrites it. |
+| The pitch deck is **checked against** the index, never added to it | A deck is what the founder claims; the vault is what they know. Mixing them would let a claim confirm itself. |
 | The vault version is a **Postgres counter bumped by a trigger** (`kb_meta.version`) | Every insert, update and delete on `kb_notes` bumps it, so no write path (the organizer, hub rewrites, imports, edits) can miss it. Cache keys include it and the build id. |
 | Confidence is **computed by code** | The API returns no token probabilities, and a model's self-rating isn't reliable. Retrieval signals come before the call; the audit and structured output after it. |
 | **Claude Haiku 5.5** (`model_tiny`) writes the answer from passages and runs the catch-all | $0.10 / $0.50 per MTok, cache reads $0.01, 1M context, 512-token cache minimum. Haiku 4.5 is 10× the price, with 200K context and a 4,096-token cache minimum; see the ADR. |
@@ -89,8 +91,12 @@ Redis keys ([05 §5](05-BACKEND-SCHEMA.md#5-redis-valkey-keys--ephemeral-only)):
 
 ```
 POST /kb/autofill (Fill dashboard)
+  └─ profile, engagement, uploads (each upload remembers its note: uploads.kb_note_id); no build
+
+POST /engagements/{id}/confirm (Confirm knowledge base)
+  ├─ the draft becomes the source of truth (TruthPack, dashboards)
+  ├─ truthnote.write(): company/Confirmed knowledge base.md, rewritten
   ├─ index.start_build(): cancel any queued or running build; insert kb_index_builds (queued); enqueue kb_index
-  ├─ profile, engagement, uploads (each upload remembers its note: uploads.kb_note_id)
   └─ the response includes  index: {build_id, status}
 
 job kb_index (inline on the free plan, arq worker later)
@@ -107,17 +113,17 @@ job kb_index (inline on the free plan, arq worker later)
 
 - **Full rebuild, then swap.** The old build serves until the swap. A failed build deletes its own chunks and stays `failed`, and the old build stays active. A Fill during a running build cancels it (checked between embedding batches and at the swap).
 - **Vector reuse is the one shortcut.** Voyage returns the same vector for the same input, so copying it gives the same index; it only saves time and money. `RAG_REUSE_EMBEDDINGS=false` embeds every chunk fresh.
-- **Before the first Fill** (no active build), `kb_search`, Ask Vicky and the court work as they did before this index existed.
-- **Between Fills**, chunks of edited notes are skipped and new notes wait. `GET /kb/status` → `index.changed_since` counts notes written since the build read the vault (by `updated_at`, so the call stays cheap; retrieval itself compares content `md5`s, so a note touched without a content change is never skipped), and the knowledge base page says *"12 notes changed since the last Fill. Fill dashboard again to update search."*
+- **Before the first confirm** (no active build), `kb_search`, Ask Vicky and the court work as they did before this index existed.
+- **Between confirms**, chunks of edited notes are skipped and new notes wait. `GET /kb/status` → `index.changed_since` counts notes written since the build read the vault (by `updated_at`, so the call stays cheap; retrieval itself compares content `md5`s, so a note touched without a content change is never skipped), and the knowledge base page says *"12 notes changed since the last Fill. Fill dashboard and confirm the knowledge base to update search."*
 - **A build can't hang:** it waits only for imports started in the last 15 minutes (one left "running" by a dead process doesn't count). A build whose job ended, vanished, or has run for more than 30 minutes is marked failed on the next status call, so the page offers Retry instead of polling forever.
 - **Two Fills at once:** starting and activating builds take one database advisory lock, so exactly one build ends up active and the other is cancelled or superseded, never failed.
 - **Warm start:** the process that ran the build loads its BM25 index right after the swap, so the first search after a Fill doesn't wait for it.
 - **Status** (`SearchIndexStatus`, on the knowledge base and confirm pages) reads one of:
-  - *Search builds when you press Fill dashboard*
+  - *Search builds when you confirm the knowledge base*
   - *Building search…* (polls every 2 s)
   - *Search ready · 214 notes*
   - *Search failed · Retry* (`POST /kb/index`)
-- **Backfill:** `uv run python scripts/kb_reindex.py` runs the same build without a Fill, after a deploy or an `EMBED_MODEL` change.
+- **Backfill:** `uv run python scripts/kb_reindex.py` runs the same build without a confirm, after a deploy or an `EMBED_MODEL` change.
 
 **Chunking** (`kb/chunk.py`) follows the converter's own structure:
 - **Headings:** a heading (`## Page 4`, `## Slide 7: Traction`, any markdown heading) starts a new section, and no chunk crosses one, so a quote keeps its page.
@@ -218,6 +224,17 @@ The court reads the vault through retrieval only (`court/session.py`), with no r
 - **At session start**, in parallel with the memos, `retrieve(mode="court", k=3)` runs on each seated investor's top two lens labels. Passages from notes and documents (not tables or hub notes) become recall questions; each answer key is a verbatim span of its passage, stored on the probe with the chunk.
 - **On the answer to a knowledge question**, `retrieve(question + answer, mode="court", k=4)` runs in parallel with claim extraction. Vicky verifies the answer against the key passage and those passages; their notes are the audit's `notes=`, so her explanation can quote them. The retrieval's confidence, build id and passage count are stored on the `knowledge_checks` row. Below `RAG_CONF_MIN` she still has the key passage to check against.
 - **No active build**, or no prose in the vault, means no knowledge checks, and the Preparation tab says so.
+
+## Pitch room
+
+The Simulation tab checks the founder's pitch against the vault the way an investor who has read the data room would (`backend/vicky/pitch/verify.py`). A deck (PDF or PowerPoint) is read but never imported.
+
+- **Statements:** each slide and each spoken segment is split into checkable statements (route `pitch_assertions`, Haiku; each must be a verbatim span of the text; offline, sentences with a number or a name).
+- **Retrieval:** `retrieve(statement, mode="court", k=4)` for each, in parallel, beside the figure checks by `check_claim`.
+- **Verdict:** one call per slide or segment (route `pitch_kb`, Sonnet, effort low) rates every statement `supported`, `contradicted`, `new` (the notes don't cover it) or `unclear`. A supported or contradicted verdict must quote one passage word for word: code checks the quote is in that passage and drops any sentence of the reason with a number from elsewhere; otherwise it is `unclear`. Offline: `supported` when every number of the statement is in a confident passage, `new` when nothing is found.
+- **Live mode:** a contradicted statement can interrupt (severity 0.9 × the investor's interrupt tendency × lane fit), with a line written by code that quotes the note and its cite token, audited against the note.
+- **After the pitch:** up to four discrepancies (contradicted first, then new) become doubts in the Q&A court, each with a code-written question (*Your pitch says "…", but your own notes say "…". Which is right, and what changed since you wrote it?*) and its passage, so the speaker can quote it and the judge sees it. The founder may well be right: the claim can be newer than the notes; the panel asks them to explain it.
+- **No index yet:** the statement checks return nothing and the pitch runs on figure checks alone.
 
 ## Learning from misses
 

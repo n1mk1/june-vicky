@@ -19,6 +19,7 @@ class ColumnMapping(BaseModel):
     unit: str = ""
     confidence: float = 0.5
     note: str = ""
+    label: str = ""  # a custom field's name as the founder typed it (canonical_field `custom.<slug>`)
 
 
 def _norm(name: str) -> str:

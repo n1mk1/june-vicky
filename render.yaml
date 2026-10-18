@@ -1,10 +1,18 @@
-# Render Blueprint for Vicky (docs/02-TRD.md §10). Free phase: api, web, kv, db; worker commented out.
+# Render Blueprint for Vicky (docs/02-TRD.md §10). Free phase: api and web; worker commented out.
 # Paths are repo-root-relative and rootDir is not used.
+#
+# The database and the cache already exist (created 2026-10-18, Ohio, free plan), so this Blueprint wires them
+# by connection string instead of declaring them (declaring them would create a second copy):
+#   vicky-db  Postgres 17  dpg-dbaalam1egvs73a0cnu0-a  https://dashboard.render.com/d/dpg-dbaalam1egvs73a0cnu0-a
+#             pgvector: the API's startup migration creates the extension and the embedding columns.
+#             Free Postgres expires 2026-11-17: upgrade it (dashboard) before then.
+#   vicky-kv  Key Value    red-dbaalb5g1s2s73bdgmn0   internal URL redis://red-dbaalb5g1s2s73bdgmn0:6379
+# On the first Blueprint sync, paste vicky-db's *Internal Database URL* (its Connect menu) as DATABASE_URL.
 # Spec: https://render.com/docs/blueprint-spec  (schema: https://render.com/schema/render.yaml.json)
 #
 # Demo-phase switch (day before judging): plan 0.5c-512mb for api and web, uncomment vicky-worker,
 # set JOBS_MODE=worker, add `preDeployCommand: python -m vicky.migrate` to vicky-api, raise
-# DAILY_USD_BUDGET; in the dashboard: vicky-db -> 0.1c-256mb, vicky-kv -> 256mb.
+# DAILY_USD_BUDGET; in the dashboard: vicky-db -> basic-256mb, vicky-kv -> starter.
 # Fallback: if the free web plan refuses runtime: docker, put vicky-api on 0.5c-512mb.
 
 services:
@@ -27,15 +35,12 @@ services:
         - backend/tests/**
         - backend/evals/**
     envVars:
+      # vicky-db's Internal Database URL (see the header). A secret: entered on the first sync.
       - key: DATABASE_URL
-        fromDatabase:
-          name: vicky-db
-          property: connectionString
+        sync: false
+      # vicky-kv on the private network (free Key Value has no password; reachable only inside Render).
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: vicky-kv
-          property: connectionString
+        value: redis://red-dbaalb5g1s2s73bdgmn0:6379
       - key: JOBS_MODE
         value: inline
       # WEB_ORIGIN, LLM_MODE, DAILY_USD_BUDGET and COOKIE_SECRET (shared with the worker).
@@ -50,6 +55,8 @@ services:
       # Secrets: `sync: false` is ignored inside an environment group, so each service lists its own
       # and Render asks for them on the first Blueprint sync.
       - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_WORKSPACE_ID
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
@@ -82,14 +89,9 @@ services:
   #       - backend/evals/**
   #   envVars:
   #     - key: DATABASE_URL
-  #       fromDatabase:
-  #         name: vicky-db
-  #         property: connectionString
+  #       sync: false
   #     - key: REDIS_URL
-  #       fromService:
-  #         type: keyvalue
-  #         name: vicky-kv
-  #         property: connectionString
+  #       value: redis://red-dbaalb5g1s2s73bdgmn0:6379
   #     - key: JOBS_MODE
   #       value: worker
   #     - fromGroup: vicky-shared
@@ -128,13 +130,6 @@ services:
       - key: API_PUBLIC_WS_URL
         sync: false
 
-  - type: keyvalue
-    name: vicky-kv
-    plan: free
-    region: ohio
-    maxmemoryPolicy: noeviction
-    ipAllowList: [] # private network only
-
 # Settings the api and the worker must agree on. Moving COOKIE_SECRET here generates a new value once,
 # which signs everyone out a single time.
 envVarGroups:
@@ -146,16 +141,8 @@ envVarGroups:
       - key: WEB_ORIGIN
         value: https://vicky-web.onrender.com
       - key: DAILY_USD_BUDGET
-        value: "5"
+        value: "20"
       - key: LLM_MODE
         value: auto
       - key: COOKIE_SECRET
         generateValue: true
-
-databases:
-  - name: vicky-db
-    plan: free
-    region: ohio
-    postgresMajorVersion: "17"
-    databaseName: vicky
-    user: vicky

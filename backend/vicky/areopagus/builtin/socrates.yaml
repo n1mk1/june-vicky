@@ -58,7 +58,7 @@ scoring_weights:
   clarity: 0.1
   composure: 0.2
   investor_fit: 0.1
-voice_id: null
+voice_id: 2EiwWnXFnvU5JabPnv8n  # premade "Clyde": gravelly, blunt
 kits: [RedTeam]
 base_archetype: null
 builtin: true

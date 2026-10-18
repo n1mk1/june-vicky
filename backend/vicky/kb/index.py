@@ -163,13 +163,19 @@ async def build(bid: str) -> dict[str, Any]:
                             r["vec"] = by_sha[r["sha"]]
                             reused += 1
             todo = [r for r in rows if r["vec"] is None]
-            for i in range(0, len(todo), voyage.BATCH):
-                await _check(bid)
-                part = todo[i : i + voyage.BATCH]
-                vecs = await voyage.embed([embed_text(r["note"], r["chunk"]) for r in part], "document")
-                for r, v in zip(part, vecs, strict=True):
-                    r["vec"] = voyage.to_pg(v)
-                embedded += len(part)
+            try:
+                for i in range(0, len(todo), voyage.BATCH):
+                    await _check(bid)
+                    part = todo[i : i + voyage.BATCH]
+                    vecs = await voyage.embed([embed_text(r["note"], r["chunk"]) for r in part], "document")
+                    for r, v in zip(part, vecs, strict=True):
+                        r["vec"] = voyage.to_pg(v)
+                    embedded += len(part)
+            except voyage.VoyageError as e:  # still a usable index: BM25 only this time
+                log.warning("kb index %s: no embeddings this time (%s)", bid, e)
+                for r in rows:
+                    r["vec"] = None
+                model, embedded, reused = None, 0, 0
         await _check(bid)
         chunks = await _insert(bid, rows, model)
         old = await _activate(

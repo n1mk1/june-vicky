@@ -61,7 +61,7 @@ scoring_weights:
   clarity: 0.15
   composure: 0.05
   investor_fit: 0.25
-voice_id: null
+voice_id: onwK4e9ZLuTAKqWW03F9  # premade "Daniel": formal, authoritative
 kits: [Governance]
 base_archetype: null
 builtin: true

@@ -39,11 +39,11 @@ type CoverageItem = { group: string; metric_id: string; label: string; available
 | GET | `/engagements/{id}` | — | `Engagement` |
 | PUT | `/engagements/{id}/profile` | `Partial<Profile>` | `Engagement` |
 | POST | `/uploads` | multipart `file`, `engagement_id` (optional: creates a draft engagement) | `Engagement`; 413 over 10 MB; 415 unsupported type |
-| GET | `/datasets/{id}/mapping` | — | `{dataset: DatasetSummary, proposed: ColumnMapping[], confirmed: ColumnMapping[]\|null, targets: {id, label, group, kind}[]}` (`kind`: money · count · date · text) |
-| PUT | `/datasets/{id}/mapping` | `{mapping: ColumnMapping[]}` | same as GET. One date axis per table (422 otherwise); a new axis column re-reads the table from its upload (422 when that column doesn't read as dates). The unit follows the field: `date` for the axis, a currency for money, a count unit for counts |
+| GET | `/datasets/{id}/mapping` | — | `{dataset: DatasetSummary, proposed: ColumnMapping[], confirmed: ColumnMapping[]\|null, targets: {id, label, group, kind}[]}` (`kind`: money · count · date · text · custom; `custom` targets are the engagement's own custom fields) |
+| PUT | `/datasets/{id}/mapping` | `{mapping: ColumnMapping[]}` | same as GET. One date axis per table (422 otherwise); a new axis column re-reads the table from its upload (422 when that column doesn't read as dates). The unit follows the field: `date` for the axis, a currency for money, a count unit for counts. A **custom field**: `canonical_field: "custom."` with `label` ("Active pilots") creates `custom.active_pilots`; an existing `custom.<slug>` reuses it (422 for an id that isn't `custom.` + lowercase letters, digits, `_`). Custom columns are labelled series for charts, chat and search, not inputs to standard metrics |
 | POST | `/engagements/{id}/facts` | `{name, label?, value, unit, period?, kind?}` (founder-typed → `founder_stated`) | `Engagement` |
 | DELETE | `/engagements/{id}/facts/{fact_id}` | — | `Engagement` |
-| POST | `/engagements/{id}/confirm` | — | `Engagement` (now `active`; any previous active engagement is archived; default dashboard built) |
+| POST | `/engagements/{id}/confirm` | — | **Confirm knowledge base.** `Engagement` (now `active`; any previous active engagement is archived; default dashboard built) plus `index: {build_id, status}`: the confirmed profile, mappings and facts are written to `company/Confirmed knowledge base.md` and the search index is rebuilt from the whole vault. Unreviewed low-confidence column guesses are kept as raw columns (with a dataset note) instead of blocking the confirm |
 
 `ColumnMapping = {source_column, canonical_field: string|null, unit, confidence, note}`; `unit` is a figure unit (a currency, `pct`, `count`, `months`, `ratio`, `x`), `date` or `text`. Dataset columns carry `unit_hint` (`pct` · `date` · `text`) and `scale` (1000 when the header or a title row says the values are in thousands).
 
@@ -144,7 +144,14 @@ type Session = { id: string; status: "live"|"ended"; mode: "prepare"; panel: Per
 
 | Method | Path | Returns |
 |---|---|---|
-| POST | `/pitch/start` | 409 `{detail}` without a confirmed TruthPack; otherwise 501 until the voice pipeline lands |
+| POST | `/pitch/start` | No body: 409 `{detail}` without a confirmed TruthPack; otherwise `{voice: bool, stt: {url, model_id, sample_rate}}` (`voice` false without `ELEVENLABS_API_KEY`). Body `{mode: live\|after, panel[], deck_id?}`: also opens a pitch → `pitch` (status `presenting`, Vicky's opening in `say[]`, `voices` {speaker → ElevenLabs voice id}: one distinct voice per seat and Vicky, cast for each archetype) |
+| POST | `/pitch/deck` | Multipart PDF or PowerPoint (≤ 40 slides): `{id, filename, kind: pdf\|pptx, slides[{n, text, image (JPEG data URL; null for a PowerPoint), title, bullets[], claims[], kb[]}]}`; each slide's figures checked by code (they replace the TruthPack's deck claims) and its statements against the knowledge base (`kb[]`: `{id, slide, source, text, topic, verdict: supported\|contradicted\|new\|unclear, quote, path, cite, why}`). The deck is never added to the knowledge base. 415 for anything but a PDF or a zip-based Office file, 422 for one that isn't a deck |
+| GET | `/pitch/{id}` | The pitch: `mode, status, panel, ledger[], interrupts[], pending, court_id, stats` (Redis, 6 h) |
+| POST | `/pitch/{id}/segment` | `{text, slide?, t_ms}`, a transcript segment: `{claims[], kb[], interrupt?, pitch}` (`kb[]`: its statements checked against the knowledge base, as on `/pitch/deck`; `pitch.kb` has them all). Live mode: a contradiction of the data or of the notes (or a forecast as fact) may bring `interrupt {speaker, text, on: data\|notes}`, scored in code; ≤ 1 per slide, 30 s cooldown. 409 once the presentation is over |
+| POST | `/pitch/{id}/reply` | `{text}`, the answer to the open interrupt: judged → `{say[], score, pitch}` (the investor hands the floor back). 409 when nobody asked |
+| POST | `/pitch/{id}/end` | Live: `{pitch (status ended, stats, Vicky's wrap-up in say[]), court: null}`. After: spoken claims join the deck claims, then `court` is a new court session (`mode: simulate`, 6 questions) run on `/court/*` |
+| POST | `/voice/stt-token` | `{token, url, model_id, sample_rate}`: a single-use ElevenLabs realtime Scribe token (15 min). 503 without a key, 502/503 when ElevenLabs refuses |
+| GET | `/voice/tts?text=&speaker=&voice_id=` | `audio/mpeg`, streamed. `text` ≤ 1200 chars; `voice_id` wins, else `speaker`'s voice (persona id → its `voice_id`, else its archetype's; `vicky` or none → `VICKY_VOICE_ID`), else a premade voice. The pitch room passes `voice_id` from `pitch.voices`. Model `ELEVENLABS_TTS_MODEL` (default `eleven_flash_v2_5`) |
 
 ## Knowledge base
 
@@ -174,7 +181,7 @@ type KbLinkRef = { id: string|null; path: string|null; title: string };   // id 
 | POST | `/kb/organize` | `{full?: boolean}` | `{job_id}`; `full` re-organizes every note, otherwise only new ones |
 | GET | `/kb/export?originals=` | — | `application/zip`: the vault (`.md` with frontmatter, `.csv`, `.vicky/meta.json`), plus `_originals/` when asked |
 | GET | `/kb/files/{id}` | — | the original file as uploaded |
-| POST | `/kb/autofill` | — | `{engagement: Engagement, by: "claude"\|"heuristic", profile: {field, value, evidence}[], added: {note, as}[], skipped: {note, reason}[], index: {build_id, status}}`; a new **draft** engagement for the intake flow, and a full rebuild of the search index in the background ([08-RAG.md §Indexing](08-RAG.md#indexing)); **422** when the vault is empty |
+| POST | `/kb/autofill` | — | `{engagement: Engagement, by: "claude"\|"heuristic", profile: {field, value, evidence}[], added: {note, as}[], skipped: {note, reason}[], index: KbIndexStatus}`; a new **draft** engagement for the intake flow. The search index is not rebuilt here: confirming the knowledge base does it ([08-RAG.md §Indexing](08-RAG.md#indexing)); **422** when the vault is empty |
 
 `Engagement` also carries `profile_sources: Record<field, string>`: where each autofilled profile value came from (`From [[path]]: “quote”`).
 
@@ -191,11 +198,11 @@ Off by default: with no `ANTHROPIC_API_KEY` (or `LLM_MODE=offline`) every route 
 
 | Step | Model / effort | Code keeps the authority |
 |---|---|---|
-| VC memo (`/court/start`) | `MODEL_DEEP`, high; tool runner over `get_metric` + the persona's kit tools | starts from code's gap ownership; a hypothesis must name an attack item or a real figure id; confidences clamped; opening question audited |
-| Belief update + bid (`/court/{id}/answer`) | `MODEL_FAST`, low; one call per VC, in parallel | no-concession rule (confidence drops only on a cited matching figure), at most ±0.35 per answer; bids/targets validated |
-| Chair | `MODEL_FAST`, low, no thinking | must name a ranked candidate within `CHAIR_TIMEOUT_S` (1.5 s), else `ranked[0]`; logged in `chair_decisions` with `fallback` |
-| VC line | `MODEL_FAST`, medium | `audit_text`; on failure regenerated once with the findings, then the offline line (`turn.audit.regenerated`) |
-| Judge | `MODEL_DEEP`, high | dims 2–5 clamped to 0–5; accuracy, correct figure and why-asked stay code's; rationale and strong answer audited |
+| VC memo (`/court/start`) | `MODEL_INVESTOR`, low; tool runner over `get_metric` + the persona's kit tools | starts from code's gap ownership; a hypothesis must name an attack item or a real figure id; confidences clamped; opening question audited |
+| Belief update + bid (`/court/{id}/answer`) | `MODEL_INVESTOR`, low; one call per VC, in parallel | no-concession rule (confidence drops only on a cited matching figure), at most ±0.35 per answer; bids/targets validated |
+| Chair (Vicky) | `MODEL_VICKY`, low | must name a ranked candidate within `CHAIR_TIMEOUT_S` (6 s), else `ranked[0]`; logged in `chair_decisions` with `fallback` |
+| VC line | `MODEL_INVESTOR`, low | `audit_text`; on failure regenerated once with the findings, then the offline line (`turn.audit.regenerated`) |
+| Judge (Vicky) | `MODEL_VICKY`, low | dims 2–5 clamped to 0–5; accuracy, correct figure and why-asked stay code's; rationale and strong answer audited |
 | Claim extraction | `MODEL_TINY`, low | merged with code's extraction; a claim must quote the answer verbatim, number included |
 | Column mapper (`POST /uploads`, series tables) | `MODEL_FAST`, medium, ≤ 30 s | targets validated, units set by code, merged with the heuristic; a heuristic total column keeps its field |
 | Document facts (FR-7) | `MODEL_DEEP`, medium, two passes | see below |

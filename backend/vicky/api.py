@@ -22,10 +22,13 @@ from vicky.areopagus.registry import PersonaError
 from vicky.config import get_settings
 from vicky.court import session as court
 from vicky.court.session import CourtError
+from vicky.kb import ingest as kb_ingest
 from vicky.kb import routes as kb_routes
 from vicky.model import sources as src
 from vicky.model.figures import figure_dict
 from vicky.model.truth import check_claim
+from vicky.pitch import session as pitch
+from vicky.pitch import voice
 from vicky.services import dashboards, engagements
 from vicky.services.dashboards import Conflict
 from vicky.services.engagements import FACT_UNITS, Invalid, NotFound
@@ -279,6 +282,12 @@ async def upload(file: UploadFile = File(...), engagement_id: str | None = Form(
     data = await file.read(limit + 1)
     if len(data) > limit:
         raise HTTPException(413, f"Files are limited to {limit // (1024 * 1024)} MB")
+    # Every file that enters Vicky lands in the knowledge base too (deduplicated by its bytes), so the next
+    # Fill dashboard and confirm put it in search (docs/07-KNOWLEDGE-BASE.md).
+    try:
+        await kb_ingest.import_files([(file.filename or "upload", data, file.content_type or "")])
+    except Exception:
+        log.exception("could not add an upload to the knowledge base")
     try:
         eid = await engagements.add_upload(
             engagement_id or None, file.filename or "upload", data, file.content_type or ""
@@ -312,8 +321,10 @@ async def remove_fact(eid: str, fact_id: str) -> dict:
 
 @api.post("/engagements/{eid}/confirm")
 async def confirm(eid: str) -> dict:
-    await engagements.confirm(eid)
-    return await engagements.detail(eid)
+    """Confirm the knowledge base: the draft becomes the source of truth, its confirmed profile, mappings and
+    facts are written into the vault, and the search index is rebuilt (`index`: the build that started)."""
+    build = await engagements.confirm(eid)
+    return {**await engagements.detail(eid), "index": build}
 
 
 @api.get("/truth")
@@ -698,18 +709,97 @@ async def job_retry(jid: str) -> dict:
 # ---------------------------------------------------------------- simulation
 
 
-@api.post("/pitch/start")
-async def pitch_start() -> dict:
+class PitchStart(BaseModel):
+    mode: Literal["live", "after"] = "after"
+    panel: list[str] | None = Field(default=None, max_length=5)
+    deck_id: str | None = Field(default=None, max_length=64)
+
+
+class SegmentIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    slide: int | None = Field(default=None, ge=1, le=pitch.MAX_PAGES)
+    t_ms: int = Field(ge=0)
+
+
+async def _pitch_gate() -> None:
     try:
         await engagements.require_confirmed()
     except NotFound as e:
         raise HTTPException(
             409, "Confirm a source of truth before the simulation: the panel checks every claim against it."
         ) from e
-    raise HTTPException(501, "The voice simulation is not built yet. Practice in Preparation meanwhile.")
+
+
+@api.post("/pitch/start")
+async def pitch_start(body: PitchStart | None = None) -> dict:
+    """Without a body: may the pitch room open? 409 without a confirmed TruthPack; `voice` says whether
+    ElevenLabs is configured. With a body: opens a pitch (mode, panel, the deck from `/pitch/deck`) and returns
+    it, with Vicky's opening line in `say`."""
+    await _pitch_gate()
+    out = {"voice": voice.enabled(), "stt": voice.stt_config()}
+    if body is None:
+        return out
+    try:
+        return {**out, "pitch": await pitch.begin(body.mode, body.panel, body.deck_id)}
+    except (PersonaError, pitch.PitchError) as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@api.post("/pitch/deck", dependencies=[auth.Budget])
+async def pitch_deck(file: UploadFile = File(...)) -> dict:
+    """A PDF or PowerPoint deck: every slide (a PDF page as an image, a PowerPoint slide as text) with its figures
+    checked against the TruthPack and its statements against the knowledge base. The deck is not added to the
+    knowledge base."""
+    await _pitch_gate()
+    limit = get_settings().kb_upload_max_bytes
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(413, f"Decks are limited to {limit // (1024 * 1024)} MB")
+    if not (data.startswith(b"%PDF") or data.startswith(b"PK")):
+        raise HTTPException(
+            415, "Upload the deck as a PDF or a PowerPoint (.pptx); export Keynote or Slides to either."
+        )
+    try:
+        return await pitch.add_deck(data, file.filename or "deck.pdf")
+    except pitch.PitchError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@api.get("/pitch/{pid}")
+async def pitch_view(pid: str) -> dict:
+    return pitch.view(await pitch.load(pid))
+
+
+@api.post("/pitch/{pid}/segment", dependencies=[auth.Budget])
+async def pitch_segment(pid: str, body: SegmentIn) -> dict:
+    """A transcript segment, tagged with the slide on screen: its claims are checked and, in live mode, may
+    bring an interrupt."""
+    try:
+        return await pitch.segment(pid, body.text, body.slide, body.t_ms)
+    except pitch.PitchError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@api.post("/pitch/{pid}/reply", dependencies=[auth.Budget])
+async def pitch_reply(pid: str, body: AnswerIn) -> dict:
+    """The founder's answer to a live interrupt: judged, and the investor hands the floor back."""
+    try:
+        return await pitch.reply(pid, body.text)
+    except pitch.PitchError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@api.post("/pitch/{pid}/end", dependencies=[auth.Budget])
+async def pitch_end(pid: str) -> dict:
+    """Live mode: Vicky's wrap-up. After mode: opens the Q&A (a court session in `simulate` mode)."""
+    try:
+        return await pitch.end(pid)
+    except (PersonaError, CourtError, pitch.PitchError) as e:
+        raise HTTPException(422, str(e)) from e
 
 
 api.include_router(kb_routes.router)
+api.include_router(voice.router)
 app.include_router(open_api)
 app.include_router(api)
 

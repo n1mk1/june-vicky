@@ -231,6 +231,9 @@ def question_for(
     figs = _figs(ctx)
     extra = {**fill_extra(ctx), **(company_extra or {})}
     quotes = hyp.get("quotes") or []
+    # A discrepancy between the pitch and the founder's notes carries its own question, written by code.
+    if hyp.get("question") and passes(hyp["question"], ctx, quotes):
+        return hyp["question"]
     lead = hyp["detail"] if hyp.get("detail") and passes(hyp["detail"], ctx, quotes) else ""
     for score, q in _bank_match(p, hyp, asked):
         text = fill(q.text, figs, ctx.company, extra)
@@ -321,6 +324,17 @@ def intro(panel: list[VCPersona], ctx: TruthContext, coaching: str, cap: int, kn
         f"Each of them owns different weak spots, so expect different questions. I review every question before "
         f"it's asked and score every answer. {mode}{notes} "
         f"Answer with your own figures; every number is checked against your data."
+    )
+
+
+def pitch_intro(panel: list[VCPersona]) -> str:
+    """Vicky opens the Q&A after a pitch (spoken; no figures, so no count either)."""
+    names = ", ".join(p.name for p in panel[:-1]) + (
+        f" and {panel[-1].name}" if len(panel) > 1 else panel[0].name
+    )
+    return (
+        f"That was the pitch. {names} have checked what you said against your data. "
+        "Questions now. Answer out loud; when you stop talking, I take that as your answer."
     )
 
 

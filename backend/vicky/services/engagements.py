@@ -6,7 +6,9 @@ Everything numeric is recomputed by code from the stored datasets and facts.
 """
 
 import hashlib
+import logging
 import math
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -19,12 +21,14 @@ from vicky.model.context import TruthContext, build_context
 from vicky.model.coverage import coverage
 from vicky.model.currencies import norm_currency
 from vicky.model.figures import CURRENCY_UNITS, UNITS, Fact, Source, figure_dict
-from vicky.model.financials import DatasetInput, model_notes
+from vicky.model.financials import CUSTOM_PREFIX, DatasetInput, custom_label, model_notes
 from vicky.model.fx import Rates
 from vicky.model.loader import ColumnProfile, ParsedDataset, parse_upload
 from vicky.model.mapping import ColumnMapping, propose_heuristic, unit_for
 from vicky.model.truth import check_claim
 from vicky.services import fx
+
+log = logging.getLogger(__name__)
 
 STAGES = {"pre_seed", "seed", "series_a", "series_b_plus", "other"}
 UPLOAD_KINDS = {
@@ -53,6 +57,7 @@ FACT_UNITS = UNITS | MONEY_ALIASES
 ROUND_SIZE_MAX = 1e12  # company_profiles.round_size is numeric(14, 2)
 # Below this a proposed mapping is a guess the founder must check (the mapping table marks it in ember).
 REVIEW_CONFIDENCE = 0.6
+CUSTOM_FIELD = re.compile(r"^custom\.[a-z0-9_]{1,48}$")
 
 
 class NotFound(Exception):
@@ -412,6 +417,35 @@ def mapping_targets() -> list[dict]:
     return out
 
 
+def custom_slug(label: str) -> str:
+    """The canonical id of a custom field the founder names in the mapping: "Active pilots" → custom.active_pilots."""
+    slug = re.sub(r"[^a-z0-9]+", "_", label.strip().lower()).strip("_")[:48]
+    if not slug:
+        raise Invalid("A custom field needs a name with letters or digits")
+    return f"{CUSTOM_PREFIX}{slug}"
+
+
+async def custom_targets(engagement_id: str) -> list[dict]:
+    """Custom fields already used in any of the engagement's mappings, so every table can map to them."""
+    rows = await db.fetch(
+        """select coalesce(m.confirmed, m.proposed) as mapping from dataset_mappings m
+           join datasets d on d.id = m.dataset_id where d.engagement_id = $1""",
+        engagement_id,
+    )
+    seen: dict[str, dict] = {}
+    for r in rows:
+        for m in r["mapping"] or []:
+            fid = str(m.get("canonical_field") or "")
+            if fid.startswith(CUSTOM_PREFIX) and fid not in seen:
+                seen[fid] = {
+                    "id": fid,
+                    "label": str(m.get("label") or "").strip() or custom_label(fid),
+                    "group": "custom",
+                    "kind": "custom",
+                }
+    return sorted(seen.values(), key=lambda t: t["label"].lower())
+
+
 async def get_mapping(dataset_id: str) -> dict:
     try:
         uuid.UUID(dataset_id)
@@ -429,7 +463,7 @@ async def get_mapping(dataset_id: str) -> dict:
         "proposed": row["proposed"] or [],
         "confirmed": row["confirmed"],
         "proposer": row["proposer"],
-        "targets": mapping_targets(),
+        "targets": mapping_targets() + await custom_targets(str(row["engagement_id"])),
     }
 
 
@@ -461,6 +495,15 @@ async def put_mapping(dataset_id: str, mapping: list[dict]) -> dict:
     for cm in chosen:
         if cm.source_column not in cols:
             raise Invalid(f"Unknown column {cm.source_column!r}")
+        cm.label = cm.label.strip()[:80]
+        if cm.canonical_field == CUSTOM_PREFIX and cm.label:  # a new custom field, named by its label
+            cm.canonical_field = custom_slug(cm.label)
+        if cm.canonical_field is not None and cm.canonical_field.startswith(CUSTOM_PREFIX):
+            if not CUSTOM_FIELD.match(cm.canonical_field):
+                raise Invalid(f"Custom field ids look like custom.name, not {cm.canonical_field!r}")
+            cm.label = cm.label or custom_label(cm.canonical_field)
+            continue
+        cm.label = ""
         if cm.canonical_field is not None and cm.canonical_field not in valid:
             raise Invalid(f"Unknown canonical field {cm.canonical_field!r}")
     axes = [cm.source_column for cm in chosen if cm.canonical_field == "period"]
@@ -705,6 +748,20 @@ async def context(engagement_id: str, currency: str | None = None) -> TruthConte
     return ctx
 
 
+async def set_deck_claims(engagement_id: str, claims: list[dict]) -> None:
+    """Replace the latest TruthPack's deck claims (`{text, metric, value, unit, period, is_forecast}` each:
+    the slides' claims and what the founder said presenting them). The attack list reads them, so every
+    cached context of the engagement is dropped; the version stays, since no figure changes."""
+    await db.execute(
+        """update truthpacks set deck_claims = $2 where id = (
+             select id from truthpacks where engagement_id = $1 order by created_at desc limit 1)""",
+        engagement_id,
+        claims,
+    )
+    for k in [k for k in _CTX if k[0] == engagement_id]:
+        _CTX.pop(k, None)
+
+
 # ---------------------------------------------------------------- confirm
 
 
@@ -720,7 +777,8 @@ def needs_review(proposed: list[dict], proposer: str | None) -> list[str]:
     ]
 
 
-async def confirm(engagement_id: str) -> None:
+async def confirm(engagement_id: str) -> dict | None:
+    """Confirm the draft as the source of truth, then update the knowledge base search. Returns the index build."""
     from vicky.services import dashboards  # local import: dashboards imports this module
 
     eng = await _require(engagement_id)
@@ -730,23 +788,35 @@ async def confirm(engagement_id: str) -> None:
         if not datasets and not [f for f in pack["facts"] if f.get("status") != "removed"]:
             raise Invalid("Add a file or at least one figure before confirming")
         unreviewed = await conn.fetch(
-            """select d.name, m.proposed, m.proposer from datasets d join dataset_mappings m on m.dataset_id = d.id
+            """select d.id, d.name, d.notes, m.proposed, m.proposer from datasets d
+               join dataset_mappings m on m.dataset_id = d.id
                where d.engagement_id = $1 and m.confirmed is null order by d.created_at""",
             engagement_id,
         )
-        guesses = [
-            f"{', '.join(cols)} ({r['name']})"
-            for r in unreviewed
-            if (cols := needs_review(r["proposed"], r["proposer"]))
-        ]
-        if guesses:
-            # A low-confidence guess could put a column's numbers on the wrong line of the source of truth.
-            raise Invalid(
-                f"Check the mapping before confirming. Matched with low confidence: {'; '.join(guesses)}. "
-                "Review them in step 2 (Mapping) and save."
+        for r in unreviewed:
+            cols = needs_review(r["proposed"], r["proposer"])
+            if not cols:
+                continue
+            # A low-confidence guess could put a column's numbers on the wrong line of the source of truth, so
+            # an unreviewed one is kept as a raw column (charts still see it; metrics don't) instead of
+            # blocking the confirm. Mapping it in step 2 and confirming again puts it to work.
+            kept = [
+                {**m, "canonical_field": None, "note": "kept raw: matched with low confidence"}
+                if m.get("source_column") in cols and m.get("canonical_field")
+                else m
+                for m in r["proposed"]
+            ]
+            note = f"Kept as raw columns (matched with low confidence; map them in step 2 to use them): {', '.join(cols)}"
+            await conn.execute(
+                "update dataset_mappings set proposed = $2 where dataset_id = $1", r["id"], kept
+            )
+            await conn.execute(
+                "update datasets set notes = $2 where id = $1",
+                r["id"],
+                [*[n for n in (r["notes"] or []) if not n.startswith("Kept as raw columns")], note],
             )
         # Unconfirmed proposals the founder didn't change are accepted as shown in the confirm step
-        # (none of them is a low-confidence guess: those stop the confirm above).
+        # (a low-confidence guess among them was kept raw above).
         await conn.execute(
             """update dataset_mappings set confirmed = proposed, confirmed_at = now()
                where confirmed is null and dataset_id in (select id from datasets where engagement_id = $1)""",
@@ -779,6 +849,23 @@ async def confirm(engagement_id: str) -> None:
         )
     _ = eng
     await dashboards.ensure_default(engagement_id, ctx)
+    return await refresh_knowledge(engagement_id)
+
+
+async def refresh_knowledge(engagement_id: str) -> dict | None:
+    """Confirming the knowledge base updates retrieval: the confirmed profile, mappings and facts are written
+    into the vault as a note, then the search index is rebuilt from the whole vault (docs/08-RAG.md)."""
+    from vicky.kb import index, truthnote
+
+    try:
+        await truthnote.write(engagement_id)
+    except Exception:  # the confirm stands without the note; the index still rebuilds from the imports
+        log.exception("could not write the confirmed knowledge base note")
+    try:
+        return await index.start_build(engagement_id)
+    except Exception:
+        log.exception("could not start the search index build after confirm")
+        return None
 
 
 # ---------------------------------------------------------------- reads

@@ -69,7 +69,7 @@ A single centred glass panel on the dark scene: label "ACCESS", one input, a sol
 ### 3.2 Landing (`/`)
 Existing hero, kept. Changes:
 - The prompt bar hint becomes engagement-aware: a link to the knowledge base when no TruthPack is confirmed; otherwise "{Company} loaded · ARR {figure}".
-- The attach button accepts CSV/XLSX/PDF/DOCX/MD; a dropped file shows a thin progress line under the bar and then routes to the TruthPack flow.
+- No attach button on any prompt bar: files go into the knowledge base, and Fill dashboard plus Confirm knowledge base bring them to the agents.
 - The landing page pings `/healthz` on load (warms a free-tier API).
 
 ### 3.3 TruthPack flow (new, drawer or full-page under `/truth`)

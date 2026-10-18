@@ -172,22 +172,24 @@ Curated entries `{id, claim, url, publisher, as_of, business_model, stage, topic
 
 ### 5.2 Roster
 
+The court's agents: Vicky orchestrates on Opus 5.5 (`MODEL_VICKY`) and the five investors run on Sonnet 5.5 (`MODEL_INVESTOR`), all at low effort (`VICKY_ROUTES` / `INVESTOR_ROUTES` in `llm/client.py`). The investors research before the meeting (memo tool loop over figures, kit tools and the founder's notes) and question the founder's claims, foresight, business judgment and knowledge of their own notes.
+
 | Agent | Model / effort | Shape | Output |
 |---|---|---|---|
-| VC memo | Opus 5.5, high | tool_runner with read-only kit tools, then parse | `Memo{thesis, hypotheses[{id, claim, lens, evidence[figure_id], severity, confidence}], mind_changers[], opening_question}` |
+| VC memo | Sonnet 5.5, low | tool_runner with read-only kit tools, then parse | `Memo{thesis, hypotheses[{id, claim, lens, evidence[figure_id], severity, confidence}], mind_changers[], opening_question}` |
 | VC update + bid | Sonnet 5.5, low | one parse per VC per answer, all parallel | `BeliefUpdate{deltas[{hyp_id, new_confidence, why}], bid, intent: follow_up|new_topic|jump_in|pass, target_hyp}` |
-| VC speak | Sonnet 5.5, medium | streaming, tools `get_metric`, `check_claim`, `cite_source`, `read_playbook`, `recall` | question text in persona style |
-| Vicky chair | Sonnet 5.5, low | parse ≤ 1.5 s | `ChairDecision{action: call_on|interject|end_session, vc_id?, intent (incl. `knowledge`), hypothesis_id?, note?}` |
-| Vicky line review | Haiku 5.5, low | parse; code's checks always count | `LineReview{verdict: approve|revise, issues[], note}`; one rewrite by the VC when sent back |
-| Knowledge probes | Sonnet 5.5, medium | parse, at session start, over retrieved note passages | `ProbeList{probes[{vc_id, passage_id, question, answer_quote}]}`; the quote must be verbatim |
-| Knowledge question / verification | Sonnet 5.5 low / Haiku 5.5 low | text / parse | the VC's wording; `KnowledgeVerdict{verdict, explanation}` audited against the notes |
+| VC speak | Sonnet 5.5, low | streaming, tools `get_metric`, `check_claim`, `cite_source`, `read_playbook`, `recall` | question text in persona style |
+| Vicky chair | Opus 5.5, low | parse ≤ `CHAIR_TIMEOUT_S` (6 s) | `ChairDecision{action: call_on|interject|end_session, vc_id?, intent (incl. `knowledge`), hypothesis_id?, note?}` |
+| Vicky line review | Opus 5.5, low | parse; code's checks always count | `LineReview{verdict: approve|revise, issues[], note}`; one rewrite by the VC when sent back |
+| Knowledge probes (Vicky) | Opus 5.5, low | parse, at session start, over retrieved note passages | `ProbeList{probes[{vc_id, passage_id, question, answer_quote}]}`; the quote must be verbatim |
+| Knowledge question / verification | Sonnet 5.5 low / Opus 5.5 low | text / parse | the VC's wording; `KnowledgeVerdict{verdict, explanation}` audited against the notes |
 | Vicky chat / debrief / builder / report synthesis | Opus 5.5, medium–high | tool_runner (dashboard tools, `create_vc`, `recall`) over AG-UI | streamed messages + state deltas |
 | Claim extractor | Haiku 5.5, low | parse | `Claim[]{text, metric, value, unit, period, is_forecast}` |
 | Intent router | Haiku 5.5, low | parse | `data|dashboard|practice|other` |
 | Column mapper | Sonnet 5.5, medium | parse | `ColumnMapping[]` |
 | Deck reader (pre-scan) | Opus 5.5, medium | `document` block + slide text + TruthPack summary | `SlideFinding[]{slide, claims[], visual_issues[], omissions[]}` |
 | Doc fact extractor | Opus 5.5, medium | two-pass citations | `Fact[]` |
-| Vicky scoring (route `judge`) | Opus 5.5, high | parse, independent of VCs | scores dims 2–5, rationale, good/missing, strong-answer rewrite; on a knowledge check, uses Vicky's verdict |
+| Vicky scoring (route `judge`) | Opus 5.5, low | parse, independent of VCs | scores dims 2–5, rationale, good/missing, strong-answer rewrite; on a knowledge check, uses Vicky's verdict |
 | Report writer | Opus 5.5, high | streaming + parse | `Report` (10 sections) |
 | Auditor (LLM half) | Sonnet 5.5, low | parse; reports + persona generation only | `AuditFinding[]` |
 | Persona generator | Sonnet 5.5, medium | parse | `VCPersona` |

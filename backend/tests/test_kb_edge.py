@@ -45,13 +45,13 @@ def test_json_that_is_not_records_stays_readable():
     assert bad.format == "md" and "{not json" in bad.content
 
 
-def test_yaml_and_unknown_text_are_fenced_binary_is_refused():
+def test_yaml_and_unknown_text_are_fenced_binary_is_a_stub():
     (y,) = convert.convert("x.yaml", b"a: 1\n")
     assert "```yaml" in y.content
     (t,) = convert.convert("notes.weird", b"plain words")
     assert "plain words" in t.content
-    with pytest.raises(convert.Unreadable):
-        convert.convert("x.exe", b"MZ\x00\x00" + bytes(range(256)))
+    (b,) = convert.convert("x.exe", b"MZ\x00\x00" + bytes(range(256)))
+    assert b.meta["stub"] and "EXE" in b.content
 
 
 def test_xlsx_chart_without_cached_values_names_its_cells():
@@ -239,14 +239,16 @@ async def test_kb_api_limits_errors_and_failures(api_client, monkeypatch):
     out = await _import(
         api_client,
         [
+            ("files", ("broken.xlsx", b"PK\x03\x04 not really a workbook", "application/octet-stream")),
             ("files", ("blob.bin", bytes(range(256)) * 4, "application/octet-stream")),
             ("files", ("ok.csv", b"a,b\n1,2\n", "text/csv")),
         ],
     )
-    assert [f["status"] for f in out["files"]] == ["stored", "stored"]
+    assert [f["status"] for f in out["files"]] == ["stored", "stored", "stored"]
     status = (await api_client.get("/kb/status")).json()
-    assert [f["filename"] for f in status["failures"]] == ["blob.bin"]
-    assert status["jobs"][0]["result"]["failed"] == 1 and status["jobs"][0]["result"]["notes"] == 1
+    # A damaged file fails; a file of a type no converter reads still enters the vault as a stub note.
+    assert [f["filename"] for f in status["failures"]] == ["broken.xlsx"]
+    assert status["jobs"][0]["result"]["failed"] == 1 and status["jobs"][0]["result"]["notes"] == 2
 
 
 @pytestmark_db

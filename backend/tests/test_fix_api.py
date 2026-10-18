@@ -616,7 +616,7 @@ async def test_api16_an_overall_deadline_bounds_a_hanging_api_and_failures_are_r
 
 
 @pytest.mark.db
-async def test_met24_confirm_does_not_silently_accept_low_confidence_proposals(api_client):
+async def test_met24_confirm_keeps_low_confidence_proposals_raw(api_client):
     from vicky import db
 
     await _login(api_client)
@@ -648,12 +648,21 @@ async def test_met24_confirm_does_not_silently_accept_low_confidence_proposals(a
         )
         active = await db.fetchval("select id::text from engagements where status = 'active'")
         r = await api_client.post(f"/engagements/{eng['id']}/confirm")
-        assert r.status_code == 422, r.text
-        assert "Total costs" in r.json()["detail"]
-        assert (await api_client.get(f"/datasets/{ds['id']}/mapping")).json()["confirmed"] is None
-        assert await db.fetchval("select id::text from engagements where status = 'active'") == active
+        # The confirm goes through without a manual step, but the low-confidence guess never reaches the
+        # metrics: it is kept as a raw column, and the table says so.
+        assert r.status_code == 200, r.text
+        m = (await api_client.get(f"/datasets/{ds['id']}/mapping")).json()
+        cost = next(c for c in m["confirmed"] if c["source_column"] == "Total costs")
+        assert cost["canonical_field"] is None and "low confidence" in cost["note"]
+        assert (
+            next(c for c in m["confirmed"] if c["source_column"] == "Revenue")["canonical_field"]
+            == "revenue.total"
+        )
+        assert any("Total costs" in n for n in m["dataset"]["notes"])
     finally:
-        await db.execute("delete from engagements where id::text = $1 and status = 'draft'", eng["id"])
+        await db.execute("delete from engagements where id::text = $1", eng["id"])
+        if active:  # the sample stays the source of truth for the tests after this one
+            await db.execute("update engagements set status = 'active' where id::text = $1", active)
 
 
 def test_met24_a_reviewed_or_confident_mapping_needs_no_review():

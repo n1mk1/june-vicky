@@ -12,6 +12,7 @@ Code: `backend/vicky/kb/`, `frontend/components/kb/`. Routes: [API.md §Knowledg
 | Notes and originals in Postgres (`kb_notes`, `kb_files`) | Render's disk is ephemeral and the image is read-only; the database is already backed up. |
 | Conversion is code only | Rule 1: numbers come from code. Text layers (pypdf, python-docx, python-pptx, openpyxl), OCR (tesseract) for pages and images without one, and chart values read from the chart XML's cached series. No model writes or reads a number into a note. |
 | The organizer may write prose, never figures | Claude writes titles, tags, summaries, related links and hub notes. `scrub_numbers` drops any sentence whose numbers aren't in the notes it describes. Offline, a keyword heuristic does the same job. |
+| Every file goes into the vault | A file uploaded anywhere (`POST /uploads` too) is also imported into the knowledge base, deduplicated by its bytes; a file of a type no converter reads still gets a stub note. The pitch deck is the one exception: it is checked against the vault, never added. |
 | Autofill reuses the intake pipeline | Tables go through `POST /uploads` (so the column mapper runs as before), documents through FR-7 fact extraction (PDF/DOCX originals keep page citations; OCR'd ones go as their markdown). The founder still confirms every step. |
 | Profile values carry a quote | Each autofilled field names its note and a verbatim quote; code checks the quote is in the note, and that a round size's number is in the quote. Unverified values are left blank. The intake form shows the source under each field. |
 | Wikilinks are parsed on read | `[[target]]`, `[[target|alias]]`, `[[target#heading]]` resolve like Obsidian (path, path without extension, file name, title). Renames never leave stale edges; unresolved links show as ghost nodes and create the note when clicked. |
@@ -37,6 +38,12 @@ POST /kb/import (files, folders, zips)
 | PPTX | `## Slide n: title` per slide: text, tables, chart values as tables, picture OCR, speaker notes |
 | Images | OCR text (dense, then sparse for charts and screenshots) |
 | HTML / markdown / text / YAML / XML | markdown (frontmatter title/tags/summary kept on markdown) |
+| ODT / ODS / ODP | markdown / one CSV note per sheet / `## Slide n` per slide |
+| RTF | plain text as markdown |
+| EML | headers and body; each attachment converted as its own note |
+| DOC / XLS / PPT (legacy binary) | the text runs the file holds (tables are lost: import the modern format for figures) |
+| Audio / video | a transcript, diarized by speaker, from ElevenLabs Scribe when `ELEVENLABS_API_KEY` is set |
+| Anything else | a stub note naming the file, linked to its original (downloadable); Fill skips it |
 
 Folders the organizer uses: company, financials, customers, product, market, team, fundraising, legal, operations, other. A note it files moves only if it is in `inbox/` and the founder didn't write it; notes imported inside a folder keep their path. Hub notes (`kind = hub`, `author = ai`) are rewritten after every import; editing one makes it the founder's and it is never rewritten.
 
@@ -59,7 +66,7 @@ The citation rule (rule 4 of `audit_text`, given `notes=`): `[kb:path]` must fol
 
 ## Search index (RAG)
 
-Fill dashboard builds a search index over the vault: chunks, BM25 and (with `VOYAGE_API_KEY` and pgvector) vectors with reranking. Once it exists, `kb_search` returns retrieved passages, Ask Vicky answers through the retrieval ladder (each statement cites a figure or quotes a note, and the whole-vault catch-all runs only when the user accepts an offer), and the live court reads the notes every turn. Edits reach search at the next Fill. Before the first Fill, everything above works as described. Design and results: [08-RAG.md](08-RAG.md).
+Confirming the knowledge base (the intake's last step) builds a search index over the vault: chunks, BM25 and (with `VOYAGE_API_KEY` and pgvector) vectors with reranking. Once it exists, `kb_search` returns retrieved passages, Ask Vicky answers through the retrieval ladder (each statement cites a figure or quotes a note, and the whole-vault catch-all runs only when the user accepts an offer), and the live court reads the notes every turn. Edits reach search at the next confirm. Before the first confirm, everything above works as described. Design and results: [08-RAG.md](08-RAG.md).
 
 ## Not built yet
 

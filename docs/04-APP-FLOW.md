@@ -30,16 +30,22 @@ Failure: wrong code → inline error; 5 failures in a minute → 429 for 60 s.
 
 ## 2. Landing → first source of truth
 
-### 2a. Upload a file
+### 2a. Knowledge base → Fill dashboard → Confirm knowledge base
+
+The knowledge base is the only way in. No chat or wizard step takes a file: the dashboard chat has no attach button and
+the mapping step has no "add another file". Any file posted to `POST /uploads` by another client is also imported into
+the knowledge base. To change what the agents know, the founder adds files to the knowledge base, presses **Fill
+dashboard**, checks the autofilled draft and presses **Confirm knowledge base**, which updates search for every agent.
 
 | Step | User | System | Persisted |
 |---|---|---|---|
-| 1 | Attaches CSV/XLSX/PDF/DOCX/MD in the prompt bar | `POST /uploads` (≤ 10 MB) stores bytes; CSV/XLSX parsed inline into `datasets` with column profiles; PDF/DOCX enqueue an extraction job | `uploads`, `datasets`, `jobs` |
-| 2 | Lands in the TruthPack flow, step 01 | If no engagement is active or the upload clearly belongs to a new company (name mismatch), Vicky asks for the **company profile**; values inferred from the file are prefilled as "inferred" | `engagements` (draft), `company_profiles` |
-| 3 | Confirms the profile | — | `company_profiles` |
-| 4 | Step 02 **Mapping** (CSV/XLSX only): reviews the proposed mapping, fixes low-confidence rows, keeps extras as raw columns; one **Save and continue** saves every table | The loader already found the header under any title rows, the date axis (any date format, Year + Month columns, Excel serials), scaled "$000" values, rolled daily rows and ledgers up to the period and transposed wide layouts; Sonnet proposes `ColumnMapping[]`; choosing another date column re-reads the table | `dataset_mappings`, `datasets` |
+| 1 | Drops any files into the knowledge base | `POST /kb/import`: each file converted to notes (any type: Office, OpenDocument, PDF with OCR, email with attachments, images, recordings transcribed; a stub note for the rest), organized and linked | `kb_files`, `kb_notes` |
+| 2 | Presses **Fill dashboard** | `POST /kb/autofill`: the profile proposed from the vault (Claude, each value with a verified quote; code heuristics for the rest, including country and city), every table and document sent through the intake (column mapper, FR-7 facts). No search rebuild here | `engagements` (draft), `company_profiles`, `uploads`, `datasets` |
+| 3 | Step 01 **Profile**: checks the autofilled fields (each shows its source) | — | `company_profiles` |
+| 4 | Step 02 **Mapping**: reviews the proposed mapping, fixes low-confidence rows, keeps extras as raw columns or names a **custom field** ("+ New custom field…"); one **Save and continue** saves every table | The loader already found the header under any title rows, the date axis (any date format, Year + Month columns, Excel serials), scaled "$000" values, rolled daily rows and ledgers up to the period and transposed wide layouts; Sonnet proposes `ColumnMapping[]`; choosing another date column re-reads the table | `dataset_mappings`, `datasets` |
 | 5 | Step 03 **Facts**: reviews extracted facts (documents) and typed facts; edits/removes rows; unverifiable citations flagged | Two-pass citation extraction job; pypdf verification; facts merged with dataset-derived fields | `truthpacks.facts` (pending) |
-| 6 | Step 04 **Confirm**: reads the coverage checklist, confirms | Code computes all metrics (`Figure` / `MissingFigure`), the attack list over 12 lenses, the coverage checklist and the **default dashboard**. If a TruthPack was already confirmed for a different company, this **starts a new engagement**; the previous stays under Reports | `truthpacks.confirmed_at`, `dashboards`, `widgets`, `engagements.status` |
+| 6 | Step 04 **Confirm**: reads the coverage checklist, presses **Confirm knowledge base** | Unreviewed low-confidence column guesses are kept as raw columns (noted on the table) rather than blocking. Code computes all metrics (`Figure` / `MissingFigure`), the attack list over 12 lenses, the coverage checklist and the **default dashboard**. If a TruthPack was already confirmed for a different company, this **starts a new engagement**; the previous stays under Reports | `truthpacks.confirmed_at`, `dashboards`, `widgets`, `engagements.status` |
+| 6b | — | The confirmed reading is written to `company/Confirmed knowledge base.md` (profile and sources, how each column is read, kept facts; no figures) and the search index is rebuilt from the whole vault in the background ([08-RAG.md](08-RAG.md)) | `kb_notes`, `kb_index_builds`, `kb_chunks` |
 | 7 | Redirected to `/dashboard` | Status pill shows `{Company} · confirmed` | — |
 
 ### 2b. Sample companies
@@ -100,6 +106,30 @@ Budget exceeded mid-session → banner; the session pauses at the next turn and 
 | 6 | Opens the report | Slide-by-slide notes and claims ledger sections populated | — |
 
 Fallback: if STT fails, the founder types lines into the prompt bar; the same pipeline runs.
+
+**Built today.** The pitch room has no chat: one button (Start, then End), the stage, captions and the panel's voices.
+Deck pre-scan runs in the request (no worker yet); delivery stats are words, fillers and seconds per slide.
+
+| Step | User | System | Persisted |
+|---|---|---|---|
+| 0 | Opens `/simulation` | `POST /pitch/start` (no body): 409 → the source-of-truth notice; 200 → `{voice}` | — |
+| 1 | Drops a PDF or PowerPoint (optional), seats the panel, picks Interrupt live / Questions after | `POST /pitch/deck` → a PDF's pages rendered (JPEG, returned only), a PowerPoint's slides read as title and lines → figures → `check_claim`; statements → retrieval over the knowledge base → supported / contradicted / new / unclear with a verbatim note quote → slide chips and two ledgers. The deck is never added to the knowledge base | `truthpacks.deck_claims`, `vicky:deck:{id}` |
+| 2 | Presses **Start** | Mic opens (paused); `POST /pitch/start {mode, panel, deck_id}` → Vicky's opening plays; then the mic streams to realtime Scribe | `vicky:pitch:{id}` |
+| 3 | Presents, moving through slides (←/→) | A pause of ~0.9 s commits a segment → `POST /pitch/{id}/segment` (slide, t_ms) → figures checked against the data and statements against the notes → ledgers ("Claims ledger", "Against your notes") and a toast | `vicky:pitch:{id}` |
+| 4a | **Live**: says something that contradicts the data or their own notes | The segment comes back with `interrupt` (code: severity × interrupt tendency × lane fit; ≤ 1 per slide; 30 s cooldown). Mic pauses, the investor's line (written by code from the check) plays in their voice; the mic reopens; a ~1.8 s pause ends the answer → `POST /pitch/{id}/reply` → judged; the investor hands back; presenting resumes | same |
+| 4b | **After**: presents without interruptions | Segments are checked, nothing interrupts | same |
+| 5 | Presses **End** | Live: `POST /pitch/{id}/end` → Vicky's wrap-up (counts from the ledger). After: Vicky's "compare notes" line plays while `/pitch/{id}/end` stores the spoken claims beside the deck's and opens a court session (`simulate`, 6 questions, no drills or knowledge checks) whose doubts include up to four discrepancies between the pitch and the notes (contradicted first, then claims the notes don't cover), each asked as "Your pitch says …, but your own notes say …: which is right, and what changed?" | `sessions`, `turns`, `memos` |
+| 6 | **After**: answers each question out loud | Each question plays in the asker's voice; the mic reopens; a pause ends the answer → `POST /court/{sid}/answer`; the button reads **End Q&A**, which calls `/court/{sid}/end` | as the court |
+| 7 | Opens the report | The court's report (after mode) | `reports` |
+
+Without an ElevenLabs key, lines show as captions for their reading time and the founder types into a one-line field
+under the button; with the key but the mic blocked (or no mic streaming in the browser), the panel still speaks and the
+founder types. The flow is the same. Voices are configured, not listed (a restricted key may lack `voices_read`):
+built-ins and builder templates carry a premade `voice_id` in their YAML cast for the archetype (`ARCHETYPE_VOICES` in
+`pitch/voice.py`), and Vicky uses `VICKY_VOICE_ID` or a premade one. `POST /pitch/start` casts the sitting once
+(`pitch.voices`, speaker → voice): each seat keeps its own voice, else takes its archetype's next free one, else a
+library voice fixed by its id, so nobody in the room (Vicky included) shares a voice. Live interrupts, hand-backs and
+the Q&A all play with that cast.
 
 ## 6. Areopagus
 
