@@ -64,12 +64,20 @@ test.afterAll(async ({ request }) => {
   for (const n of await runNotes(request)) await request.delete(`/api/v1/kb/notes/${n.id}`);
 });
 
-test("landing has no chat and GET STARTED opens the knowledge base", async ({ page }) => {
+test("landing is black and white, has no chat, and GET STARTED opens the knowledge base", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("before they do.");
-  await expect(page.locator("main textarea, main input[type=text]")).toHaveCount(0);
-  await expect(page.locator("main canvas").first()).toBeVisible({ timeout: 20_000 });
-  await page.locator("main section").getByRole("link", { name: /get started/i }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "JUNE × VICKY" })).toBeVisible();
+  await expect(page.getByText("Know Your Numbers Before They Do")).toBeVisible();
+  await expect(page.locator("main textarea, main input")).toHaveCount(0);
+  expect(await page.locator("main").evaluate((m) => getComputedStyle(m).backgroundColor)).toBe("rgb(0, 0, 0)");
+  // The ASCII V: a canvas with digits drawn on it, changing between frames (the flicker).
+  const canvas = page.locator("main canvas");
+  await expect(canvas).toBeVisible();
+  const frame = () => canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL());
+  const first = await frame();
+  await page.waitForTimeout(600);
+  expect(await frame()).not.toEqual(first);
+  await page.getByRole("link", { name: "Get started" }).click();
   await expect(page).toHaveURL(/\/knowledge$/);
 });
 
