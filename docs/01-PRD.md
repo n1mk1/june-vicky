@@ -90,7 +90,7 @@ Navigation: **Dashboard · Preparation · Simulation · Areopagus · Reports**, 
 ### 6.1 Landing and access
 - Access gate: the `ACCESS_CODE` is entered once; a signed HTTP-only cookie follows.
 - Landing hero (existing v1 template): 3D VICKY mark, headline "Know your numbers before they do.", mode links Insights · Prep · Sim, a prompt bar with attach.
-- Prompt bar actions: upload a source of truth, "Try a sample" (Tidewell, Harbor Labs), or type a question. Haiku intent routing sends `data`/`dashboard` questions to the Dashboard and `practice` to Preparation.
+- Prompt bar actions: attach a file to the source of truth or type a question (no sample companies are offered; data comes in through the knowledge base). Haiku intent routing sends `data`/`dashboard` questions to the Dashboard and `practice` to Preparation.
 - Footer line: "Synthetic data. No investment advice."
 
 ### 6.2 Source of truth (TruthPack) and engagement

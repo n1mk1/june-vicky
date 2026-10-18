@@ -5,6 +5,11 @@
 
 import type { KbNote } from "./types";
 
+/** Where a draft (or the active) source of truth is checked and confirmed, at a step from 1 to 4. */
+export function confirmHref(engagementId: string, step: 1 | 2 | 3 | 4 = 1): string {
+  return `/knowledge/confirm?e=${encodeURIComponent(engagementId)}&step=${step}`;
+}
+
 export const WIKILINK = /\[\[([^[\]|#\n]+?)(?:#[^[\]|\n]*)?(?:\|([^[\]\n]*))?\]\]/g;
 
 const stemOf = (path: string) => {

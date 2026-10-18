@@ -6,8 +6,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CornerMarks, Panel } from "@/components/ui/Panel";
 import { PillButton } from "@/components/ui/Pill";
 import { ErrorNote, Loading } from "@/components/ui/States";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiDelete, apiGet, apiPost } from "@/lib/api";
 import { fmtBytes } from "@/lib/format";
+import { confirmHref } from "@/lib/kb";
 import type { KbAutofill, KbGraph as Graph, KbImportResult, KbJob, KbNote, KbNoteDetail, KbStatus } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
@@ -95,7 +96,7 @@ function batches(files: Picked[]): Picked[][] {
 /**
  * The knowledge base tab: drop any files in, Vicky converts them to markdown and CSV notes, files and
  * links them, and the vault shows as a tree, a graph and an editor. "Fill dashboard" builds a draft
- * source of truth from it for the intake flow.
+ * source of truth from it for the founder to check and confirm.
  */
 export function KnowledgeView() {
   const router = useRouter();
@@ -218,6 +219,19 @@ export function KnowledgeView() {
     }
   };
 
+  /** Delete from the vault row: the same `DELETE /kb/notes/{id}` the open note uses (it also leaves the hubs). */
+  const remove = async (n: KbNote) => {
+    if (!window.confirm(`Delete “${n.title}”? This can't be undone.`)) return;
+    setError(null);
+    try {
+      await apiDelete(`kb/notes/${encodeURIComponent(n.id)}`);
+      if (selected === n.id) close();
+      refreshVault();
+    } catch (err) {
+      if (!guard(err)) setError(errorText(err));
+    }
+  };
+
   const organize = async () => {
     setError(null);
     try {
@@ -234,7 +248,7 @@ export function KnowledgeView() {
     setError(null);
     try {
       const out = await apiPost<KbAutofill>("kb/autofill");
-      router.push(`/intake?e=${encodeURIComponent(out.engagement.id)}&step=1`);
+      router.push(confirmHref(out.engagement.id, 1));
     } catch (err) {
       setFilling(false);
       if (!guard(err)) setError(errorText(err));
@@ -386,7 +400,14 @@ export function KnowledgeView() {
           )}
         >
           <Panel title="Vault" className="max-h-[320px] lg:max-h-none" bodyClassName="min-h-0">
-            <NoteTree notes={list} selected={selected} query={query} onQuery={setQuery} onOpen={(id) => open(id)} />
+            <NoteTree
+              notes={list}
+              selected={selected}
+              query={query}
+              onQuery={setQuery}
+              onOpen={(id) => open(id)}
+              onDelete={(n) => void remove(n)}
+            />
           </Panel>
           <Panel
             title="Graph"

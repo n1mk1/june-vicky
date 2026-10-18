@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { confirmHref } from "@/lib/kb";
 import type { Widget } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +27,7 @@ export function MissingTile({ widget, engagementId, className }: { widget: Widge
       </div>
       {!error && (
         <Link
-          href={engagementId ? `/intake?e=${encodeURIComponent(engagementId)}&step=2` : "/intake"}
+          href={engagementId ? confirmHref(engagementId, 2) : "/knowledge"}
           className="self-start text-[12px] text-ink underline underline-offset-2 hover:text-ember"
         >
           Upload

@@ -1,15 +1,16 @@
 "use client";
 
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useActiveEngagement } from "@/components/app/EngagementProvider";
-import { CornerMarks, Panel } from "@/components/ui/Panel";
+import { CornerMarks } from "@/components/ui/Panel";
 import { PillButton, PillLink } from "@/components/ui/Pill";
 import { ErrorNote, Loading } from "@/components/ui/States";
 import { apiPost } from "@/lib/api";
 import { fmtBytes, fmtDate } from "@/lib/format";
+import { confirmHref } from "@/lib/kb";
 import type { Engagement } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
@@ -17,7 +18,6 @@ import { CoverageList } from "./CoverageList";
 import { FactsTable } from "./FactsTable";
 import { MappingTable } from "./MappingTable";
 import { ProfileForm } from "./ProfileForm";
-import { SamplePicker } from "./SamplePicker";
 import { UploadDrop } from "./UploadDrop";
 
 const STEPS = ["Profile", "Mapping", "Facts", "Confirm"] as const;
@@ -56,63 +56,6 @@ function StepBar({ step, onStep }: { step: Step; onStep: (s: Step) => void }) {
   );
 }
 
-/** Before an engagement exists: pick a sample or upload a file. */
-function SourceStep({ onReady }: { onReady: (e: Engagement, step: Step) => void }) {
-  const { engagement: active } = useActiveEngagement();
-  const drafts = useApi<Engagement[]>("engagements");
-  const open = (drafts.data ?? []).filter((e) => e.status === "draft").slice(0, 4);
-
-  return (
-    <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-6">
-      <div className="flex flex-col gap-3 pt-2">
-        <span className="label">Source of truth</span>
-        <h1 className="display text-[clamp(36px,4.6vw,68px)]">Load the numbers the panel will check you against.</h1>
-        <p className="max-w-[60ch] text-[14px] leading-snug text-ink-2">
-          Upload your financials or try a sample. You&apos;ll confirm the company profile, how each column maps, and any facts
-          your files can&apos;t show. Every figure after that is computed from what you confirm.
-        </p>
-        {active && (
-          <p className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-2">
-            <span className="size-1.5 rounded-full bg-ember" aria-hidden />
-            {active.profile?.name || active.name} is confirmed now. Loading new data starts a new engagement; the current one
-            stays under Reports.
-            <Link href="/dashboard" className="text-ink underline underline-offset-2">
-              Back to the dashboard
-            </Link>
-          </p>
-        )}
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="Upload" marks bodyClassName="flex flex-col gap-3 p-4">
-          <UploadDrop onUploaded={(e) => onReady(e, 1)} />
-          <p className="text-[11.5px] leading-snug text-dim">
-            Tables (CSV, XLSX) are parsed straight away. Documents (PDF, DOCX, MD) are read for facts with page citations.
-          </p>
-        </Panel>
-        <Panel title="Try a sample" marks bodyClassName="p-4">
-          <SamplePicker onLoaded={(e) => onReady(e, 4)} />
-        </Panel>
-      </div>
-      {open.length > 0 && (
-        <Panel title="Unfinished" bodyClassName="divide-y divide-line">
-          {open.map((e) => (
-            <Link
-              key={e.id}
-              href={`/intake?e=${encodeURIComponent(e.id)}`}
-              className="flex items-center justify-between gap-3 px-4 py-3 text-[13px] transition-colors hover:bg-surface-solid/40"
-            >
-              <span className="truncate">{e.profile?.name || e.name || "Untitled"}</span>
-              <span className="flex shrink-0 items-center gap-2 text-[11.5px] text-ink-2">
-                Started {fmtDate(e.created_at)} <ArrowRight className="size-3.5" strokeWidth={1.5} />
-              </span>
-            </Link>
-          ))}
-        </Panel>
-      )}
-    </div>
-  );
-}
-
 function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep: (s: Step) => void }) {
   const router = useRouter();
   const guard = useAccessGuard();
@@ -126,7 +69,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
     return (
       <div className="flex flex-col items-start gap-3">
         <ErrorNote message="That engagement doesn't exist any more." />
-        <PillLink href="/intake" label="Start again" />
+        <PillLink href="/knowledge" label="Back to the knowledge base" />
       </div>
     );
   }
@@ -160,8 +103,8 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
           <span className="label">Source of truth · {e.status === "active" ? "confirmed" : "draft"}</span>
           <h1 className="display truncate text-[clamp(32px,4vw,56px)]">{company}</h1>
         </div>
-        <Link href="/intake" className="flex items-center gap-1 text-[12px] text-ink-2 hover:text-ink">
-          <ArrowLeft className="size-3.5" strokeWidth={1.5} /> Different data
+        <Link href="/knowledge" className="flex items-center gap-1 text-[12px] text-ink-2 hover:text-ink">
+          <ArrowLeft className="size-3.5" strokeWidth={1.5} /> Knowledge base
         </Link>
       </div>
 
@@ -274,8 +217,11 @@ function StepNav({ onBack, onNext }: { onBack: () => void; onNext: () => void })
   );
 }
 
-/** The TruthPack flow (App flow §2a–2b): source → 01 profile → 02 mapping → 03 facts → 04 confirm. */
-export function IntakeView() {
+/**
+ * Checking a draft source of truth before it is confirmed: 01 profile → 02 mapping → 03 facts → 04 confirm.
+ * Drafts come from the knowledge base ("Fill dashboard") or a file attached on the dashboard.
+ */
+export function ConfirmView() {
   const router = useRouter();
   const params = useSearchParams();
   const id = params.get("e");
@@ -283,7 +229,7 @@ export function IntakeView() {
   const step = (raw >= 1 && raw <= 4 ? raw : 1) as Step;
 
   const go = (engagementId: string, s: Step, replace = false) => {
-    const url = `/intake?e=${encodeURIComponent(engagementId)}&step=${s}`;
+    const url = confirmHref(engagementId, s);
     if (replace) router.replace(url, { scroll: false });
     else router.push(url);
   };
@@ -293,7 +239,10 @@ export function IntakeView() {
       {id ? (
         <EngagementFlow key={id} id={id} step={step} setStep={(s) => go(id, s, true)} />
       ) : (
-        <SourceStep onReady={(e, s) => go(e.id, s)} />
+        <div className="flex flex-col items-start gap-3">
+          <ErrorNote message="Nothing to check. Fill the dashboard from the knowledge base to build a source of truth." />
+          <PillLink href="/knowledge" label="Open the knowledge base" />
+        </div>
       )}
     </div>
   );

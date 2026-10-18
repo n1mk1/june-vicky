@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { PromptBar } from "@/components/app/PromptBar";
 import { CitedText } from "@/components/ui/Footnote";
 import { apiPost } from "@/lib/api";
+import { confirmHref } from "@/lib/kb";
 import type { ChatResult } from "@/lib/types";
 import { errorText, useAccessGuard } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
@@ -203,7 +204,7 @@ export function DashboardChat(props: DashboardChatProps) {
               </span>
             )}
             <Link
-              href={`/intake?e=${encodeURIComponent(engagementId)}&step=2`}
+              href={confirmHref(engagementId, 2)}
               className="self-start text-[12px] text-ink underline underline-offset-2 hover:text-ember"
             >
               Upload

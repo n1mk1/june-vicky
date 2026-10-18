@@ -135,15 +135,6 @@ export interface Engagement {
   coverage: CoverageItem[];
 }
 
-export interface Sample {
-  id: string;
-  name: string;
-  country: string | null;
-  business_model: string | null;
-  granularity: string | null;
-  one_liner: string;
-}
-
 export interface ColumnMapping {
   source_column: string;
   canonical_field: string | null;

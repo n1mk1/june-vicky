@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from tests.helpers import load_and_confirm
 from vicky import realtime
 
 pytestmark = pytest.mark.db
@@ -14,8 +15,7 @@ async def _active(api_client) -> dict:
     await api_client.post("/auth/access", json={"code": "vicky-demo"})
     r = await api_client.get("/dashboards/active")
     if r.status_code == 404:
-        eng = (await api_client.post("/samples/tidewell/load")).json()
-        await api_client.post(f"/engagements/{eng['id']}/confirm")
+        await load_and_confirm(api_client, "tidewell")
         r = await api_client.get("/dashboards/active")
     assert r.status_code == 200, r.text
     return r.json()

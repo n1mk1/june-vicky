@@ -210,7 +210,7 @@ test("Fill dashboard builds a draft source of truth from the vault", async ({ pa
   test.setTimeout(150_000);
   await page.goto("/knowledge");
   await page.getByRole("button", { name: "Fill dashboard", exact: true }).click();
-  await expect(page).toHaveURL(/\/intake\?e=[\w-]+&step=1/, { timeout: 120_000 });
+  await expect(page).toHaveURL(/\/knowledge\/confirm\?e=[\w-]+&step=1/, { timeout: 120_000 });
   await expect(page.getByText(/filled these in from your knowledge base/i)).toBeVisible();
   await page.getByRole("button", { name: /02 Mapping/i }).click();
   await expect(page.getByText(new RegExp(`${RUN} pnl`, "i")).first()).toBeVisible();

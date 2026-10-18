@@ -43,7 +43,7 @@ function StageNotice({ gate }: { gate: Gate }) {
               : gate.detail}
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
-          {noTruth ? <PillLink href="/intake" label="Load data" variant="solid" /> : <PillLink href="/preparation" label="Go to Preparation" variant="solid" />}
+          {noTruth ? <PillLink href="/knowledge" label="Open the knowledge base" variant="solid" /> : <PillLink href="/preparation" label="Go to Preparation" variant="solid" />}
         </div>
       </div>
     </div>

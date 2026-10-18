@@ -44,7 +44,7 @@ The script uses your installed Edge or Chrome. Set `BASE_URL` if the app isn't o
 npm run test:e2e
 ```
 
-Global setup signs in with `ACCESS_CODE` (default `vicky-demo`) and loads a sample if nothing is confirmed. Tests share the dashboard, run one at a time, and remove any widget they add and restore the time range afterwards. Set `BASE_URL` if the app isn't on port 3000.
+Global setup signs in with `ACCESS_CODE` (default `vicky-demo`) and, if nothing is confirmed, imports a sample company's files (`E2E_SAMPLE`, default `harbor-labs`) into the knowledge base, fills the dashboard from it and confirms. Tests share the dashboard, run one at a time, and remove any widget they add and restore the time range afterwards. Set `BASE_URL` if the app isn't on port 3000.
 
 ## The dashboard's building blocks
 

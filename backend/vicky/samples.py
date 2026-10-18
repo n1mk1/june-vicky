@@ -1,5 +1,7 @@
-"""Sample companies ("Try a sample"). They load through the same path as any upload:
-files → datasets → mapping (prefilled from the sample's mapping.yaml) → facts → confirm.
+"""Sample company fixtures under ``data/samples/`` for tests and evals.
+
+The app never offers or preloads them: to try one, upload its files through the knowledge base.
+Here they parse straight into datasets, mappings (from the sample's mapping.yaml) and pack facts.
 """
 
 from dataclasses import dataclass, field
@@ -30,16 +32,6 @@ class Sample:
     files: list[SampleFile]
     mappings: dict[str, list[ColumnMapping]] = field(default_factory=dict)
     facts: list[Fact] = field(default_factory=list)
-
-
-def list_samples() -> list[dict]:
-    out = []
-    for d in sorted(p for p in SAMPLES_DIR.iterdir() if p.is_dir() and (p / "profile.yaml").exists()):
-        prof = yaml.safe_load((d / "profile.yaml").read_text(encoding="utf-8")) or {}
-        out.append({"id": d.name, "name": prof.get("name", d.name), "country": prof.get("country"),
-                    "business_model": prof.get("business_model"), "granularity": prof.get("granularity"),
-                    "one_liner": prof.get("one_liner", "")})
-    return out
 
 
 def _mapping_entries(raw) -> dict[str, list[dict]]:
@@ -126,10 +118,3 @@ def load_pack_facts(d: Path) -> list[Fact]:
         ))
     return out
 
-
-def load_targets(sample_id: str) -> list[dict]:
-    path = SAMPLES_DIR / sample_id / "pack_facts.yaml"
-    if not path.exists():
-        return []
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return raw.get("targets", []) if isinstance(raw, dict) else []

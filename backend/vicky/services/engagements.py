@@ -10,8 +10,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-import yaml
-
 from vicky import db, jobs, llm
 from vicky.llm import mapper
 from vicky.model.canonical import FIELDS, SPECIAL_TARGETS
@@ -22,7 +20,6 @@ from vicky.model.financials import DatasetInput
 from vicky.model.loader import ParsedDataset, parse_upload
 from vicky.model.mapping import ColumnMapping, propose_heuristic
 from vicky.model.truth import check_claim
-from vicky.samples import SAMPLES_DIR, load_sample
 
 STAGES = {"pre_seed", "seed", "series_a", "series_b_plus", "other"}
 UPLOAD_KINDS = {".csv": "csv", ".xlsx": "xlsx", ".xlsm": "xlsx", ".pdf": "pdf", ".docx": "docx", ".md": "md", ".txt": "md"}
@@ -247,31 +244,6 @@ async def add_extracted_facts(upload_id: str, facts: list[Fact]) -> int:
     return added
 
 
-async def load_sample_engagement(sample_id: str) -> str:
-    if not (SAMPLES_DIR / sample_id / "profile.yaml").exists():
-        raise NotFound("sample")
-    s = load_sample(sample_id)
-    eid = await create_engagement(s.profile)
-    deck = []
-    deck_path = SAMPLES_DIR / sample_id / "deck_claims.yaml"
-    if deck_path.exists():
-        raw = yaml.safe_load(deck_path.read_text(encoding="utf-8")) or {}
-        deck = raw.get("claims", []) if isinstance(raw, dict) else raw
-    async with db.pool().acquire() as conn, conn.transaction():
-        for f in s.files:
-            kind = _upload_kind(f.filename)
-            uid = await conn.fetchval(
-                """insert into uploads (engagement_id, filename, mime, bytes, size, sha256, kind, status)
-                   values ($1,$2,'text/csv',$3,$4,$5,$6::upload_kind,'parsed') returning id::text""",
-                eid, f.filename, f.data, len(f.data), hashlib.sha256(f.data).hexdigest(), kind)
-            await _store_datasets(conn, eid, uid, kind, f.datasets, str(s.profile.get("currency", "usd")).lower(),
-                                  preset=s.mappings, filename=f.filename)
-        facts = [f.model_copy(update={"status": "pending"}) for f in s.facts]
-        await conn.execute("update truthpacks set facts = $2, deck_claims = $3 where engagement_id = $1",
-                           eid, [f.model_dump(mode="json") for f in facts], deck)
-    return eid
-
-
 # ---------------------------------------------------------------- mappings
 
 def mapping_targets() -> list[dict]:
@@ -426,7 +398,7 @@ async def confirm(engagement_id: str) -> None:
     async with db.pool().acquire() as conn, conn.transaction():
         pack = await _pack(conn, engagement_id)
         if not datasets and not [f for f in pack["facts"] if f.get("status") != "removed"]:
-            raise Invalid("Add a file, a sample or at least one figure before confirming")
+            raise Invalid("Add a file or at least one figure before confirming")
         # Unconfirmed proposals are accepted as shown in the confirm step.
         await conn.execute(
             """update dataset_mappings set confirmed = proposed, confirmed_at = now()
@@ -461,7 +433,7 @@ async def active_id() -> str | None:
 async def resolve(engagement_id: str | None) -> str:
     eid = engagement_id or await active_id()
     if eid is None:
-        raise NotFound("No confirmed source of truth yet. Load a sample or upload your data first.")
+        raise NotFound("No confirmed source of truth yet. Add your files to the knowledge base and fill the dashboard first.")
     return eid
 
 

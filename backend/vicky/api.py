@@ -23,7 +23,6 @@ from vicky.kb import routes as kb_routes
 from vicky.model import sources as src
 from vicky.model.figures import figure_dict
 from vicky.model.truth import check_claim
-from vicky.samples import list_samples
 from vicky.services import dashboards, engagements
 from vicky.services.dashboards import Conflict
 from vicky.services.engagements import Invalid, NotFound
@@ -143,17 +142,6 @@ class ClaimIn(BaseModel):
     is_forecast: bool = False
 
 
-@api.get("/samples")
-async def samples() -> list[dict]:
-    return list_samples()
-
-
-@api.post("/samples/{sample_id}/load")
-async def load_sample(sample_id: str) -> dict:
-    eid = await engagements.load_sample_engagement(sample_id)
-    return await engagements.detail(eid)
-
-
 @api.get("/engagements")
 async def list_engagements() -> list[dict]:
     return await engagements.list_engagements()
@@ -163,7 +151,7 @@ async def list_engagements() -> list[dict]:
 async def active_engagement() -> dict:
     eid = await engagements.active_id()
     if eid is None:
-        raise NotFound("No confirmed source of truth yet. Load a sample or upload your data first.")
+        raise NotFound("No confirmed source of truth yet. Add your files to the knowledge base and fill the dashboard first.")
     return await engagements.detail(eid)
 
 

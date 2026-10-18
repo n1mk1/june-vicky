@@ -68,7 +68,7 @@ A single centred glass panel on the dark scene: label "ACCESS", one input, a sol
 
 ### 3.2 Landing (`/`)
 Existing hero, kept. Changes:
-- The prompt bar hint becomes engagement-aware: "Try a sample" link (opens a sample picker: Tidewell · Harbor Labs · Services Co) when no TruthPack is confirmed; otherwise "{Company} loaded · ARR {figure}".
+- The prompt bar hint becomes engagement-aware: a link to the knowledge base when no TruthPack is confirmed; otherwise "{Company} loaded · ARR {figure}".
 - The attach button accepts CSV/XLSX/PDF/DOCX/MD; a dropped file shows a thin progress line under the bar and then routes to the TruthPack flow.
 - The landing page pings `/healthz` on load (warms a free-tier API).
 

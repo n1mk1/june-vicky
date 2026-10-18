@@ -7,6 +7,7 @@ import re
 
 import pytest
 
+from tests.helpers import load_sample_engagement
 from vicky.samples import SAMPLES_DIR
 
 pytestmark = pytest.mark.db
@@ -18,7 +19,7 @@ async def test_health_is_open(api_client):
 
 
 async def test_fr14_routes_need_the_access_cookie(api_client):
-    for path in ("/samples", "/truth", "/dashboards/active", "/areopagus", "/reports", "/anything-else"):
+    for path in ("/engagements", "/truth", "/dashboards/active", "/areopagus", "/reports", "/anything-else"):
         r = await api_client.get(path)
         assert r.status_code == 401, path
     assert (await api_client.post("/auth/access", json={"code": "wrong"})).status_code == 401
@@ -51,7 +52,8 @@ async def test_upload_unfamiliar_layout_proposes_a_mapping(api_client):
 
 
 async def test_sample_load_confirm_and_figures(api_client):
-    eng = (await api_client.post("/samples/tidewell/load")).json()
+    assert (await api_client.get("/samples")).status_code == 404  # the app offers no samples
+    eng = (await api_client.get(f"/engagements/{await load_sample_engagement('tidewell')}")).json()
     assert eng["status"] == "draft" and eng["facts"] and all(f["status"] == "pending" for f in eng["facts"])
     r = await api_client.post(f"/engagements/{eng['id']}/confirm")
     assert r.status_code == 200 and r.json()["status"] == "active"

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { confirmHref } from "@/lib/kb";
 import { errorText } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { useActiveEngagement } from "./EngagementProvider";
@@ -30,9 +31,9 @@ export function StatusPill({ className }: { className?: string }) {
 
   if (!engagement) {
     return (
-      <Link href="/intake" className={cn(base, "border-invert-bg bg-invert-bg text-invert-ink hover:opacity-90", className)}>
+      <Link href="/knowledge" className={cn(base, "border-invert-bg bg-invert-bg text-invert-ink hover:opacity-90", className)}>
         <span className="size-1.5 rounded-full bg-ember" aria-hidden />
-        No source of truth · Load data
+        No source of truth · Add files
       </Link>
     );
   }
@@ -40,8 +41,8 @@ export function StatusPill({ className }: { className?: string }) {
   const company = engagement.profile?.name || engagement.name;
   return (
     <Link
-      href="/intake"
-      title="Source of truth. Open to load different data."
+      href={confirmHref(engagement.id, 4)}
+      title="Source of truth. Open to check what's confirmed; change it from the knowledge base."
       className={cn(base, "border-line text-ink-2 hover:border-line-strong hover:text-ink", className)}
     >
       <span className="size-1.5 shrink-0 rounded-full bg-ember animate-[pulse-dot_2.4s_ease-in-out_infinite]" aria-hidden />

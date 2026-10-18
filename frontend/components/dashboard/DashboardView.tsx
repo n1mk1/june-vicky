@@ -8,6 +8,7 @@ import { EmptyState, ErrorNote, Loading } from "@/components/ui/States";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api";
 import { pack } from "@/lib/dashboard-layout";
 import { useChannel, useSocketStatus, type Envelope } from "@/lib/socket";
+import { confirmHref } from "@/lib/kb";
 import type { ChatResult, Dashboard, Engagement, ReportSummary, TimeRange, Truth } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { themeName } from "@/lib/echarts-theme";
@@ -191,7 +192,7 @@ export function DashboardView() {
       form.append("file", file);
       if (dash.data) form.append("engagement_id", dash.data.engagement_id);
       const e = await apiPost<Engagement>("uploads", form);
-      router.push(`/intake?e=${encodeURIComponent(e.id)}&step=2`);
+      router.push(confirmHref(e.id, 2));
     } catch (err) {
       setUploading(false);
       if (!guard(err)) setUploadError(errorText(err));
@@ -249,9 +250,9 @@ export function DashboardView() {
         <EmptyState
           label="Dashboard"
           title="No source of truth yet."
-          body="Upload your financials or try a sample. Once you confirm them, every figure here is computed from your data and carries its source."
+          body="Add your financials to the knowledge base and fill the dashboard. Once you confirm them, every figure here is computed from your data and carries its source."
         >
-          <PillLink href="/intake" label="Load data" variant="solid" />
+          <PillLink href="/knowledge" label="Open the knowledge base" variant="solid" />
         </EmptyState>
       </div>
     );

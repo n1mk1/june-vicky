@@ -42,9 +42,9 @@ Failure: wrong code → inline error; 5 failures in a minute → 429 for 60 s.
 | 6 | Step 04 **Confirm**: reads the coverage checklist, confirms | Code computes all metrics (`Figure` / `MissingFigure`), the attack list over 12 lenses, the coverage checklist and the **default dashboard**. If a TruthPack was already confirmed for a different company, this **starts a new engagement**; the previous stays under Reports | `truthpacks.confirmed_at`, `dashboards`, `widgets`, `engagements.status` |
 | 7 | Redirected to `/dashboard` | Status pill shows `{Company} · confirmed` | — |
 
-### 2b. Use a sample
+### 2b. Sample companies
 
-"Try a sample" → picker (Tidewell · Harbor Labs · Services Co) → the fixture goes through **exactly the same path** (profile prefilled, mapping prefilled at high confidence, facts from `pack_facts.yaml`) and lands on the confirm step. One click to confirm.
+The app never preloads or offers a sample company. The knowledge base is the single source of truth: to try a sample, import its files from `backend/data/samples/<id>/` into the knowledge base and press **Fill dashboard**, then check and confirm the draft at `/knowledge/confirm` like any other. Tests load the fixtures directly (`tests/helpers.py`).
 
 ### 2c. Typed figures
 
@@ -144,8 +144,8 @@ Guardrails on save: field caps, delimited persona block, audit applied to the te
 
 ## 10. Demo path (judging, ~5 minutes)
 
-1. Enter the access code. Landing: 3D mark, "Try a sample" → upload the **Harbor Labs** CSV renamed as an unfamiliar file → Vicky asks for the profile → mapping screen → confirm → dashboard with footnoted figures.
-2. "Use the Tidewell sample" → second engagement; the first appears under Reports.
+1. Enter the access code. Knowledge base → import the **Harbor Labs** CSVs (renamed as unfamiliar files) → **Fill dashboard** → check the profile → mapping screen → confirm → dashboard with footnoted figures.
+2. Import the Tidewell files and fill again → second engagement; the first appears under Reports.
 3. Two tabs: ask Vicky for "burn excluding SR&ED as % of revenue by quarter" → widget in both; click a bar → formula + source rows; "zoom to the last 6 months".
 4. Preparation with James, Alex, Mark → memos stream → Vicky chairs → a weak growth answer gets a follow-up and a Coached time-out → end → report with Sources.
 5. Simulation Live: 3-slide deck, say "growing 10% a month" → interruption in a VC voice; ledger `contradicts`. After mode → Q&A + report.

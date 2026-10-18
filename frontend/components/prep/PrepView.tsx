@@ -196,7 +196,7 @@ export function PrepView() {
         title="Confirm a source of truth first."
         body={gate && gate !== "Confirm a source of truth first." ? gate : "The panel checks every number you say against your data, so it needs data to check against."}
       >
-        <PillLink href="/intake" label="Load data" variant="solid" />
+        <PillLink href="/knowledge" label="Open the knowledge base" variant="solid" />
       </EmptyState>
     );
   } else if (!session) {

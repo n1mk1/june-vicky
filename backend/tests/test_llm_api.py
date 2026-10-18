@@ -6,6 +6,7 @@ import re
 
 import pytest
 
+from tests.helpers import load_and_confirm
 from tests.llm_fakes import FILE_META, json_reply, make_pdf, message, page_cite, text_block, text_reply
 from vicky import db, jobs
 
@@ -48,8 +49,7 @@ def scripted(call):
 async def _login_and_confirm(api_client):
     await api_client.post("/auth/access", json={"code": "vicky-demo"})
     if (await api_client.get("/engagements/active")).status_code != 200:
-        eng = (await api_client.post("/samples/tidewell/load")).json()
-        assert (await api_client.post(f"/engagements/{eng['id']}/confirm")).status_code == 200
+        await load_and_confirm(api_client, "tidewell")
 
 
 async def test_prepare_court_runs_on_the_llm_path(api_client, live_llm):

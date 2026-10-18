@@ -10,7 +10,7 @@ import { defineConfig, devices } from "@playwright/test";
  *   npm run test:e2e
  *
  * Global setup signs in with ACCESS_CODE (default: the local dev code) and makes sure a confirmed
- * source of truth exists, loading the first sample if there is none. Tests run one at a time
+ * source of truth exists, importing a sample's files into the knowledge base and filling from it if there is none. Tests run one at a time
  * because they share that dashboard; any widget a test adds is removed again.
  */
 export default defineConfig({

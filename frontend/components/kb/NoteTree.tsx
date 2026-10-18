@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Search } from "lucide-react";
+import { ChevronRight, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiGet } from "@/lib/api";
 import { FOLDER_ORDER, folderLabel } from "@/lib/kb";
@@ -14,6 +14,8 @@ interface NoteTreeProps {
   query: string;
   onQuery: (q: string) => void;
   onOpen: (id: string) => void;
+  /** Delete a note from its row, without opening it. */
+  onDelete?: (note: KbNote) => void;
 }
 
 const KIND_RANK = { hub: 0, note: 1, document: 2, table: 3 } as const;
@@ -27,7 +29,7 @@ function folderRank(f: string) {
 type Hit = KbNote & { snippet?: string };
 
 /** The vault as folders of notes, with search over titles, paths and tags, then note contents. */
-export function NoteTree({ notes, selected, query, onQuery, onOpen }: NoteTreeProps) {
+export function NoteTree({ notes, selected, query, onQuery, onOpen, onDelete }: NoteTreeProps) {
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [hits, setHits] = useState<{ q: string; items: Hit[] }>({ q: "", items: [] });
   const q = query.trim().toLowerCase();
@@ -106,20 +108,37 @@ export function NoteTree({ notes, selected, query, onQuery, onOpen }: NoteTreePr
               {open && (
                 <ul className="ml-3 border-l border-line pl-1">
                   {items.map((n) => (
-                    <li key={n.id}>
+                    <li
+                      key={n.id}
+                      className={cn(
+                        "group flex items-center rounded-[3px] transition-colors",
+                        selected === n.id ? "bg-invert-bg text-invert-ink" : "text-ink-2 hover:bg-surface-solid/50 hover:text-ink",
+                      )}
+                    >
                       <button
                         type="button"
                         onClick={() => onOpen(n.id)}
                         aria-current={selected === n.id ? "page" : undefined}
                         title={n.summary || n.path}
-                        className={cn(
-                          "flex w-full items-center gap-2 rounded-[3px] px-2 py-1 text-left text-[12.5px] transition-colors",
-                          selected === n.id ? "bg-invert-bg text-invert-ink" : "text-ink-2 hover:bg-surface-solid/50 hover:text-ink",
-                        )}
+                        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[12.5px]"
                       >
                         <KindIcon kind={n.kind} className={selected === n.id ? "text-invert-ink" : undefined} />
                         <span className="truncate">{n.title}</span>
                       </button>
+                      {onDelete && (
+                        <button
+                          type="button"
+                          onClick={() => onDelete(n)}
+                          aria-label={`Delete ${n.title}`}
+                          title="Delete note"
+                          className={cn(
+                            "mr-1 grid size-6 shrink-0 place-items-center rounded-full opacity-0 transition-[opacity,color] group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
+                            selected === n.id ? "text-invert-ink hover:text-ember" : "text-dim hover:text-ember",
+                          )}
+                        >
+                          <Trash2 className="size-3.5" strokeWidth={1.5} />
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>

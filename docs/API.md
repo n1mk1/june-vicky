@@ -33,8 +33,6 @@ type CoverageItem = { group: string; metric_id: string; label: string; available
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| GET | `/samples` | — | `{id, name, country, business_model, granularity, one_liner}[]` |
-| POST | `/samples/{id}/load` | — | `Engagement` (draft; profile, datasets, proposed mappings and pack facts prefilled) |
 | GET | `/engagements` | — | `Engagement[]` (newest first, without `datasets/facts/coverage` detail) |
 | GET | `/engagements/active` | — | `Engagement`; 404 when none is confirmed |
 | POST | `/engagements` | `{profile: Partial<Profile>}` | `Engagement` (draft) |

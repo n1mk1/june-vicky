@@ -14,7 +14,7 @@ interface ActiveEngagement {
 
 const Ctx = createContext<ActiveEngagement | null>(null);
 
-/** Shares `GET /engagements/active` across the app shell (status pill, pages, intake). */
+/** Shares `GET /engagements/active` across the app shell (status pill, pages, confirm flow). */
 export function EngagementProvider({ children }: { children: ReactNode }) {
   const res = useApi<Engagement>("engagements/active");
   const none = res.status === 404;
