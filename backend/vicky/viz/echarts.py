@@ -22,19 +22,31 @@ _LINEAR = {"line", "area", "bar", "stacked_bar", "combo_bar_line", "waterfall"}
 def _unit_name(unit: str | None) -> str:
     if unit is None:
         return ""
-    return {"pct": "%", "count": "count", "months": "months", "x": "×", "ratio": "ratio"}.get(unit, unit.upper())
+    return {"pct": "%", "count": "count", "months": "months", "x": "×", "ratio": "ratio"}.get(
+        unit, unit.upper()
+    )
 
 
 def _prov(p: Point) -> dict[str, Any]:
-    return {"label": p.label, "value": p.value, "formula": p.formula,
-            "inputs": [i.model_dump(mode="json", exclude_none=True) for i in p.inputs],
-            "source": p.source.model_dump(mode="json") if p.source else None}
+    return {
+        "label": p.label,
+        "value": p.value,
+        "formula": p.formula,
+        "inputs": [i.model_dump(mode="json", exclude_none=True) for i in p.inputs],
+        "source": p.source.model_dump(mode="json") if p.source else None,
+    }
 
 
 def _kprov(k: KpiItem) -> dict[str, Any]:
-    return {"label": k.label, "value": k.value, "formula": k.formula, "period": k.period, "kind": k.kind,
-            "inputs": [i.model_dump(mode="json", exclude_none=True) for i in k.inputs],
-            "source": k.source.model_dump(mode="json") if k.source else None}
+    return {
+        "label": k.label,
+        "value": k.value,
+        "formula": k.formula,
+        "period": k.period,
+        "kind": k.kind,
+        "inputs": [i.model_dump(mode="json", exclude_none=True) for i in k.inputs],
+        "source": k.source.model_dump(mode="json") if k.source else None,
+    }
 
 
 def _base(spec: WidgetSpec, ev: EvaluatedWidget, theme: str) -> dict[str, Any]:
@@ -43,21 +55,36 @@ def _base(spec: WidgetSpec, ev: EvaluatedWidget, theme: str) -> dict[str, Any]:
         "title": {"text": spec.title, "show": False},
         "aria": {"enabled": True},
         "animationDuration": 400,
-        "_meta": {"status": ev.status, "template": spec.template, "spec_hash": ev.spec_hash, "currency": ev.currency,
-                  "granularity": ev.granularity, "notes": list(ev.notes)},
+        "_meta": {
+            "status": ev.status,
+            "template": spec.template,
+            "spec_hash": ev.spec_hash,
+            "currency": ev.currency,
+            "granularity": ev.granularity,
+            "notes": list(ev.notes),
+        },
     }
 
 
 def _interaction(opt: dict[str, Any], brush_type: str = "lineX") -> None:
-    opt["dataZoom"] = [{"type": "inside", "xAxisIndex": 0, "filterMode": "none"},
-                       {"type": "slider", "xAxisIndex": 0, "filterMode": "none", "height": 18, "bottom": 4}]
+    opt["dataZoom"] = [
+        {"type": "inside", "xAxisIndex": 0, "filterMode": "none"},
+        {"type": "slider", "xAxisIndex": 0, "filterMode": "none", "height": 18, "bottom": 4},
+    ]
     opt["axisPointer"] = {"link": [{"xAxisIndex": "all"}]}
-    opt["brush"] = {"toolbox": [brush_type, "clear"], "xAxisIndex": 0, "brushLink": "all", "throttleType": "debounce"}
+    opt["brush"] = {
+        "toolbox": [brush_type, "clear"],
+        "xAxisIndex": 0,
+        "brushLink": "all",
+        "throttleType": "debounce",
+    }
     opt["toolbox"] = {"show": True, "right": 0, "feature": {"brush": {"type": [brush_type, "clear"]}}}
     opt["grid"] = {"containLabel": True, "left": 8, "right": 8, "top": 36, "bottom": 32}
 
 
-def build_option(spec: WidgetSpec, evaluated: EvaluatedWidget, theme_name: str = "vicky-dark") -> dict[str, Any]:
+def build_option(
+    spec: WidgetSpec, evaluated: EvaluatedWidget, theme_name: str = "vicky-dark"
+) -> dict[str, Any]:
     """The full ECharts option (plus `_provenance` / `_meta`) for one evaluated widget."""
     theme = theme_name if theme_name in THEMES else THEMES[0]
     opt = _base(spec, evaluated, theme)
@@ -75,6 +102,7 @@ def build_option(spec: WidgetSpec, evaluated: EvaluatedWidget, theme_name: str =
 
 
 # ---------------------------------------------------------------- category-axis charts
+
 
 def _rows(ev: EvaluatedWidget, series: list[EvaluatedSeries], sort: str | None) -> list[int]:
     order = list(range(len(ev.periods)))
@@ -102,10 +130,14 @@ def _linear(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[
     opt["_meta"]["units"] = {str(i): s.unit for i, s in enumerate(ev.series)}
 
     if t == "table":
-        opt["_table"] = {"columns": [{"key": "period", "label": "Period", "unit": None}] +
-                         [{"key": f"s{i}", "label": s.label, "unit": s.unit} for i, s in enumerate(ev.series)]}
+        opt["_table"] = {
+            "columns": [{"key": "period", "label": "Period", "unit": None}]
+            + [{"key": f"s{i}", "label": s.label, "unit": s.unit} for i, s in enumerate(ev.series)]
+        }
         opt["series"] = []
-        opt["_provenance"] = {str(i): {ev.periods[j]: _prov(s.points[j]) for j in order} for i, s in enumerate(ev.series)}
+        opt["_provenance"] = {
+            str(i): {ev.periods[j]: _prov(s.points[j]) for j in order} for i, s in enumerate(ev.series)
+        }
         return opt
 
     # axis assignment
@@ -131,14 +163,29 @@ def _linear(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[
     right_flags = [on_right(i, s) for i, s in enumerate(ev.series)]
     left_units = [s.unit for s, r in zip(ev.series, right_flags, strict=True) if not r]
     right_units = [s.unit for s, r in zip(ev.series, right_flags, strict=True) if r]
-    y_axes = [{"type": "value", "position": "left", "name": _unit_name(left_units[0] if left_units else None),
-               "scale": t in ("line", "area") and not pres.stack}]
+    y_axes = [
+        {
+            "type": "value",
+            "position": "left",
+            "name": _unit_name(left_units[0] if left_units else None),
+            "scale": t in ("line", "area") and not pres.stack,
+        }
+    ]
     if any(right_flags):
-        y_axes.append({"type": "value", "position": "right", "name": _unit_name(right_units[0]),
-                       "splitLine": {"show": False}, "scale": True})
+        y_axes.append(
+            {
+                "type": "value",
+                "position": "right",
+                "name": _unit_name(right_units[0]),
+                "splitLine": {"show": False},
+                "scale": True,
+            }
+        )
     opt["yAxis"] = y_axes
     opt["xAxis"] = {"type": "category", "boundaryGap": t not in ("line", "area")}
-    opt["_meta"]["y_units"] = [left_units[0] if left_units else None] + ([right_units[0]] if right_units else [])
+    opt["_meta"]["y_units"] = [left_units[0] if left_units else None] + (
+        [right_units[0]] if right_units else []
+    )
 
     out_series = []
     for i, s in enumerate(ev.series):
@@ -151,8 +198,13 @@ def _linear(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[
             kind = "line" if s.role == "compare" else "bar"
         else:
             kind = "line"
-        item: dict[str, Any] = {"type": kind, "name": s.label, "datasetIndex": 0,
-                                "encode": {"x": "period", "y": f"s{i}"}, "yAxisIndex": 1 if right else 0}
+        item: dict[str, Any] = {
+            "type": kind,
+            "name": s.label,
+            "datasetIndex": 0,
+            "encode": {"x": "period", "y": f"s{i}"},
+            "yAxisIndex": 1 if right else 0,
+        }
         if kind == "line":
             item["smooth"] = pres.smooth
             item["showSymbol"] = len(ev.periods) <= 12
@@ -181,20 +233,33 @@ def _linear(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[
     first_value = next((i for i, s in enumerate(ev.series) if s.role in ("value", "waterfall_up")), 0)
     if ev.mark_lines and out_series:
         out_series[first_value]["markLine"] = {
-            "symbol": "none", "label": {"formatter": "{b}"},
-            "data": [{"name": m.label, "yAxis": m.value} for m in ev.mark_lines]}
+            "symbol": "none",
+            "label": {"formatter": "{b}"},
+            "data": [{"name": m.label, "yAxis": m.value} for m in ev.mark_lines],
+        }
     opt["series"] = out_series
-    opt["legend"] = {"show": True, "type": "scroll", "top": 0,
-                     "data": [s.label for s in ev.series if s.role != "waterfall_base"]}
-    opt["tooltip"] = {"trigger": "axis", "axisPointer": {"type": "shadow" if t in ("bar", "stacked_bar", "waterfall") else "line"}}
+    opt["legend"] = {
+        "show": True,
+        "type": "scroll",
+        "top": 0,
+        "data": [s.label for s in ev.series if s.role != "waterfall_base"],
+    }
+    opt["tooltip"] = {
+        "trigger": "axis",
+        "axisPointer": {"type": "shadow" if t in ("bar", "stacked_bar", "waterfall") else "line"},
+    }
     _interaction(opt)
-    opt["_provenance"] = {str(i): {ev.periods[j]: _prov(s.points[j]) for j in order}
-                          for i, s in enumerate(ev.series) if s.role != "waterfall_base"}
+    opt["_provenance"] = {
+        str(i): {ev.periods[j]: _prov(s.points[j]) for j in order}
+        for i, s in enumerate(ev.series)
+        if s.role != "waterfall_base"
+    }
     opt["_meta"]["mark_lines"] = [m.model_dump(mode="json") for m in ev.mark_lines]
     return opt
 
 
 # ---------------------------------------------------------------- other templates
+
 
 def _scatter(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[str, Any]:
     values = [s for s in ev.series if s.role == "value"]  # a comparison series is never an axis
@@ -204,21 +269,39 @@ def _scatter(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict
         return opt
     x, y = values[0], values[1]
     source: list[list[Any]] = [["period", "x", "y"]]
-    keep = [i for i in range(len(ev.periods)) if x.points[i].value is not None and y.points[i].value is not None]
+    keep = [
+        i for i in range(len(ev.periods)) if x.points[i].value is not None and y.points[i].value is not None
+    ]
     for i in keep:
         source.append([ev.period_labels[i], x.points[i].value, y.points[i].value])
     opt["dataset"] = {"source": source}
-    opt["xAxis"] = {"type": "value", "name": f"{x.label} ({_unit_name(x.unit)})" if x.unit else x.label, "scale": True}
-    opt["yAxis"] = {"type": "value", "name": f"{y.label} ({_unit_name(y.unit)})" if y.unit else y.label, "scale": True}
-    opt["series"] = [{"type": "scatter", "name": spec.title, "datasetIndex": 0,
-                      "encode": {"x": "x", "y": "y", "tooltip": ["period", "x", "y"], "itemName": "period"}}]
+    opt["xAxis"] = {
+        "type": "value",
+        "name": f"{x.label} ({_unit_name(x.unit)})" if x.unit else x.label,
+        "scale": True,
+    }
+    opt["yAxis"] = {
+        "type": "value",
+        "name": f"{y.label} ({_unit_name(y.unit)})" if y.unit else y.label,
+        "scale": True,
+    }
+    opt["series"] = [
+        {
+            "type": "scatter",
+            "name": spec.title,
+            "datasetIndex": 0,
+            "encode": {"x": "x", "y": "y", "tooltip": ["period", "x", "y"], "itemName": "period"},
+        }
+    ]
     opt["tooltip"] = {"trigger": "item"}
     opt["legend"] = {"show": False}
     _interaction(opt, "rect")
     opt["_meta"]["periods"] = [ev.periods[i] for i in keep]
     opt["_meta"]["units"] = {"x": x.unit, "y": y.unit}
     opt["_meta"]["labels"] = {"x": x.label, "y": y.label}
-    opt["_provenance"] = {"0": {ev.periods[i]: {"x": _prov(x.points[i]), "y": _prov(y.points[i])} for i in keep}}
+    opt["_provenance"] = {
+        "0": {ev.periods[i]: {"x": _prov(x.points[i]), "y": _prov(y.points[i])} for i in keep}
+    }
     return opt
 
 
@@ -233,18 +316,37 @@ def _heatmap(ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[str, Any]:
     opt["dataset"] = {"source": source}
     opt["xAxis"] = {"type": "category", "data": list(ev.period_labels), "splitArea": {"show": True}}
     opt["yAxis"] = {"type": "category", "data": [s.label for s in ev.series], "splitArea": {"show": True}}
-    opt["visualMap"] = {"min": min(values) if values else 0, "max": max(values) if values else 1, "calculable": True,
-                        "orient": "horizontal", "left": "center", "bottom": 0, "dimension": 2}
-    opt["series"] = [{"type": "heatmap", "datasetIndex": 0, "encode": {"x": "period", "y": "row", "value": "value"},
-                      "label": {"show": False}, "emphasis": {"itemStyle": {"borderWidth": 1}}}]
+    opt["visualMap"] = {
+        "min": min(values) if values else 0,
+        "max": max(values) if values else 1,
+        "calculable": True,
+        "orient": "horizontal",
+        "left": "center",
+        "bottom": 0,
+        "dimension": 2,
+    }
+    opt["series"] = [
+        {
+            "type": "heatmap",
+            "datasetIndex": 0,
+            "encode": {"x": "period", "y": "row", "value": "value"},
+            "label": {"show": False},
+            "emphasis": {"itemStyle": {"borderWidth": 1}},
+        }
+    ]
     opt["tooltip"] = {"trigger": "item"}
-    opt["dataZoom"] = [{"type": "inside", "xAxisIndex": 0}, {"type": "slider", "xAxisIndex": 0, "height": 18, "bottom": 36}]
+    opt["dataZoom"] = [
+        {"type": "inside", "xAxisIndex": 0},
+        {"type": "slider", "xAxisIndex": 0, "height": 18, "bottom": 36},
+    ]
     opt["grid"] = {"containLabel": True, "left": 8, "right": 8, "top": 8, "bottom": 72}
     opt["_meta"]["periods"] = list(ev.periods)
     opt["_meta"]["rows"] = [s.label for s in ev.series]
     opt["_meta"]["units"] = {"value": ev.series[0].unit if ev.series else None}
     # heatmap cells are addressed by row (series) then period
-    opt["_provenance"] = {str(r): {p.period: _prov(p) for p in s.points if p.value is not None} for r, s in enumerate(ev.series)}
+    opt["_provenance"] = {
+        str(r): {p.period: _prov(p) for p in s.points if p.value is not None} for r, s in enumerate(ev.series)
+    }
     return opt
 
 
@@ -255,9 +357,19 @@ def _scalar(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[
     for i, k in enumerate(items):
         source.append([f"k{i}", k.value])
     opt["dataset"] = {"source": source}
-    opt["_kpi"] = [{"key": f"k{i}", "id": k.id, "label": k.label, "unit": k.unit, "display": k.display,
-                    "kind": k.kind, "period": k.period,
-                    "missing": k.missing.model_dump(mode="json") if k.missing else None} for i, k in enumerate(items)]
+    opt["_kpi"] = [
+        {
+            "key": f"k{i}",
+            "id": k.id,
+            "label": k.label,
+            "unit": k.unit,
+            "display": k.display,
+            "kind": k.kind,
+            "period": k.period,
+            "missing": k.missing.model_dump(mode="json") if k.missing else None,
+        }
+        for i, k in enumerate(items)
+    ]
     opt["_provenance"] = {str(i): {"value": _kprov(k)} for i, k in enumerate(items) if k.value is not None}
     if spec.template == "kpi":
         opt["series"] = []
@@ -267,11 +379,18 @@ def _scalar(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[
     for n, (_, k) in enumerate(rings):
         outer = 92 - n * 16
         ring: dict[str, Any] = {
-            "type": "gauge", "name": k.label, "startAngle": 90, "endAngle": -270,
-            "radius": f"{outer}%", "pointer": {"show": False},
+            "type": "gauge",
+            "name": k.label,
+            "startAngle": 90,
+            "endAngle": -270,
+            "radius": f"{outer}%",
+            "pointer": {"show": False},
             "progress": {"show": True, "overlap": False, "roundCap": True, "width": 10, "clip": False},
-            "axisLine": {"lineStyle": {"width": 10}}, "splitLine": {"show": False}, "axisTick": {"show": False},
-            "axisLabel": {"show": False}, "title": {"show": False},
+            "axisLine": {"lineStyle": {"width": 10}},
+            "splitLine": {"show": False},
+            "axisTick": {"show": False},
+            "axisLabel": {"show": False},
+            "title": {"show": False},
             "detail": {"show": n == 0, "valueAnimation": True, "offsetCenter": [0, 0]},
             "data": [{"value": k.value, "name": k.label}],
         }

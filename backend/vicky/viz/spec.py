@@ -11,8 +11,19 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-Template = Literal["line", "area", "bar", "stacked_bar", "combo_bar_line", "waterfall", "kpi", "gauge_ring",
-                   "heatmap", "scatter", "table"]
+Template = Literal[
+    "line",
+    "area",
+    "bar",
+    "stacked_bar",
+    "combo_bar_line",
+    "waterfall",
+    "kpi",
+    "gauge_ring",
+    "heatmap",
+    "scatter",
+    "table",
+]
 GroupBy = Literal["month", "quarter", "year"]
 Compare = Literal["previous_period", "yoy"]
 
@@ -51,7 +62,9 @@ class MarkLine(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str = Field(max_length=80)
-    value_ref: str = Field(min_length=1, max_length=500, description="Metric id or DSL expression giving one number")
+    value_ref: str = Field(
+        min_length=1, max_length=500, description="Metric id or DSL expression giving one number"
+    )
 
 
 class Presentation(BaseModel):

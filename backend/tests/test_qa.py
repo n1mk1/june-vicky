@@ -49,7 +49,9 @@ def test_answers_are_correct_and_cited(ctx, question, expect):
     assert "couldn't" not in r["reply"].lower(), (question, r["reply"])
     for s in expect:
         assert s in r["reply"], (question, s, r["reply"])
-    if r["topic"] not in ("missing", "inventory") and any(ch.isdigit() for ch in r["reply"].replace("2024", "").replace("2025", "").replace("2026", "")):
+    if r["topic"] not in ("missing", "inventory") and any(
+        ch.isdigit() for ch in r["reply"].replace("2024", "").replace("2025", "").replace("2026", "")
+    ):
         assert r["citations"], (question, "numbers without footnotes")
 
 

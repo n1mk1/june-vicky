@@ -31,7 +31,9 @@ GEO_DIR = DATA_DIR / "playbooks" / "geo"
 VERIFY = "(verify with an advisor)"
 MAX_RULES = 40
 
-FINANCE = r"bookkeep|accounting|accountant|finance|\bcfo\b|controller|audit|professional[ _]?fees|legal|tax[ _]prep"
+FINANCE = (
+    r"bookkeep|accounting|accountant|finance|\bcfo\b|controller|audit|professional[ _]?fees|legal|tax[ _]prep"
+)
 COUNTRY_FILES = {"CA": "CA", "CAN": "CA", "US": "US", "USA": "US", "GB": "UK", "UK": "UK", "GBR": "UK"}
 
 FINANCE_QUESTIONS = [
@@ -44,17 +46,20 @@ FINANCE_QUESTIONS = [
 ]
 
 
-@tool(KIT, "governance_finance_function",
-      "Signals about the finance function: G&A share of opex, spend on bookkeeping / accounting / professional fees "
-      "found in the data, and headcount. Returns Figures: opex_share_g_and_a, finance_spend[], headcount; plus "
-      "questions as plain strings.")
+@tool(
+    KIT,
+    "governance_finance_function",
+    "Signals about the finance function: G&A share of opex, spend on bookkeeping / accounting / professional fees "
+    "found in the data, and headcount. Returns Figures: opex_share_g_and_a, finance_spend[], headcount; plus "
+    "questions as plain strings.",
+)
 def finance_function(ctx: TruthContext) -> Result:
     m = ctx.model
     parts: dict = {"opex_share_g_and_a": get(ctx, "opex_share_g_and_a")}
     p = m.latest("headcount.total")
     if p:
         parts["headcount"] = cell_figure(ctx, "headcount.total", p, fid="headcount.total", label="Headcount")
-    ps = m.periods[-max(1, 12 // m.months_per_period):]
+    ps = m.periods[-max(1, 12 // m.months_per_period) :]
     spend = []
     for i, (ds, col) in enumerate(matching_columns(ctx, FINANCE), start=1):
         f = column_figure(ctx, ds, col, ps, f"governance.finance_col{i}_l12m", f"'{col}', last 12 months")
@@ -64,37 +69,78 @@ def finance_function(ctx: TruthContext) -> Result:
     if spend:
         res["finance_spend"] = spend
     else:
-        res.setdefault("missing", []).append(missing(
-            "governance.finance_spend", "Finance and accounting spend", ["bookkeeping / accounting expense line"],
-            "No bookkeeping, accounting or professional-fees line in the data").model_dump(mode="json"))
+        res.setdefault("missing", []).append(
+            missing(
+                "governance.finance_spend",
+                "Finance and accounting spend",
+                ["bookkeeping / accounting expense line"],
+                "No bookkeeping, accounting or professional-fees line in the data",
+            ).model_dump(mode="json")
+        )
     res["questions"] = list(FINANCE_QUESTIONS)
     return res
 
 
-@tool(KIT, "governance_credit_dependence",
-      "How much of the burn tax credits and grants cover. Returns Figures: credits_l12m, burn_before_credits_l12m, "
-      "credit_share_of_burn, burn, burn_incl_credits, burn_multiple, burn_multiple_ex_credits.")
+@tool(
+    KIT,
+    "governance_credit_dependence",
+    "How much of the burn tax credits and grants cover. Returns Figures: credits_l12m, burn_before_credits_l12m, "
+    "credit_share_of_burn, burn, burn_incl_credits, burn_multiple, burn_multiple_ex_credits.",
+)
 def credit_dependence(ctx: TruthContext) -> Result:
     m = ctx.model
-    parts: dict = {k: get(ctx, k) for k in ("burn", "burn_incl_credits", "burn_multiple", "burn_multiple_ex_credits")}
+    parts: dict = {
+        k: get(ctx, k) for k in ("burn", "burn_incl_credits", "burn_multiple", "burn_multiple_ex_credits")
+    }
     if not m.has("non_dilutive_income"):
-        return out([missing("governance.credits_l12m", "Tax credits and grants", ["non_dilutive_income"],
-                            "No tax-credit or grant income in the data")], **parts)
+        return out(
+            [
+                missing(
+                    "governance.credits_l12m",
+                    "Tax credits and grants",
+                    ["non_dilutive_income"],
+                    "No tax-credit or grant income in the data",
+                )
+            ],
+            **parts,
+        )
     ps = [p for p in last_n_months(ctx, "net_income", 12) if m.value("net_income", p) is not None]
     if not ps:
-        return out([missing("governance.credits_l12m", "Tax credits and grants", ["net_income"],
-                            "Needs net income for the window")], **parts)
-    credits = sum_figure(ctx, "non_dilutive_income", ps, "governance.credits_l12m", "Tax credits and grants, last 12 months")
+        return out(
+            [
+                missing(
+                    "governance.credits_l12m",
+                    "Tax credits and grants",
+                    ["net_income"],
+                    "Needs net income for the window",
+                )
+            ],
+            **parts,
+        )
+    credits = sum_figure(
+        ctx, "non_dilutive_income", ps, "governance.credits_l12m", "Tax credits and grants, last 12 months"
+    )
     ni = sum_figure(ctx, "net_income", ps, "governance.net_income_l12m", "Net income, last 12 months")
-    before = derived("governance.burn_before_credits_l12m", "Net burn before credits, last 12 months",
-                     -(ni.value - credits.value), ctx.currency,
-                     f"−(net income {ni.display} − credits {credits.display})", [ni, credits], period=ni.period)
+    before = derived(
+        "governance.burn_before_credits_l12m",
+        "Net burn before credits, last 12 months",
+        -(ni.value - credits.value),
+        ctx.currency,
+        f"−(net income {ni.display} − credits {credits.display})",
+        [ni, credits],
+        period=ni.period,
+    )
     parts.update(credits_l12m=credits, burn_before_credits_l12m=before)
     if before.value > 0:
         parts["credit_share_of_burn"] = derived(
-            "governance.credit_share_of_burn", "Share of pre-credit burn covered by credits and grants",
-            credits.value / before.value, "pct", f"credits {credits.display} ÷ burn before credits {before.display}",
-            [credits, before], period=ni.period)
+            "governance.credit_share_of_burn",
+            "Share of pre-credit burn covered by credits and grants",
+            credits.value / before.value,
+            "pct",
+            f"credits {credits.display} ÷ burn before credits {before.display}",
+            [credits, before],
+            period=ni.period,
+        )
     return out(**parts)
 
 
@@ -119,7 +165,7 @@ def parse_playbook(text: str) -> tuple[dict, list[str]]:
         if end != -1:
             raw = yaml.safe_load(text[3:end]) or {}
             front = _strings(raw) if isinstance(raw, dict) else {}
-            body = text[end + 4:]
+            body = text[end + 4 :]
     rules: list[str] = []
     section = ""
     current: list[str] | None = None
@@ -160,9 +206,12 @@ def _with_verify(rule: str) -> str:
     return rule if "verify" in rule.lower() else f"{rule.rstrip()} {VERIFY}"
 
 
-@tool(KIT, "governance_country_rules",
-      "Country rules from the company profile's country playbook (tax credits, grants, control status, local rules), "
-      "each to verify with an advisor. Returns plain strings in rules[] and the playbook front-matter; no Figures.")
+@tool(
+    KIT,
+    "governance_country_rules",
+    "Country rules from the company profile's country playbook (tax credits, grants, control status, local rules), "
+    "each to verify with an advisor. Returns plain strings in rules[] and the playbook front-matter; no Figures.",
+)
 def country_rules(ctx: TruthContext) -> Result:
     code = country_code(ctx.profile)
     path: Path | None = None
@@ -173,10 +222,20 @@ def country_rules(ctx: TruthContext) -> Result:
             break
     country = str(ctx.profile.get("country") or "unknown")
     if path is None:
-        return {"country": country, "playbook": None, "rules": [],
-                "missing": [missing("governance.country_rules", "Country rules", [f"playbooks/geo/{code}.md"],
-                                    "No country playbook is available yet").model_dump(mode="json")],
-                "note": "No country rules on file; ask the founder which programmes and rules apply and verify with an advisor."}
+        return {
+            "country": country,
+            "playbook": None,
+            "rules": [],
+            "missing": [
+                missing(
+                    "governance.country_rules",
+                    "Country rules",
+                    [f"playbooks/geo/{code}.md"],
+                    "No country playbook is available yet",
+                ).model_dump(mode="json")
+            ],
+            "note": "No country rules on file; ask the founder which programmes and rules apply and verify with an advisor.",
+        }
     front, rules = parse_playbook(path.read_text(encoding="utf-8"))
     res: Result = {
         "country": country,
@@ -190,5 +249,8 @@ def country_rules(ctx: TruthContext) -> Result:
     return res
 
 
-GOVERNANCE = Kit(KIT, "Finance function, tax-credit dependence and country-specific mandate rules (verify with an advisor).",
-                 [finance_function, credit_dependence, country_rules])
+GOVERNANCE = Kit(
+    KIT,
+    "Finance function, tax-credit dependence and country-specific mandate rules (verify with an advisor).",
+    [finance_function, credit_dependence, country_rules],
+)

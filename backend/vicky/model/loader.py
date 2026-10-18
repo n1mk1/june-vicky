@@ -22,12 +22,27 @@ from typing import Any
 
 from vicky.model.currencies import STRIP_RE, currency_in
 
-MONTHS = {m: i + 1 for i, m in enumerate(
-    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
-)}
+MONTHS = {
+    m: i + 1
+    for i, m in enumerate(
+        ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+    )
+}
 MONTHS.update({"sept": 9, "june": 6, "july": 7})
-FULL_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
-               "november", "december"]
+FULL_MONTHS = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+]
 
 # A series row's source lines in the file ("row 6" in a figure's source); not a column.
 SRC_ROWS = "_src_rows"
@@ -54,7 +69,9 @@ def parse_number(raw: Any) -> float | None:
     while s:
         if s in ("-", "–", "—"):  # Excel's "Accounting" zero: a lone dash beside a currency symbol
             return 0.0 if money else None
-        bare = STRIP_RE.sub("", s).strip()  # US$, £, "USD", "1 200 €" … (the column's currency is read separately)
+        bare = STRIP_RE.sub(
+            "", s
+        ).strip()  # US$, £, "USD", "1 200 €" … (the column's currency is read separately)
         if bare != s:
             money, s = True, bare
         elif s.startswith("(") and s.endswith(")"):
@@ -157,8 +174,9 @@ def parse_period(raw: Any, dayfirst: bool | None = None) -> tuple[str, str] | No
     m = re.match(r"^(\d{4})[\s\-/.']+([a-z]{3,9})\.?$", s)
     if m and (mon := _month_word(m.group(2))):
         return _month(int(m.group(1)), mon)
-    m = re.match(r"^(?:fy)?\s*(?:q|qtr|quarter)\s*([1-4])[\s\-'/,]*(?:fy)?\s*'?(\d{2}|\d{4})$", s) or \
-        re.match(r"^([1-4])q[\s\-'/]*(?:fy)?\s*'?(\d{2}|\d{4})$", s)
+    m = re.match(
+        r"^(?:fy)?\s*(?:q|qtr|quarter)\s*([1-4])[\s\-'/,]*(?:fy)?\s*'?(\d{2}|\d{4})$", s
+    ) or re.match(r"^([1-4])q[\s\-'/]*(?:fy)?\s*'?(\d{2}|\d{4})$", s)
     if m:
         return f"{_year(m.group(2)):04d}-Q{m.group(1)}", "quarter"
     m = re.match(r"^(?:fy)?\s*'?(\d{2}|\d{4})[\s\-'/]*(?:q|qtr|quarter)\s*([1-4])$", s)
@@ -252,8 +270,9 @@ def _day_of(v: Any, dayfirst: bool | None) -> date | None:
 
 
 # A header that is a date word ("Date", "Invoice date", "Billing month", "Period end"), so numbers under it may be dates.
-_DATE_HEAD = re.compile(r"(?:[a-z]+[ _-])?(?:date|month|period|week|day|yyyymm|yyyy-?mm)(?:[ _-](?:end|ending|start|of))?",
-                        re.I)
+_DATE_HEAD = re.compile(
+    r"(?:[a-z]+[ _-])?(?:date|month|period|week|day|yyyymm|yyyy-?mm)(?:[ _-](?:end|ending|start|of))?", re.I
+)
 
 
 def _serial_period(v: Any) -> tuple[str, str] | None:
@@ -298,6 +317,7 @@ def period_reader(name: str, values: list[Any], threshold: float = 0.8) -> tuple
 
 # ---------------------------------------------------------------- tables
 
+
 @dataclass
 class RawTable:
     name: str
@@ -318,9 +338,15 @@ class ColumnProfile:
     scale: float = 1.0  # values were multiplied by this ("Revenue ($000)")
 
     def as_dict(self) -> dict:
-        return {"name": self.name, "dtype": self.dtype, "sample_values": self.sample_values,
-                "null_rate": round(self.null_rate, 3), "currency": self.currency, "unit_hint": self.unit_hint,
-                "scale": self.scale}
+        return {
+            "name": self.name,
+            "dtype": self.dtype,
+            "sample_values": self.sample_values,
+            "null_rate": round(self.null_rate, 3),
+            "currency": self.currency,
+            "unit_hint": self.unit_hint,
+            "scale": self.scale,
+        }
 
 
 @dataclass
@@ -368,7 +394,7 @@ def _split(name: str, rows: list[list[Any]], lines: list[int]) -> RawTable:
     h = _header_index(rows)
     preamble = " · ".join(" ".join(str(c).strip() for c in r if not _blank(c)) for r in rows[:h])
     header = [str(c).strip() if not _blank(c) else "" for c in rows[h]]
-    return RawTable(name, header, rows[h + 1:], preamble, lines[h + 1:])
+    return RawTable(name, header, rows[h + 1 :], preamble, lines[h + 1 :])
 
 
 def _read_csv(data: bytes, filename: str) -> RawTable:
@@ -431,16 +457,37 @@ def _share(values: list[Any], pred) -> float:
 # "($000)", "(in $ thousands)", "in USD millions", "(k$)"; a symbol has no word boundary before it, so only
 # the three-letter code alternative takes `\b`.
 _SCALE_RES = [
-    (re.compile(r"\$\s?bn?\b|\bin billions\b|\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:bn|b|billions?)\s*\)|"
-                r"(?:\b[a-z]{3}|[$£€])\s?billions?\b|\bb(?:n)?\s?\$", re.I), 1e9),
-    (re.compile(r"\$\s?(?:mm|m)\b|\bin millions\b|\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:mm|m|mn|millions?)\s*\)|"
-                r"(?:\b[a-z]{3}|[$£€])\s?millions?\b|\bmm?\s?\$", re.I), 1e6),
-    (re.compile(r"\$\s?k\b|\$\s?'?000s?\b|'000s?\b|\bin thousands\b|"
-                r"\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:k|000s?|thousands?)\s*\)|"
-                r"(?:\b[a-z]{3}|[$£€])\s?(?:'?000s?|thousands?)\b|\bk\s?\$", re.I), 1e3),
+    (
+        re.compile(
+            r"\$\s?bn?\b|\bin billions\b|\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:bn|b|billions?)\s*\)|"
+            r"(?:\b[a-z]{3}|[$£€])\s?billions?\b|\bb(?:n)?\s?\$",
+            re.I,
+        ),
+        1e9,
+    ),
+    (
+        re.compile(
+            r"\$\s?(?:mm|m)\b|\bin millions\b|\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:mm|m|mn|millions?)\s*\)|"
+            r"(?:\b[a-z]{3}|[$£€])\s?millions?\b|\bmm?\s?\$",
+            re.I,
+        ),
+        1e6,
+    ),
+    (
+        re.compile(
+            r"\$\s?k\b|\$\s?'?000s?\b|'000s?\b|\bin thousands\b|"
+            r"\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:k|000s?|thousands?)\s*\)|"
+            r"(?:\b[a-z]{3}|[$£€])\s?(?:'?000s?|thousands?)\b|\bk\s?\$",
+            re.I,
+        ),
+        1e3,
+    ),
 ]
-_NOT_MONEY = re.compile(r"%|percent|margin|rate|ratio|headcount|head count|employees|\bfte|staff|customers|clients|"
-                        r"users|subscribers|accounts|logos|count|number of|#|months|days|units", re.I)
+_NOT_MONEY = re.compile(
+    r"%|percent|margin|rate|ratio|headcount|head count|employees|\bfte|staff|customers|clients|"
+    r"users|subscribers|accounts|logos|count|number of|#|months|days|units",
+    re.I,
+)
 
 
 def scale_of(text: str) -> float:
@@ -474,7 +521,9 @@ def _profile(name: str, values: list[Any], table_scale: float = 1.0) -> ColumnPr
         dtype = "text"
     samples = [str(v) for v in present[:3]]
     null_rate = 1 - len(present) / len(values) if values else 1.0
-    prof = ColumnProfile(name, dtype, samples, null_rate, column_currency_of(name, present) if dtype == "number" else None)
+    prof = ColumnProfile(
+        name, dtype, samples, null_rate, column_currency_of(name, present) if dtype == "number" else None
+    )
     if dtype == "number":
         if _pct_like(name, present):
             prof.unit_hint = "pct"
@@ -529,14 +578,22 @@ _MONTH_HEAD = re.compile(r"^\s*(month|mon|mth|period)\s*$", re.I)
 _QUARTER_HEAD = re.compile(r"^\s*(quarter|qtr|q)\s*$", re.I)
 
 
-def _combine_split_dates(header: list[str], rows: list[list[Any]]) -> tuple[list[str], list[list[Any]], str | None]:
+def _combine_split_dates(
+    header: list[str], rows: list[list[Any]]
+) -> tuple[list[str], list[list[Any]], str | None]:
     """Year | Month (or Year | Quarter) columns become one period column."""
     cols = list(zip(*rows, strict=False)) if rows else []
     if not cols:
         return header, rows, None
 
     def years(i: int) -> bool:
-        return _share(list(cols[i]), lambda v: (n := parse_number(v)) is not None and n == int(n) and 1990 <= n <= 2100) >= 0.8
+        return (
+            _share(
+                list(cols[i]),
+                lambda v: (n := parse_number(v)) is not None and n == int(n) and 1990 <= n <= 2100,
+            )
+            >= 0.8
+        )
 
     def month_of(v: Any) -> int | None:
         n = parse_number(v)
@@ -548,12 +605,26 @@ def _combine_split_dates(header: list[str], rows: list[list[Any]]) -> tuple[list
         m = re.fullmatch(r"q?([1-4])", str(v).strip().lower().split(".")[0])
         return int(m.group(1)) if m else None
 
-    yi = next((i for i, h in enumerate(header) if i < len(cols) and _YEAR_HEAD.match(h or "") and years(i)), None)
+    yi = next(
+        (i for i, h in enumerate(header) if i < len(cols) and _YEAR_HEAD.match(h or "") and years(i)), None
+    )
     if yi is None:
         return header, rows, None
-    for rx, cell, fmt in ((_MONTH_HEAD, month_of, "{y:04d}-{p:02d}"), (_QUARTER_HEAD, quarter_of_cell, "{y:04d}-Q{p}")):
-        pi = next((i for i, h in enumerate(header) if i != yi and i < len(cols) and rx.match(h or "")
-                   and _share(list(cols[i]), lambda v, f=cell: f(v) is not None) >= 0.8), None)
+    for rx, cell, fmt in (
+        (_MONTH_HEAD, month_of, "{y:04d}-{p:02d}"),
+        (_QUARTER_HEAD, quarter_of_cell, "{y:04d}-Q{p}"),
+    ):
+        pi = next(
+            (
+                i
+                for i, h in enumerate(header)
+                if i != yi
+                and i < len(cols)
+                and rx.match(h or "")
+                and _share(list(cols[i]), lambda v, f=cell: f(v) is not None) >= 0.8
+            ),
+            None,
+        )
         if pi is None:
             continue
         keep = min(yi, pi)
@@ -567,16 +638,23 @@ def _combine_split_dates(header: list[str], rows: list[list[Any]]) -> tuple[list
     return header, rows, None
 
 
-_STOCK = re.compile(r"cash|balance|headcount|head count|employees|\bfte|staff|customers|clients|subscribers|users|"
-                    r"accounts|logos|\bmrr\b|\barr\b|run.?rate|inventory|pipeline|backlog|ending|closing|end of|outstanding",
-                    re.I)
+_STOCK = re.compile(
+    r"cash|balance|headcount|head count|employees|\bfte|staff|customers|clients|subscribers|users|"
+    r"accounts|logos|\bmrr\b|\barr\b|run.?rate|inventory|pipeline|backlog|ending|closing|end of|outstanding",
+    re.I,
+)
 _FLOW = re.compile(r"\bnew\b|added|churn|lost|gained|acquired|won|signups?|sign-ups?", re.I)
 # A dimension column of ledger lines; "Account" or "Name" alone could be customers, so their values decide.
-_CATEGORY_HEAD = re.compile(r"category|line ?item|metric|\bgl\b|ledger|\bclass\b|cost cent(?:re|er)|department|"
-                            r"expense type|account (?:name|type|category)|chart of accounts", re.I)
+_CATEGORY_HEAD = re.compile(
+    r"category|line ?item|metric|\bgl\b|ledger|\bclass\b|cost cent(?:re|er)|department|"
+    r"expense type|account (?:name|type|category)|chart of accounts",
+    re.I,
+)
 _CUSTOMER_HEAD = re.compile(r"customer|client|company|logo|tenant|subscriber|buyer|\borg", re.I)
 _AMOUNT_HEAD = re.compile(r"amount|value|total|net|balance|sum|usd|cad|eur|gbp|\$", re.I)
-_FORECAST = re.compile(r"\b(budget|bud|plan|planned|forecast|fcst|fcast|projected|projection|proj|target|estimate|est)\b", re.I)
+_FORECAST = re.compile(
+    r"\b(budget|bud|plan|planned|forecast|fcst|fcast|projected|projection|proj|target|estimate|est)\b", re.I
+)
 
 
 def is_stock(name: str) -> bool:
@@ -601,8 +679,11 @@ def _forced(header: list[str], cols: list, column: str) -> tuple[int, Reader]:
     found = period_reader(column, list(cols[i]) if i < len(cols) else [], threshold=0.5)
     if not found:
         sample = next((str(v) for v in (cols[i] if i < len(cols) else []) if not _blank(v)), "")
-        raise ValueError(f"“{column}” doesn't read as dates" + (f" (it has “{sample[:40]}”)" if sample else "") +
-                         ". Pick the column that holds the dates, or keep this one as a raw column.")
+        raise ValueError(
+            f"“{column}” doesn't read as dates"
+            + (f" (it has “{sample[:40]}”)" if sample else "")
+            + ". Pick the column that holds the dates, or keep this one as a raw column."
+        )
     return i, found[0]
 
 
@@ -632,7 +713,10 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
         found: list[tuple[int, Reader]] = []
         for i, c in enumerate(cols):
             r = period_reader(header[i], list(c))
-            if r and (r[1] or _share(list(c), lambda v: parse_number(v) is not None and parse_period(v) is None) < 0.5):
+            if r and (
+                r[1]
+                or _share(list(c), lambda v: parse_number(v) is not None and parse_period(v) is None) < 0.5
+            ):
                 found.append((i, r[0]))
         if found:
             period_idx, reader = found[0]
@@ -653,16 +737,32 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
         wide = _wide(t, header, rows, notes, table_scale)
         if wide:
             return wide
-        columns = [_profile(h, list(cols[i]) if i < len(cols) else [], table_scale) for i, h in enumerate(header)]
-        raw_rows = [{h: (parse_number(r[i]) if parse_number(r[i]) is not None else r[i]) for i, h in enumerate(header)}
-                    for r in rows]
+        columns = [
+            _profile(h, list(cols[i]) if i < len(cols) else [], table_scale) for i, h in enumerate(header)
+        ]
+        raw_rows = [
+            {
+                h: (parse_number(r[i]) if parse_number(r[i]) is not None else r[i])
+                for i, h in enumerate(header)
+            }
+            for r in rows
+        ]
         for c in columns:
             c.scale = 1.0  # raw rows keep the values as printed
-        notes.append("No date axis found; kept as a raw table" + ("" if not rows else ". Its figures are read as facts"))
-        return ParsedDataset(t.name, "raw", None, "none", False, columns, raw_rows, fingerprint(header), notes)
+        notes.append(
+            "No date axis found; kept as a raw table"
+            + ("" if not rows else ". Its figures are read as facts")
+        )
+        return ParsedDataset(
+            t.name, "raw", None, "none", False, columns, raw_rows, fingerprint(header), notes
+        )
 
     profiles = [_profile(h, list(cols[i]), table_scale) for i, h in enumerate(header)]
-    profiles[period_idx].dtype, profiles[period_idx].unit_hint, profiles[period_idx].scale = "period", "date", 1.0
+    profiles[period_idx].dtype, profiles[period_idx].unit_hint, profiles[period_idx].scale = (
+        "period",
+        "date",
+        1.0,
+    )
     scales = [p.scale for p in profiles]
     _note_scale(profiles, notes)
 
@@ -676,19 +776,32 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
     keyed = [(reader(r[period_idx]), r, n) for r, n in zip(rows, lines, strict=True)]
     keyed = [(p, r, n) for p, r, n in keyed if p]
     if not keyed:
-        return ParsedDataset(t.name, "raw", None, "none", False, profiles, [], fingerprint(header),
-                             [*notes, "No rows with a readable date"])
+        return ParsedDataset(
+            t.name,
+            "raw",
+            None,
+            "none",
+            False,
+            profiles,
+            [],
+            fingerprint(header),
+            [*notes, "No rows with a readable date"],
+        )
     gran = _dominant([p[1] for p, _, _ in keyed])
     off = [p[0] for p, _, _ in keyed if p[1] != gran]
     if off:
         keyed = [(p, r, n) for p, r, n in keyed if p[1] == gran]
-        notes.append(f"Left out {len(off)} subtotal row{'s' if len(off) > 1 else ''} ({', '.join(sorted(set(off))[:3])})")
+        notes.append(
+            f"Left out {len(off)} subtotal row{'s' if len(off) > 1 else ''} ({', '.join(sorted(set(off))[:3])})"
+        )
     # Oldest first within each period, whatever the file order (bank exports list the newest first), so a
     # balance takes the value on the period's latest date.
     first_day = _dayfirst([v for v in cols[period_idx] if not _blank(v)])
     days = [_day_of(r[period_idx], first_day) for _, r, _ in keyed]
     if any(days):
-        order = sorted(range(len(keyed)), key=lambda j: (period_sort_key(keyed[j][0][0]), days[j] or date.min))
+        order = sorted(
+            range(len(keyed)), key=lambda j: (period_sort_key(keyed[j][0][0]), days[j] or date.min)
+        )
         keyed = [keyed[j] for j in order]
     text_dims = [i for i, p in enumerate(profiles) if i != period_idx and p.dtype in ("text", "period")]
     numeric_cols = [i for i, p in enumerate(profiles) if p.dtype == "number"]
@@ -700,8 +813,11 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
         dim_idx = text_dims[0]
         dim_values = [str(r[dim_idx]).strip() for _, r, _ in keyed if not _blank(r[dim_idx])]
         is_cohort = _share(list(cols[dim_idx]), lambda v: parse_period(v) is not None) >= 0.8
-        ledger = not is_cohort and not _CUSTOMER_HEAD.search(header[dim_idx]) and (
-            _CATEGORY_HEAD.search(header[dim_idx]) or _line_items(dim_values))
+        ledger = (
+            not is_cohort
+            and not _CUSTOMER_HEAD.search(header[dim_idx])
+            and (_CATEGORY_HEAD.search(header[dim_idx]) or _line_items(dim_values))
+        )
         if ledger:
             return _pivot(t, header, keyed, dim_idx, numeric_cols, num, scales, notes)
         kind = "cohort_mrr" if is_cohort else "customer_mrr"
@@ -714,8 +830,17 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
                 row[header[i]] = num(i, r[i])
             out_rows.append(row)
         keys = sorted({r["period"] for r in out_rows}, key=period_sort_key)
-        return ParsedDataset(t.name, kind, header[period_idx], _granularity(keys), False, profiles, out_rows,
-                             fingerprint(header), notes)
+        return ParsedDataset(
+            t.name,
+            kind,
+            header[period_idx],
+            _granularity(keys),
+            False,
+            profiles,
+            out_rows,
+            fingerprint(header),
+            notes,
+        )
 
     merged: dict[str, dict[str, Any]] = {}
     stock = [is_stock(h) for h in header]
@@ -735,12 +860,23 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
             elif v is not None:
                 row[h] += v
     if repeats:
-        notes.append(f"Several rows per {gran} (e.g. daily or weekly data): amounts are summed per {gran}; "
-                     "balances (cash, customers, headcount) take the period's last value")
+        notes.append(
+            f"Several rows per {gran} (e.g. daily or weekly data): amounts are summed per {gran}; "
+            "balances (cash, customers, headcount) take the period's last value"
+        )
     out_rows = sorted(merged.values(), key=lambda r: period_sort_key(r["period"]))
     keys = [r["period"] for r in out_rows]
-    return ParsedDataset(t.name, "series", header[period_idx], _granularity(keys), False, profiles, out_rows,
-                         fingerprint(header), notes)
+    return ParsedDataset(
+        t.name,
+        "series",
+        header[period_idx],
+        _granularity(keys),
+        False,
+        profiles,
+        out_rows,
+        fingerprint(header),
+        notes,
+    )
 
 
 def _note_scale(profiles: list[ColumnProfile], notes: list[str]) -> None:
@@ -755,8 +891,16 @@ def _note_scale(profiles: list[ColumnProfile], notes: list[str]) -> None:
             notes.append(f"Values in {word.get(s, f'×{s:,.0f}')} ({shown}): multiplied by {s:,.0f}")
 
 
-def _pivot(t: RawTable, header: list[str], keyed: list, dim_idx: int, numeric_cols: list[int], num,
-           scales: list[float], notes: list[str]) -> ParsedDataset:
+def _pivot(
+    t: RawTable,
+    header: list[str],
+    keyed: list,
+    dim_idx: int,
+    numeric_cols: list[int],
+    num,
+    scales: list[float],
+    notes: list[str],
+) -> ParsedDataset:
     """A ledger (date | account | amount, one line per account per period) becomes one column per account."""
     val_idx = next((i for i in numeric_cols if _AMOUNT_HEAD.search(header[i])), numeric_cols[0])
     merged: dict[str, dict[str, Any]] = {}
@@ -780,18 +924,23 @@ def _pivot(t: RawTable, header: list[str], keyed: list, dim_idx: int, numeric_co
         for lb in labels:
             row.setdefault(lb, None)
     keys = [r["period"] for r in out_rows]
-    notes.append(f"One row per {header[dim_idx]} per period: each {header[dim_idx]} became a column of "
-                 f"{header[val_idx]}, summed per period")
+    notes.append(
+        f"One row per {header[dim_idx]} per period: each {header[dim_idx]} became a column of "
+        f"{header[val_idx]}, summed per period"
+    )
     columns = [ColumnProfile("period", "period", keys[:3], 0.0, unit_hint="date")]
     for lb in labels:
         prof = _profile(lb, raw_by[lb])
         prof.scale = 1.0 if prof.unit_hint == "pct" else scales[val_idx]
         columns.append(prof)
-    return ParsedDataset(t.name, "series", "period", _granularity(keys), True, columns, out_rows,
-                         fingerprint(labels), notes)
+    return ParsedDataset(
+        t.name, "series", "period", _granularity(keys), True, columns, out_rows, fingerprint(labels), notes
+    )
 
 
-def _wide(t: RawTable, header: list[str], rows: list[list[Any]], notes: list[str], table_scale: float) -> ParsedDataset | None:
+def _wide(
+    t: RawTable, header: list[str], rows: list[list[Any]], notes: list[str], table_scale: float
+) -> ParsedDataset | None:
     """Periods across the header row: transpose so each line item is a column."""
     hp = [None if _FORECAST.search(h) else parse_period(h) for h in header]
     first = next((j for j, p in enumerate(hp) if p), None)
@@ -815,8 +964,10 @@ def _wide(t: RawTable, header: list[str], rows: list[list[Any]], notes: list[str
     notes.append("Transposed: periods were columns")
     skipped = dropped + [header[j] for j in right if not hp[j] and not _blank(header[j])]
     if skipped:
-        notes.append(f"Left out {len(skipped)} column{'s' if len(skipped) > 1 else ''} that aren't single "
-                     f"{gran}s ({', '.join(skipped[:3])}{'…' if len(skipped) > 3 else ''})")
+        notes.append(
+            f"Left out {len(skipped)} column{'s' if len(skipped) > 1 else ''} that aren't single "
+            f"{gran}s ({', '.join(skipped[:3])}{'…' if len(skipped) > 3 else ''})"
+        )
     if dupes:
         notes.append(f"Left out {len(dupes)} repeated period column{'s' if len(dupes) > 1 else ''}")
 
@@ -853,12 +1004,22 @@ def _wide(t: RawTable, header: list[str], rows: list[list[Any]], notes: list[str
         out_rows.append(row)
     _note_scale(columns, notes)
     keys = [r["period"] for r in out_rows]
-    return ParsedDataset(t.name, "series", header[label_idx] or "transposed", _granularity(keys), True,
-                         [ColumnProfile("period", "period", keys[:3], 0.0, unit_hint="date"), *columns], out_rows,
-                         fingerprint(labels), notes)
+    return ParsedDataset(
+        t.name,
+        "series",
+        header[label_idx] or "transposed",
+        _granularity(keys),
+        True,
+        [ColumnProfile("period", "period", keys[:3], 0.0, unit_hint="date"), *columns],
+        out_rows,
+        fingerprint(labels),
+        notes,
+    )
 
 
-def parse_upload(data: bytes, filename: str, period_column: dict[str, str] | None = None) -> list[ParsedDataset]:
+def parse_upload(
+    data: bytes, filename: str, period_column: dict[str, str] | None = None
+) -> list[ParsedDataset]:
     """`period_column` maps a table name to the column the founder chose as its dates."""
     pc = period_column or {}
     return [parse_table(t, pc.get(t.name)) for t in read_tables(data, filename) if t.header]

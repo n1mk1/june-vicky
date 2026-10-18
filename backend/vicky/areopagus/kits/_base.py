@@ -38,7 +38,12 @@ class ToolDef:
 
     def to_tool(self) -> dict:
         """Anthropic tool definition (strict tool use)."""
-        return {"name": self.name, "description": self.description, "input_schema": self.input_schema, "strict": True}
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input_schema": self.input_schema,
+            "strict": True,
+        }
 
     def run(self, ctx: TruthContext, args: dict | None = None) -> Result:
         """Call the tool; bad inputs come back as a recoverable error message, not an exception."""
@@ -56,6 +61,7 @@ class Kit:
 
 
 # ---------------------------------------------------------------- schemas (strict-compatible)
+
 
 def schema(**props: dict) -> dict:
     return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
@@ -83,12 +89,17 @@ def enum(values: list[str], desc: str) -> dict:
 
 def tool(kit: str, name: str, description: str, input_schema: dict | None = None) -> Callable:
     """Decorator turning a kit function into a ToolDef."""
+
     def wrap(fn: Callable[..., Result]) -> ToolDef:
-        return ToolDef(name=name, description=description, input_schema=input_schema or schema(), fn=fn, kit=kit)
+        return ToolDef(
+            name=name, description=description, input_schema=input_schema or schema(), fn=fn, kit=kit
+        )
+
     return wrap
 
 
 # ---------------------------------------------------------------- figure builders
+
 
 def dump(f: Figure | MissingFigure) -> dict:
     return f.model_dump(mode="json")
@@ -118,8 +129,18 @@ def fig(ctx: TruthContext, fid: str) -> Figure | None:
     return f if isinstance(f, Figure) else None
 
 
-def derived(fid: str, label: str, value: float, unit: str, formula: str, inputs: Iterable[Figure | FigureRef],
-            *, projection: bool = False, period: str | None = None, group: str = "kits") -> Figure:
+def derived(
+    fid: str,
+    label: str,
+    value: float,
+    unit: str,
+    formula: str,
+    inputs: Iterable[Figure | FigureRef],
+    *,
+    projection: bool = False,
+    period: str | None = None,
+    group: str = "kits",
+) -> Figure:
     """A kit-computed Figure. Kind: forecast for projections or forecast inputs; founder_claim if it rests on one."""
     inputs = list(inputs)
     figs = [x for x in inputs if isinstance(x, Figure)]
@@ -131,15 +152,41 @@ def derived(fid: str, label: str, value: float, unit: str, formula: str, inputs:
     else:
         kind = "historical"
     names = [r.figure_id or ".".join(x for x in (r.column, r.period) if x) for r in refs]
-    src = Source(kind="derived", ref="derived from " + ", ".join(n for n in names if n) if names else "derived")
-    return Figure(id=fid, label=label, value=float(value), unit=unit, formula=formula, inputs=refs, source=src,
-                  kind=kind, period=period, group=group)
+    src = Source(
+        kind="derived", ref="derived from " + ", ".join(n for n in names if n) if names else "derived"
+    )
+    return Figure(
+        id=fid,
+        label=label,
+        value=float(value),
+        unit=unit,
+        formula=formula,
+        inputs=refs,
+        source=src,
+        kind=kind,
+        period=period,
+        group=group,
+    )
 
 
-def founder_figure(fid: str, label: str, value: float, unit: str,
-                   where: str = "supplied by the founder in this session", group: str = "kits") -> Figure:
-    return Figure(id=fid, label=label, value=float(value), unit=unit, formula=f"{label}, as {where}",
-                  source=Source(kind="founder_stated", ref=where), kind="founder_claim", group=group)
+def founder_figure(
+    fid: str,
+    label: str,
+    value: float,
+    unit: str,
+    where: str = "supplied by the founder in this session",
+    group: str = "kits",
+) -> Figure:
+    return Figure(
+        id=fid,
+        label=label,
+        value=float(value),
+        unit=unit,
+        formula=f"{label}, as {where}",
+        source=Source(kind="founder_stated", ref=where),
+        kind="founder_claim",
+        group=group,
+    )
 
 
 def profile_figure(ctx: TruthContext, key: str, label: str, unit: str) -> Figure | None:
@@ -150,33 +197,60 @@ def profile_figure(ctx: TruthContext, key: str, label: str, unit: str) -> Figure
     v = ctx.profile.get(key)
     if isinstance(v, int | float) and not isinstance(v, bool) and v > 0:
         fx = ctx.profile.get(f"{key}_fx")
-        return founder_figure(f"profile.{key}", label, float(v), unit,
-                              where=f"stated in the company profile ({key})" + (f" · converted {fx}" if fx else ""))
+        return founder_figure(
+            f"profile.{key}",
+            label,
+            float(v),
+            unit,
+            where=f"stated in the company profile ({key})" + (f" · converted {fx}" if fx else ""),
+        )
     return None
 
 
 PERIOD_RX = re.compile(r"^\d{4}(-(Q[1-4]|\d{2}))?$")
 
 
-def fact_to_figure(ctx: TruthContext, fact: Fact, fid: str | None = None, unit: str | None = None,
-                   value: float | None = None) -> Figure:
-    u = unit or (fact.unit if fact.unit in UNITS else ctx.currency if fact.unit in ("money", "$") else "count")
+def fact_to_figure(
+    ctx: TruthContext, fact: Fact, fid: str | None = None, unit: str | None = None, value: float | None = None
+) -> Figure:
+    u = unit or (
+        fact.unit if fact.unit in UNITS else ctx.currency if fact.unit in ("money", "$") else "count"
+    )
     kind = "founder_claim" if fact.source.kind == "founder_stated" else fact.kind
-    return Figure(id=fid or (f"fact.{fact.name}" + (f".{fact.period}" if fact.period else "")), label=fact.label or fact.name,
-                  value=fact.value if value is None else value, unit=u, formula=fact.label or fact.name,
-                  source=fact.source, kind=kind, period=fact.period, group="facts")
+    return Figure(
+        id=fid or (f"fact.{fact.name}" + (f".{fact.period}" if fact.period else "")),
+        label=fact.label or fact.name,
+        value=fact.value if value is None else value,
+        unit=u,
+        formula=fact.label or fact.name,
+        source=fact.source,
+        kind=kind,
+        period=fact.period,
+        group="facts",
+    )
 
 
 def live_facts(ctx: TruthContext, name: str, *, forecast: bool | None = None) -> list[Fact]:
     """Confirmed (or pending) facts with this name, oldest period first; forecast=None keeps both kinds."""
-    out_ = [f for f in ctx.facts if f.status != "removed" and f.name == name
-            and (forecast is None or (f.kind == "forecast") == forecast)]
-    return sorted(out_, key=lambda f: period_sort_key(f.period) if f.period and PERIOD_RX.match(f.period) else (0, 0))
+    out_ = [
+        f
+        for f in ctx.facts
+        if f.status != "removed"
+        and f.name == name
+        and (forecast is None or (f.kind == "forecast") == forecast)
+    ]
+    return sorted(
+        out_, key=lambda f: period_sort_key(f.period) if f.period and PERIOD_RX.match(f.period) else (0, 0)
+    )
 
 
 def fact_series(ctx: TruthContext, name: str) -> list[Figure]:
     """Historical facts for one name that carry a real period (YYYY-MM, YYYY-Qn, YYYY), as Figures."""
-    return [fact_to_figure(ctx, f) for f in live_facts(ctx, name, forecast=False) if f.period and PERIOD_RX.match(f.period)]
+    return [
+        fact_to_figure(ctx, f)
+        for f in live_facts(ctx, name, forecast=False)
+        if f.period and PERIOD_RX.match(f.period)
+    ]
 
 
 def latest_count(ctx: TruthContext, field_id: str, label: str) -> Figure | None:
@@ -205,8 +279,14 @@ def money_unit(ctx: TruthContext) -> str:
     return ctx.currency
 
 
-def cell_figure(ctx: TruthContext, field_id: str, period: str, fid: str | None = None, label: str | None = None,
-                group: str = "kits") -> Figure | None:
+def cell_figure(
+    ctx: TruthContext,
+    field_id: str,
+    period: str,
+    fid: str | None = None,
+    label: str | None = None,
+    group: str = "kits",
+) -> Figure | None:
     m = ctx.model
     c = m.cell(field_id, period)
     if c is None:
@@ -215,24 +295,40 @@ def cell_figure(ctx: TruthContext, field_id: str, period: str, fid: str | None =
     name = FIELDS[field_id].label if field_id in FIELDS else field_id
     unit = ctx.currency if is_money(field_id) else "count"
     formula = f"{name} in {label_period(period)}" + (f" ({c.derived})" if c.derived else "")
-    return Figure(id=fid or f"{field_id}.{period}", label=label or f"{name}, {label_period(period)}", value=c.value,
-                  unit=unit, formula=formula,
-                  inputs=[FigureRef(dataset_id=c.dataset_id, column=field_id, period=period, value=c.value)],
-                  source=Source(kind=kind if kind in ("csv", "xlsx") else "derived", ref=refstr, dataset_id=ds),
-                  period=period, group=group)
+    return Figure(
+        id=fid or f"{field_id}.{period}",
+        label=label or f"{name}, {label_period(period)}",
+        value=c.value,
+        unit=unit,
+        formula=formula,
+        inputs=[FigureRef(dataset_id=c.dataset_id, column=field_id, period=period, value=c.value)],
+        source=Source(kind=kind if kind in ("csv", "xlsx") else "derived", ref=refstr, dataset_id=ds),
+        period=period,
+        group=group,
+    )
 
 
-def sum_figure(ctx: TruthContext, field_id: str, periods: list[str], fid: str, label: str, group: str = "kits") -> Figure:
+def sum_figure(
+    ctx: TruthContext, field_id: str, periods: list[str], fid: str, label: str, group: str = "kits"
+) -> Figure:
     m = ctx.model
     total = sum(m.value(field_id, p) or 0.0 for p in periods)
     ds, refstr, kind = m.source_ref(field_id, periods)
     name = FIELDS[field_id].label if field_id in FIELDS else field_id
     window = window_label(periods)
-    return Figure(id=fid, label=label, value=total, unit=ctx.currency if is_money(field_id) else "count",
-                  formula=f"Sum of {name.lower()} over {window} ({len(periods)} periods)",
-                  inputs=[FigureRef(dataset_id=ds, column=field_id, period=p, value=m.value(field_id, p)) for p in periods],
-                  source=Source(kind=kind if kind in ("csv", "xlsx") else "derived", ref=refstr, dataset_id=ds),
-                  period=f"{periods[0]}..{periods[-1]}", group=group)
+    return Figure(
+        id=fid,
+        label=label,
+        value=total,
+        unit=ctx.currency if is_money(field_id) else "count",
+        formula=f"Sum of {name.lower()} over {window} ({len(periods)} periods)",
+        inputs=[
+            FigureRef(dataset_id=ds, column=field_id, period=p, value=m.value(field_id, p)) for p in periods
+        ],
+        source=Source(kind=kind if kind in ("csv", "xlsx") else "derived", ref=refstr, dataset_id=ds),
+        period=f"{periods[0]}..{periods[-1]}",
+        group=group,
+    )
 
 
 def table_source(ctx: TruthContext, table_kind: str, refstr: str) -> Source:
@@ -256,7 +352,9 @@ def column_series(ctx: TruthContext, ds_id: str, col: str) -> dict[str, float]:
         v = row.get(col)
         if not isinstance(v, int | float) or isinstance(v, bool):
             continue
-        conv = m.convert(float(v), src, row["period"], agg)  # a column in another currency, at its period's rate
+        conv = m.convert(
+            float(v), src, row["period"], agg
+        )  # a column in another currency, at its period's rate
         if conv is None:
             continue
         v = conv[0]
@@ -270,8 +368,9 @@ def column_series(ctx: TruthContext, ds_id: str, col: str) -> dict[str, float]:
     return dict(sorted(out.items(), key=lambda kv: period_sort_key(kv[0])))
 
 
-def column_figure(ctx: TruthContext, ds_id: str, col: str, periods: list[str], fid: str, label: str,
-                  group: str = "kits") -> Figure | None:
+def column_figure(
+    ctx: TruthContext, ds_id: str, col: str, periods: list[str], fid: str, label: str, group: str = "kits"
+) -> Figure | None:
     series = column_series(ctx, ds_id, col)
     ps = [p for p in periods if p in series]
     if not ps:
@@ -280,17 +379,29 @@ def column_figure(ctx: TruthContext, ds_id: str, col: str, periods: list[str], f
     total = sum(series[p] for p in ps)
     kind = d.upload_kind if d.upload_kind in ("csv", "xlsx") else "csv"
     what = f"Sum of '{col}' over {window_label(ps)}" if len(ps) > 1 else f"'{col}' in {label_period(ps[0])}"
-    return Figure(id=fid, label=label, value=total, unit=ctx.currency, formula=what,
-                  inputs=[FigureRef(dataset_id=ds_id, column=col, period=p, value=series[p]) for p in ps],
-                  source=Source(kind=kind, ref=f"{d.name} · {col} · {window_label(ps)}{_column_fx(ctx, d, col)}",
-                                dataset_id=ds_id),
-                  period=ps[0] if len(ps) == 1 else f"{ps[0]}..{ps[-1]}", group=group)
+    return Figure(
+        id=fid,
+        label=label,
+        value=total,
+        unit=ctx.currency,
+        formula=what,
+        inputs=[FigureRef(dataset_id=ds_id, column=col, period=p, value=series[p]) for p in ps],
+        source=Source(
+            kind=kind, ref=f"{d.name} · {col} · {window_label(ps)}{_column_fx(ctx, d, col)}", dataset_id=ds_id
+        ),
+        period=ps[0] if len(ps) == 1 else f"{ps[0]}..{ps[-1]}",
+        group=group,
+    )
 
 
 def _column_fx(ctx: TruthContext, d, col: str) -> str:
     mapping = next((x for x in d.mapping if x.get("source_column") == col), {})
     src = column_currency(mapping, ctx.currency)
-    return "" if src == ctx.currency else f" · converted {src.upper()}→{ctx.currency.upper()} at {SOURCE_NAME} rates for each period"
+    return (
+        ""
+        if src == ctx.currency
+        else f" · converted {src.upper()}→{ctx.currency.upper()} at {SOURCE_NAME} rates for each period"
+    )
 
 
 def series_columns(ctx: TruthContext) -> list[tuple[str, str]]:
@@ -314,6 +425,7 @@ def matching_columns(ctx: TruthContext, pattern: str, exclude: str | None = None
 
 
 # ---------------------------------------------------------------- periods and arithmetic
+
 
 def window_label(periods: list[str]) -> str:
     if not periods:
@@ -381,9 +493,15 @@ def recent_growth(ctx: TruthContext, basis: str = "recent") -> Figure | MissingF
     n = steps * m.months_per_period
     rate = (vb / va) ** (1 / n) - 1
     fa, fb = cell_figure(ctx, "revenue.total", a), cell_figure(ctx, "revenue.total", b)
-    return derived(fid, label, rate, "pct",
-                   f"(total revenue {label_period(b)} {fmt(vb, ctx.currency)} ÷ {label_period(a)} {fmt(va, ctx.currency)})^(1/{n}) − 1",
-                   [x for x in (fa, fb) if x], period=f"{a}..{b}")
+    return derived(
+        fid,
+        label,
+        rate,
+        "pct",
+        f"(total revenue {label_period(b)} {fmt(vb, ctx.currency)} ÷ {label_period(a)} {fmt(va, ctx.currency)})^(1/{n}) − 1",
+        [x for x in (fa, fb) if x],
+        period=f"{a}..{b}",
+    )
 
 
 def split(results: Iterable[Figure | MissingFigure]) -> tuple[list[Figure], list[MissingFigure]]:

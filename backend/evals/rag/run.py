@@ -72,8 +72,14 @@ async def main() -> None:
     try:
         paths = {}
         for n in yaml.safe_load((DATA / "notes.yaml").read_text(encoding="utf-8")):
-            made = await store.create_note({"title": n["title"], "path": n["path"].removesuffix(".md"),
-                                            "content": n["content"], "tags": n.get("tags") or []})
+            made = await store.create_note(
+                {
+                    "title": n["title"],
+                    "path": n["path"].removesuffix(".md"),
+                    "content": n["content"],
+                    "tags": n.get("tags") or [],
+                }
+            )
             paths[n["path"]] = made["path"]
         b = await index.start_build()
         job = await db.fetchval("select job_id::text from kb_index_builds where id = $1::uuid", b["build_id"])
@@ -82,16 +88,22 @@ async def main() -> None:
         setups: list[tuple[str, object]] = [("before the index (full-text over notes)", None)]
         glossary = rag._glossary
         results = {}
-        for name, mode, expand in [("BM25", "ask", False), ("BM25 + glossary", "ask", True),
-                                   ("BM25 + glossary + recovery", "recover", True)]:
+        for name, mode, expand in [
+            ("BM25", "ask", False),
+            ("BM25 + glossary", "ask", True),
+            ("BM25 + glossary + recovery", "recover", True),
+        ]:
             rag._glossary = glossary if expand else (lambda: [])  # type: ignore[assignment]
             results[name] = _score([(paths[c["note"]], await _ranked(c["q"], mode)) for c in cases])
         rag._glossary = glossary  # type: ignore[assignment]
         results[setups[0][0]] = _score([(paths[c["note"]], await _legacy(c["q"])) for c in cases])
         if voyage.enabled() and await index.has_vector():
-            results["hybrid + rerank"] = _score([(paths[c["note"]], await _ranked(c["q"], "ask")) for c in cases])
-            results["hybrid + rerank + recovery"] = _score([(paths[c["note"]], await _ranked(c["q"], "recover"))
-                                                            for c in cases])
+            results["hybrid + rerank"] = _score(
+                [(paths[c["note"]], await _ranked(c["q"], "ask")) for c in cases]
+            )
+            results["hybrid + rerank + recovery"] = _score(
+                [(paths[c["note"]], await _ranked(c["q"], "recover")) for c in cases]
+            )
         else:
             print("(no VOYAGE_API_KEY or no pgvector: hybrid rows skipped)")
         print(f"\n{len(cases)} questions over {len(paths)} notes\n")

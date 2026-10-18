@@ -14,8 +14,8 @@ from vicky.config import get_settings
 
 log = logging.getLogger(__name__)
 DIMS = 1024
-BATCH = 128                 # inputs per embeddings request (the API allows 1000)
-BATCH_CHARS = 400_000       # ~100K tokens, well under the 320K-token request limit
+BATCH = 128  # inputs per embeddings request (the API allows 1000)
+BATCH_CHARS = 400_000  # ~100K tokens, well under the 320K-token request limit
 TIMEOUT_S = 30.0
 
 _transport: httpx.AsyncBaseTransport | None = None  # tests inject a MockTransport
@@ -36,8 +36,12 @@ def set_transport(t: httpx.AsyncBaseTransport | None) -> None:
 
 def _client(timeout: float) -> httpx.AsyncClient:
     s = get_settings()
-    return httpx.AsyncClient(base_url=s.voyage_base_url, timeout=timeout, transport=_transport,
-                             headers={"Authorization": f"Bearer {s.voyage_api_key or 'test'}"})
+    return httpx.AsyncClient(
+        base_url=s.voyage_base_url,
+        timeout=timeout,
+        transport=_transport,
+        headers={"Authorization": f"Bearer {s.voyage_api_key or 'test'}"},
+    )
 
 
 async def _post(path: str, body: dict, timeout_s: float) -> dict:
@@ -51,8 +55,13 @@ async def _post(path: str, body: dict, timeout_s: float) -> dict:
     return r.json()
 
 
-async def embed(texts: list[str], input_type: Literal["query", "document"], *, model: str | None = None,
-                timeout_s: float = TIMEOUT_S) -> list[list[float]]:
+async def embed(
+    texts: list[str],
+    input_type: Literal["query", "document"],
+    *,
+    model: str | None = None,
+    timeout_s: float = TIMEOUT_S,
+) -> list[list[float]]:
     """One vector per text, in order."""
     if not texts:
         return []
@@ -62,8 +71,11 @@ async def embed(texts: list[str], input_type: Literal["query", "document"], *, m
     size = 0
 
     async def send() -> None:
-        data = await _post("/embeddings", {"input": batch, "model": model, "input_type": input_type,
-                                           "output_dimension": DIMS}, timeout_s)
+        data = await _post(
+            "/embeddings",
+            {"input": batch, "model": model, "input_type": input_type, "output_dimension": DIMS},
+            timeout_s,
+        )
         vecs = sorted(data.get("data") or [], key=lambda d: d["index"])
         if len(vecs) != len(batch) or any(len(v["embedding"]) != DIMS for v in vecs):
             raise VoyageError("voyage /embeddings: wrong number or size of vectors")
@@ -80,8 +92,9 @@ async def embed(texts: list[str], input_type: Literal["query", "document"], *, m
     return out
 
 
-async def rerank(query: str, documents: list[str], *, model: str, top_k: int | None = None,
-                 timeout_s: float = 10.0) -> list[tuple[int, float]]:
+async def rerank(
+    query: str, documents: list[str], *, model: str, top_k: int | None = None, timeout_s: float = 10.0
+) -> list[tuple[int, float]]:
     """(document index, relevance 0–1), best first."""
     if not documents:
         return []

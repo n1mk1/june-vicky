@@ -62,8 +62,17 @@ HELPER_LABELS: dict[str, str] = {
 }
 
 GENERIC_METRIC_IDS = [
-    "revenue", "revenue_growth", "revenue_growth_yoy", "gross_margin", "gross_margin_incl_cs",
-    "gross_margin_incl_cs_l12m", "burn", "burn_incl_credits", "cash_balance", "runway_months", "top_customer_share",
+    "revenue",
+    "revenue_growth",
+    "revenue_growth_yoy",
+    "gross_margin",
+    "gross_margin_incl_cs",
+    "gross_margin_incl_cs_l12m",
+    "burn",
+    "burn_incl_credits",
+    "cash_balance",
+    "runway_months",
+    "top_customer_share",
 ] + [f"opex_share_{c.split('.')[-1]}" for c in OPEX_CATEGORIES]
 METRIC_IDS: frozenset[str] = frozenset(GENERIC_METRIC_IDS) | frozenset(RECURRING_IDS)
 
@@ -98,6 +107,7 @@ def name_kind(name: str) -> str | None:
 
 
 # ---------------------------------------------------------------- AST
+
 
 @dataclass(frozen=True)
 class Num:
@@ -137,6 +147,7 @@ Node = Num | Name | Raw | Neg | Bin | Call
 
 # ---------------------------------------------------------------- tokenizer
 
+
 @dataclass(frozen=True)
 class Token:
     kind: str  # num | name | str | op | end
@@ -162,8 +173,8 @@ _FORBIDDEN = {
 }
 
 
-MAX_LITERAL = 1e15   # no real figure is larger; blocks 1e999 / overflow tricks
-MAX_WINDOW = 240     # periods for rolling/lag windows
+MAX_LITERAL = 1e15  # no real figure is larger; blocks 1e999 / overflow tricks
+MAX_WINDOW = 240  # periods for rolling/lag windows
 
 
 def _check_name(name: str) -> None:
@@ -171,7 +182,9 @@ def _check_name(name: str) -> None:
         raise DSLError(f"'{name}' is not allowed: double-underscore names are reserved")
     for part in name.split("."):
         if keyword.iskeyword(part) or keyword.issoftkeyword(part):
-            raise DSLError(f"'{part}' is a Python keyword; only arithmetic and the listed functions are allowed")
+            raise DSLError(
+                f"'{part}' is a Python keyword; only arithmetic and the listed functions are allowed"
+            )
 
 
 def tokenize(src: str) -> list[Token]:
@@ -194,7 +207,7 @@ def tokenize(src: str) -> list[Token]:
             end = src.find(c, i + 1)
             if end < 0:
                 raise DSLError(f"unterminated string starting at position {i}")
-            out.append(Token("str", src[i + 1:end], i))
+            out.append(Token("str", src[i + 1 : end], i))
             i = end + 1
             continue
         m = _NUM_RE.match(src, i)
@@ -279,9 +292,11 @@ class _Parser:
                 raise DSLError(f"number at position {t.pos} is too large (limit {MAX_LITERAL:g})")
             return Num(v)
         if t.kind == "str":
-            raise DSLError(f"strings are only allowed inside raw(\"dataset:column\") (position {t.pos})")
+            raise DSLError(f'strings are only allowed inside raw("dataset:column") (position {t.pos})')
         if t.kind == "end":
-            raise DSLError("the expression ended too early" if self.toks[0].kind != "end" else "the expression is empty")
+            raise DSLError(
+                "the expression ended too early" if self.toks[0].kind != "end" else "the expression is empty"
+            )
         if t.kind == "op":
             if t.text == "(":
                 node = self.expr(0)
@@ -311,17 +326,19 @@ class _Parser:
                 raise DSLError(f"'{name}' is not a canonical field, and attribute access is not allowed")
             if "." in name:
                 raise DSLError(f"attribute access is not allowed ('{name}')")
-            raise DSLError(f"unknown name '{name}'. Use a canonical field (e.g. revenue.recurring), a helper "
-                           f"({', '.join(HELPERS)}), a metric id, or raw(\"dataset:column\")")
+            raise DSLError(
+                f"unknown name '{name}'. Use a canonical field (e.g. revenue.recurring), a helper "
+                f'({", ".join(HELPERS)}), a metric id, or raw("dataset:column")'
+            )
         return Name(name)
 
     def raw(self) -> Node:
         self.expect("(")
         t = self.next()
         if t.kind != "str":
-            raise DSLError("raw() takes one quoted \"dataset:column\" string")
+            raise DSLError('raw() takes one quoted "dataset:column" string')
         if ":" not in t.text or not t.text.strip():
-            raise DSLError("raw() needs a \"dataset:column\" string, e.g. raw(\"income_statement:cogs_hosting\")")
+            raise DSLError('raw() needs a "dataset:column" string, e.g. raw("income_statement:cogs_hosting")')
         self.expect(")")
         return Raw(t.text)
 
@@ -355,6 +372,7 @@ def parse(src: str) -> Node:
 
 
 # ---------------------------------------------------------------- helpers over the AST
+
 
 def names(node: Node) -> list[Name | Raw]:
     """Every identifier and raw column the expression reads, in order, without duplicates."""

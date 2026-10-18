@@ -24,8 +24,14 @@ def tidewell():
 
 
 def _spec(template="line", refs=("mrr",), **kw) -> WidgetSpec:
-    return WidgetSpec.model_validate({"template": template, "title": kw.pop("title", "Test widget"),
-                                      "series": [{"ref": r} if isinstance(r, str) else r for r in refs], **kw})
+    return WidgetSpec.model_validate(
+        {
+            "template": template,
+            "title": kw.pop("title", "Test widget"),
+            "series": [{"ref": r} if isinstance(r, str) else r for r in refs],
+            **kw,
+        }
+    )
 
 
 def _json_safe(ev, spec) -> None:
@@ -36,13 +42,17 @@ def _json_safe(ev, spec) -> None:
 
 # ---------------------------------------------------------------- VIZ-1 / VIZ-16: no value → missing, never a crash
 
-@pytest.mark.parametrize("template,ref,window", [
-    ("kpi", "sum(revenue)/0", None),
-    ("kpi", "1/0", None),                                    # VIZ-16: was "ok" with display "n/a"
-    ("kpi", "sum(revenue)", {"from": "2030-01"}),
-    ("gauge_ring", "sum(revenue)/0", None),
-    ("gauge_ring", "avg(gross_margin)", {"from": "2030-01"}),
-])
+
+@pytest.mark.parametrize(
+    "template,ref,window",
+    [
+        ("kpi", "sum(revenue)/0", None),
+        ("kpi", "1/0", None),  # VIZ-16: was "ok" with display "n/a"
+        ("kpi", "sum(revenue)", {"from": "2030-01"}),
+        ("gauge_ring", "sum(revenue)/0", None),
+        ("gauge_ring", "avg(gross_margin)", {"from": "2030-01"}),
+    ],
+)
 def test_scalar_without_a_value_is_missing(template, ref, window, tidewell):
     spec = _spec(template, [ref], **({"window": window} if window else {}))
     ev = evaluate_widget(spec, tidewell)
@@ -53,8 +63,16 @@ def test_scalar_without_a_value_is_missing(template, ref, window, tidewell):
 
 
 def test_mark_line_without_a_value_is_left_out(tidewell):
-    spec = _spec("line", ["mrr"], presentation={"mark_lines": [{"label": "Nothing", "value_ref": "sum(revenue)/0"},
-                                                               {"label": "Average", "value_ref": "avg(mrr)"}]})
+    spec = _spec(
+        "line",
+        ["mrr"],
+        presentation={
+            "mark_lines": [
+                {"label": "Nothing", "value_ref": "sum(revenue)/0"},
+                {"label": "Average", "value_ref": "avg(mrr)"},
+            ]
+        },
+    )
     ev = evaluate_widget(spec, tidewell)
     assert ev.status == "ok", ev.error
     assert [m.label for m in ev.mark_lines] == ["Average"]
@@ -71,16 +89,19 @@ def test_secondary_kpi_without_a_value_is_missing(tidewell):
 HUGE = "revenue" + " * 1e15" * 20 + " * 1000"  # about 1e308: finite, but any sum of two overflows
 
 
-@pytest.mark.parametrize("template,ref", [
-    ("line", f"rolling({HUGE}, 3)"),
-    ("line", f"cumsum({HUGE})"),
-    ("line", f"sum({HUGE}, {HUGE})"),
-    ("line", f"avg({HUGE}, {HUGE})"),
-    ("line", f"mom({HUGE} * 1000) "),
-    ("kpi", f"sum({HUGE})"),
-    ("kpi", f"avg({HUGE})"),
-    ("waterfall", HUGE),
-])
+@pytest.mark.parametrize(
+    "template,ref",
+    [
+        ("line", f"rolling({HUGE}, 3)"),
+        ("line", f"cumsum({HUGE})"),
+        ("line", f"sum({HUGE}, {HUGE})"),
+        ("line", f"avg({HUGE}, {HUGE})"),
+        ("line", f"mom({HUGE} * 1000) "),
+        ("kpi", f"sum({HUGE})"),
+        ("kpi", f"avg({HUGE})"),
+        ("waterfall", HUGE),
+    ],
+)
 def test_overflow_never_raises(template, ref, tidewell):
     spec = _spec(template, [ref])
     ev = evaluate_widget(spec, tidewell)  # used to raise OverflowError
@@ -98,8 +119,11 @@ def test_non_finite_cell_is_a_gap(tidewell):
     ctx = copy.deepcopy(tidewell)
     p = ctx.model.periods[-3]
     ctx.model.cells["revenue.recurring"][p].value = math.inf
-    for spec in (_spec("line", ["mrr"]), _spec("line", ["revenue.recurring"], group_by="quarter"),
-                 _spec("kpi", ["sum(revenue.recurring)"])):
+    for spec in (
+        _spec("line", ["mrr"]),
+        _spec("line", ["revenue.recurring"], group_by="quarter"),
+        _spec("kpi", ["sum(revenue.recurring)"]),
+    ):
         ev = evaluate_widget(spec, ctx)
         assert ev.status in ("ok", "missing"), ev.error
         _json_safe(ev, spec)
@@ -119,6 +143,7 @@ def test_non_finite_engine_figure_is_missing_in_a_kpi(tidewell):
 
 # ---------------------------------------------------------------- VIZ-3: waterfall across zero
 
+
 def test_waterfall_crossing_zero(tidewell):
     spec = _spec("waterfall", ["net_income + 60000"], window={"last_n": 6})
     ev = evaluate_widget(spec, tidewell)
@@ -134,7 +159,9 @@ def test_waterfall_crossing_zero(tidewell):
         assert base.points[i].value == pytest.approx(cum)  # the bar starts at the running total before
         # the change split exactly: up = max(v, 0), down = min(v, 0), both defined (ECharts stacks "all" onto
         # the previous series even where it is empty, so a gap there would hide the bar)
-        assert up.points[i].value == pytest.approx(max(v, 0)) and down.points[i].value == pytest.approx(min(v, 0))
+        assert up.points[i].value == pytest.approx(max(v, 0)) and down.points[i].value == pytest.approx(
+            min(v, 0)
+        )
         cum += v
     assert cum > 0 > min(changes)  # the running total crossed zero in the window
 
@@ -156,17 +183,21 @@ def test_waterfall_crossing_zero(tidewell):
 
 # ---------------------------------------------------------------- VIZ-4: phrase mapper picks the asked-for measure
 
-@pytest.mark.parametrize("phrase,ref", [
-    ("chart non-recurring revenue", "revenue.one_time"),
-    ("chart non recurring revenue", "revenue.one_time"),
-    ("chart one-time revenue", "revenue.one_time"),
-    ("chart burn incl. credits", "burn"),
-    ("chart burn ex. credits", "burn_ex_non_dilutive"),
-    ("show burn multiple ex. credits", "burn_multiple_ex_credits"),
-    ("chart other opex", "opex.other"),
-    ("show net new arr", "net_new_arr_l12m"),
-    ("chart recurring revenue", "revenue.recurring"),
-])
+
+@pytest.mark.parametrize(
+    "phrase,ref",
+    [
+        ("chart non-recurring revenue", "revenue.one_time"),
+        ("chart non recurring revenue", "revenue.one_time"),
+        ("chart one-time revenue", "revenue.one_time"),
+        ("chart burn incl. credits", "burn"),
+        ("chart burn ex. credits", "burn_ex_non_dilutive"),
+        ("show burn multiple ex. credits", "burn_multiple_ex_credits"),
+        ("chart other opex", "opex.other"),
+        ("show net new arr", "net_new_arr_l12m"),
+        ("chart recurring revenue", "revenue.recurring"),
+    ],
+)
 def test_phrase_mapper_measure(phrase, ref, tidewell):
     it = interpret(phrase, tidewell)
     assert it.kind == "widget" and it.spec is not None
@@ -203,16 +234,20 @@ def test_chart_it_matches_the_measure_asked_about(tidewell):
 
 # ---------------------------------------------------------------- VIZ-5: chat answers the figure asked about
 
-@pytest.mark.parametrize("question,want", [
-    ("burn including credits?", "burn_incl_credits"),
-    ("burn incl. credits?", "burn_incl_credits"),
-    ("what is burn with credits", "burn_incl_credits"),
-    ("burn excluding credits?", "burn"),
-    ("burn ex. credits?", "burn"),
-    ("net new ARR?", "net_new_arr_l12m"),
-    ("what's our net new arr", "net_new_arr_l12m"),
-    ("ARR?", "arr"),
-])
+
+@pytest.mark.parametrize(
+    "question,want",
+    [
+        ("burn including credits?", "burn_incl_credits"),
+        ("burn incl. credits?", "burn_incl_credits"),
+        ("what is burn with credits", "burn_incl_credits"),
+        ("burn excluding credits?", "burn"),
+        ("burn ex. credits?", "burn"),
+        ("net new ARR?", "net_new_arr_l12m"),
+        ("what's our net new arr", "net_new_arr_l12m"),
+        ("ARR?", "arr"),
+    ],
+)
 def test_qa_answers_the_figure_asked_about(question, want, tidewell):
     a = qa.answer(question, tidewell)
     f = tidewell.figures[want]
@@ -222,7 +257,10 @@ def test_qa_answers_the_figure_asked_about(question, want, tidewell):
 
 # ---------------------------------------------------------------- VIZ-8: no running totals of balances
 
-@pytest.mark.parametrize("ref", ["cumsum(cash_balance)", "cumsum(customers.count)", "cumsum(cash_balance * 2)"])
+
+@pytest.mark.parametrize(
+    "ref", ["cumsum(cash_balance)", "cumsum(customers.count)", "cumsum(cash_balance * 2)"]
+)
 def test_cumsum_refuses_balances(ref, tidewell):
     ev = evaluate_widget(_spec("line", [ref]), tidewell)
     assert ev.status == "error" and "balance" in (ev.error or "")
@@ -236,6 +274,7 @@ def test_cumulative_cash_phrase_explains(tidewell):
 
 
 # ---------------------------------------------------------------- VIZ-9: scatter
+
 
 def test_scatter_needs_two_series(tidewell):
     spec = _spec("scatter", ["opex.s_and_m"])
@@ -254,14 +293,17 @@ def test_scatter_with_compare_plots_the_two_measures(tidewell):
     period = opt["_meta"]["periods"][0]
     prov = opt["_provenance"]["0"][period]
     assert first[1] == prov["x"]["value"] and first[2] == prov["y"]["value"]
-    assert opt["_meta"]["units"] == {"x": ev.series[0].unit, "y": next(s for s in ev.series if s.ref == "revenue.recurring"
-                                                                       and s.role == "value").unit}
+    assert opt["_meta"]["units"] == {
+        "x": ev.series[0].unit,
+        "y": next(s for s in ev.series if s.ref == "revenue.recurring" and s.role == "value").unit,
+    }
     xs = {p.value for p in ev.series[0].points}
     ys = {p.value for s in ev.series if s.ref == "revenue.recurring" and s.role == "value" for p in s.points}
     assert first[1] in xs and first[2] in ys
 
 
 # ---------------------------------------------------------------- VIZ-10: pct × 100
+
 
 @pytest.mark.parametrize("ref", ["gross_margin * 100", "100 * gross_margin", "pct_of(cogs, revenue) * 100"])
 def test_pct_times_100_is_rejected(ref, tidewell):
@@ -272,25 +314,29 @@ def test_pct_times_100_is_rejected(ref, tidewell):
 
 # ---------------------------------------------------------------- VIZ-11 / VIZ-14: display rounding
 
-@pytest.mark.parametrize("value,unit,want", [
-    (0.125, "pct", "13%"),        # half-up, as the frontend's toFixed does (Python's format gives "12%")
-    (0.0125, "pct", "1.3%"),
-    (0.92, "pct", "92%"),
-    (0.0999, "pct", "10%"),       # rounds to 10%, so the whole-percent tier
-    (0.0994, "pct", "9.9%"),
-    (-0.0004, "pct", "0.0%"),
-    (999.6, "cad", "$1,000"),
-    (999.4, "cad", "$999"),
-    (9_999.6, "cad", "$10.0K"),
-    (999_999.9, "cad", "$1.00M"),
-    (999_949, "cad", "$999.9K"),
-    (-0.4, "cad", "$0"),
-    (-1_500, "cad", "-$1,500"),
-    (2.5, "cad", "$3"),
-    (1_290_000, "cad", "$1.29M"),
-    (8.25, "months", "8.3 mo"),
-    (0.625, "x", "0.63x"),
-])
+
+@pytest.mark.parametrize(
+    "value,unit,want",
+    [
+        (0.125, "pct", "13%"),  # half-up, as the frontend's toFixed does (Python's format gives "12%")
+        (0.0125, "pct", "1.3%"),
+        (0.92, "pct", "92%"),
+        (0.0999, "pct", "10%"),  # rounds to 10%, so the whole-percent tier
+        (0.0994, "pct", "9.9%"),
+        (-0.0004, "pct", "0.0%"),
+        (999.6, "cad", "$1,000"),
+        (999.4, "cad", "$999"),
+        (9_999.6, "cad", "$10.0K"),
+        (999_999.9, "cad", "$1.00M"),
+        (999_949, "cad", "$999.9K"),
+        (-0.4, "cad", "$0"),
+        (-1_500, "cad", "-$1,500"),
+        (2.5, "cad", "$3"),
+        (1_290_000, "cad", "$1.29M"),
+        (8.25, "months", "8.3 mo"),
+        (0.625, "x", "0.63x"),
+    ],
+)
 def test_display_rounding(value, unit, want):
     assert fmt_value(value, unit) == want
 
@@ -304,10 +350,15 @@ def test_engine_displays_unchanged(tidewell):
     """The established sample displays (FR-1) keep their text under half-up rounding."""
     f = tidewell.figures
     assert f["arr"].display == "$1.29M" and f["gross_margin"].display == "92%" and f["nrr"].display == "88%"
-    assert f["cmgr_12m"].display == "9.0%" and f["cmgr_recent"].display == "5.0%" and f["burn"].display == "$58.4K"
+    assert (
+        f["cmgr_12m"].display == "9.0%"
+        and f["cmgr_recent"].display == "5.0%"
+        and f["burn"].display == "$58.4K"
+    )
 
 
 # ---------------------------------------------------------------- dashboards service (Postgres + Redis)
+
 
 async def _active(api_client) -> dict:
     from tests.helpers import load_and_confirm
@@ -324,7 +375,7 @@ async def _active(api_client) -> dict:
 def _overlaps(boxes: list[tuple[int, int, int, int]]) -> list[tuple]:
     out = []
     for i, a in enumerate(boxes):
-        for b in boxes[i + 1:]:
+        for b in boxes[i + 1 :]:
             if a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]:
                 out.append((a, b))
     return out
@@ -333,17 +384,28 @@ def _overlaps(boxes: list[tuple[int, int, int, int]]) -> list[tuple]:
 def _boxes(layout: list[dict]) -> list[tuple[int, int, int, int]]:
     from vicky.viz.defaults import RESERVED
 
-    return [(x["x"], x["y"], x["w"], x["h"]) for x in layout] + [(r["x"], r["y"], r["w"], r["h"]) for r in RESERVED]
+    return [(x["x"], x["y"], x["w"], x["h"]) for x in layout] + [
+        (r["x"], r["y"], r["w"], r["h"]) for r in RESERVED
+    ]
 
 
 @pytest.mark.db
 async def test_add_widget_rejects_specs_that_are_not_ok(api_client):
     d = await _active(api_client)
-    for spec in ({"template": "kpi", "title": "Nothing", "series": [{"ref": "sum(revenue)/0"}]},
-                 {"template": "kpi", "title": "Late", "series": [{"ref": "sum(revenue)"}], "window": {"from": "2030-01"}},
-                 {"template": "line", "title": "Bad", "series": [{"ref": "gross_margin * 100"}]},
-                 {"template": "kpi", "title": "Missing", "series": [{"ref": "revenue_churn_rate"}]}):
-        r = await api_client.post(f"/dashboards/{d['id']}/widgets", json={"spec": spec, "version": d["version"]})
+    for spec in (
+        {"template": "kpi", "title": "Nothing", "series": [{"ref": "sum(revenue)/0"}]},
+        {
+            "template": "kpi",
+            "title": "Late",
+            "series": [{"ref": "sum(revenue)"}],
+            "window": {"from": "2030-01"},
+        },
+        {"template": "line", "title": "Bad", "series": [{"ref": "gross_margin * 100"}]},
+        {"template": "kpi", "title": "Missing", "series": [{"ref": "revenue_churn_rate"}]},
+    ):
+        r = await api_client.post(
+            f"/dashboards/{d['id']}/widgets", json={"spec": spec, "version": d["version"]}
+        )
         assert r.status_code == 422, (spec, r.status_code, r.text)
         assert r.json()["detail"]
     after = (await api_client.get(f"/dashboards/{d['id']}")).json()
@@ -357,9 +419,12 @@ async def test_one_broken_widget_does_not_break_the_dashboard(api_client, monkey
 
     d = await _active(api_client)
     bad = {"template": "kpi", "title": "Explodes", "series": [{"ref": "sum(revenue)"}]}
-    wid = await db.fetchval("""insert into widgets (dashboard_id, spec, spec_hash, created_by, "order", role)
+    wid = await db.fetchval(
+        """insert into widgets (dashboard_id, spec, spec_hash, created_by, "order", role)
                                values ($1::uuid, $2, 'test-explodes', 'founder', 999, 'custom') returning id::text""",
-                            d["id"], bad)
+        d["id"],
+        bad,
+    )
     real = dashboards.evaluate_widget
 
     def boom(spec, ctx):
@@ -397,11 +462,17 @@ async def test_dismissed_default_widgets_stay_dismissed(api_client):
     # a default whose spec changed is updated in place, not added a second time
     trend = next(w for w in after["widgets"] if w["role"] == "trend")
     stale = {**trend["spec"], "title": "An older title"}
-    await db.execute("update widgets set spec = $2, spec_hash = 'stale-trend' where id::text = $1", trend["id"], stale)
+    await db.execute(
+        "update widgets set spec = $2, spec_hash = 'stale-trend' where id::text = $1", trend["id"], stale
+    )
     await dashboards.ensure_default(d["engagement_id"], ctx)
     again = (await api_client.get(f"/dashboards/{d['id']}")).json()
     trends = [w for w in again["widgets"] if w["role"] == "trend"]
-    assert len(trends) == 1 and trends[0]["id"] == trend["id"] and trends[0]["spec"]["title"] == trend["spec"]["title"]
+    assert (
+        len(trends) == 1
+        and trends[0]["id"] == trend["id"]
+        and trends[0]["spec"]["title"] == trend["spec"]["title"]
+    )
     defaults = [w["role"] for w in again["widgets"] if w["role"] not in ("custom", "")]
     assert len(defaults) == len(set(defaults))
 
@@ -415,25 +486,40 @@ async def test_default_layout_is_stored_without_overlaps(api_client):
     eid = d["engagement_id"]
     ctx = await engagements.context(eid)
     # build a second default dashboard for the same engagement from scratch, then put the real one back
-    await db.execute("update dashboards set name = 'fixviz-moved' where engagement_id = $1::uuid and name = 'default'", eid)
+    await db.execute(
+        "update dashboards set name = 'fixviz-moved' where engagement_id = $1::uuid and name = 'default'", eid
+    )
     did = None
     try:
         did = await dashboards.ensure_default(eid, ctx)
         dash = await db.fetchrow("select * from dashboards where id::text = $1", did)
         assert dash["layout"] and not _overlaps(_boxes(dash["layout"]))
         # widgets unlocked on a later confirm go below everything already there
-        await db.execute("delete from widgets where dashboard_id = $1::uuid and role in ('opex_mix', 'trend')", did)
-        left = {r["id"] for r in await db.fetch("select id::text as id from widgets where dashboard_id = $1::uuid", did)}
-        await db.execute("update dashboards set layout = $2 where id::text = $1", did,
-                         [x for x in dash["layout"] if x["widget_id"] in left])
+        await db.execute(
+            "delete from widgets where dashboard_id = $1::uuid and role in ('opex_mix', 'trend')", did
+        )
+        left = {
+            r["id"]
+            for r in await db.fetch("select id::text as id from widgets where dashboard_id = $1::uuid", did)
+        }
+        await db.execute(
+            "update dashboards set layout = $2 where id::text = $1",
+            did,
+            [x for x in dash["layout"] if x["widget_id"] in left],
+        )
         await dashboards.ensure_default(eid, ctx)
         dash = await db.fetchrow("select * from dashboards where id::text = $1", did)
         assert not _overlaps(_boxes(dash["layout"]))
-        assert len(dash["layout"]) == await db.fetchval("select count(*) from widgets where dashboard_id = $1::uuid", did)
+        assert len(dash["layout"]) == await db.fetchval(
+            "select count(*) from widgets where dashboard_id = $1::uuid", did
+        )
     finally:
         if did:
             await db.execute("delete from dashboards where id::text = $1", did)
-        await db.execute("update dashboards set name = 'default' where engagement_id = $1::uuid and name = 'fixviz-moved'", eid)
+        await db.execute(
+            "update dashboards set name = 'default' where engagement_id = $1::uuid and name = 'fixviz-moved'",
+            eid,
+        )
 
 
 @pytest.mark.db
@@ -441,7 +527,9 @@ async def test_layout_save_drops_duplicates_and_clamps_x(api_client):
     d = await _active(api_client)
     first = d["layout"][0]
     layout = [{**first, "x": 11, "w": 6}, {**first, "x": 0, "y": 40}] + d["layout"][1:]
-    r = await api_client.patch(f"/dashboards/{d['id']}/layout", json={"layout": layout, "version": d["version"]})
+    r = await api_client.patch(
+        f"/dashboards/{d['id']}/layout", json={"layout": layout, "version": d["version"]}
+    )
     assert r.status_code == 200, r.text
     saved = r.json()["layout"]
     ids = [x["widget_id"] for x in saved]

@@ -52,14 +52,20 @@ def today() -> str:
 # live call. Redis keeps the fast counter; the Postgres `spend` table keeps the same total and is read when
 # Redis can't be. Raises only when neither store can be written (or read).
 
+
 async def _db_add_spend(usd: float) -> float | None:
     from vicky import db
 
     try:
-        return float(await db.pool().fetchval(
-            """insert into spend (date, usd, calls) values ($1, $2, 1)
+        return float(
+            await db.pool().fetchval(
+                """insert into spend (date, usd, calls) values ($1, $2, 1)
                on conflict (date) do update set usd = spend.usd + excluded.usd, calls = spend.calls + 1
-               returning usd""", datetime.now(UTC).date(), usd))
+               returning usd""",
+                datetime.now(UTC).date(),
+                usd,
+            )
+        )
     except Exception:
         return None
 

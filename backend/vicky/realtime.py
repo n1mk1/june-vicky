@@ -49,7 +49,7 @@ class Hub:
                 async for msg in pubsub.listen():
                     if msg.get("type") != "pmessage":
                         continue
-                    channel = str(msg["channel"])[len(PREFIX):]
+                    channel = str(msg["channel"])[len(PREFIX) :]
                     await self._deliver(channel, msg["data"])
             except asyncio.CancelledError:
                 raise
@@ -86,8 +86,14 @@ async def publish(channel: str, type_: str, payload: dict[str, Any] | None = Non
         version = int(await kv.client().incr(f"{PREFIX}ver:{channel}"))
     except Exception:
         version = int(datetime.now(UTC).timestamp() * 1000)
-    env = {"type": type_, "channel": channel, "session_id": channel.split(":", 1)[-1], "version": version,
-           "ts": datetime.now(UTC).isoformat(), "payload": payload or {}}
+    env = {
+        "type": type_,
+        "channel": channel,
+        "session_id": channel.split(":", 1)[-1],
+        "version": version,
+        "ts": datetime.now(UTC).isoformat(),
+        "payload": payload or {},
+    }
     data = json.dumps(env, default=str)
     try:
         await kv.client().publish(f"{PREFIX}{channel}", data)
@@ -121,7 +127,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
         await ws.close(code=4401)
         return
     await ws.accept()
-    channels = [c for c in (ws.query_params.get("channels") or ws.query_params.get("session") or "").split(",") if c]
+    channels = [
+        c for c in (ws.query_params.get("channels") or ws.query_params.get("session") or "").split(",") if c
+    ]
     for c in channels:
         hub.add(c, ws)
     try:

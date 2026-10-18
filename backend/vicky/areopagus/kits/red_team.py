@@ -56,24 +56,47 @@ def _growth_decay(ctx: TruthContext) -> Result:
     level, g = mrr.value, g_r.value
     path = []
     for t in range(1, HORIZON + 1):
-        g = g_r.value * r ** t
+        g = g_r.value * r**t
         level *= 1 + g
         if t in CHECKPOINTS:
             path.append((t, level, g))
-    rule = (f"monthly growth starts at {pct(g_r.value)} and is multiplied by {r:.4f} each month "
-            f"(({pct(g_r.value)} ÷ {pct(g_l.value)})^(1/{k:g}), the decay from the 12-month to the recent rate)"
-            if decaying else f"monthly growth held at the recent {pct(g_r.value)} (it is not below the 12-month rate)")
+    rule = (
+        f"monthly growth starts at {pct(g_r.value)} and is multiplied by {r:.4f} each month "
+        f"(({pct(g_r.value)} ÷ {pct(g_l.value)})^(1/{k:g}), the decay from the 12-month to the recent rate)"
+        if decaying
+        else f"monthly growth held at the recent {pct(g_r.value)} (it is not below the 12-month rate)"
+    )
     pts = []
     for t, lv, _ in path:
-        f = derived(f"redteam.decay_arr_m{t}", f"ARR in {t} months if growth keeps decaying", lv * 12, ctx.currency,
-                    f"MRR {mrr.display} compounded {t} months where {rule}; × 12", [mrr, g_r, g_l], projection=True)
+        f = derived(
+            f"redteam.decay_arr_m{t}",
+            f"ARR in {t} months if growth keeps decaying",
+            lv * 12,
+            ctx.currency,
+            f"MRR {mrr.display} compounded {t} months where {rule}; × 12",
+            [mrr, g_r, g_l],
+            projection=True,
+        )
         pts.append({"month": t, "arr": f.model_dump(mode="json")})
     end_arr = pts[-1]["arr"]
-    g_end = derived("redteam.decay_growth_m12", "Monthly growth after 12 more months of decay", path[-1][2], "pct",
-                    f"{pct(g_r.value)} × {r:.4f}^{HORIZON}", [g_r, g_l], projection=True)
-    flat = derived("redteam.flat_arr_m12", "ARR in 12 months if recent growth simply holds",
-                   mrr.value * (1 + g_r.value) ** HORIZON * 12, ctx.currency,
-                   f"MRR {mrr.display} × (1 + {pct(g_r.value)})^{HORIZON} × 12", [mrr, g_r], projection=True)
+    g_end = derived(
+        "redteam.decay_growth_m12",
+        "Monthly growth after 12 more months of decay",
+        path[-1][2],
+        "pct",
+        f"{pct(g_r.value)} × {r:.4f}^{HORIZON}",
+        [g_r, g_l],
+        projection=True,
+    )
+    flat = derived(
+        "redteam.flat_arr_m12",
+        "ARR in 12 months if recent growth simply holds",
+        mrr.value * (1 + g_r.value) ** HORIZON * 12,
+        ctx.currency,
+        f"MRR {mrr.display} × (1 + {pct(g_r.value)})^{HORIZON} × 12",
+        [mrr, g_r],
+        projection=True,
+    )
     res = out(mrr=mrr, cmgr_recent=g_r, cmgr_12m=g_l, growth_after_12m=g_end, arr_if_recent_growth_holds=flat)
     res["arr_after_12m"] = end_arr
     res["path"] = pts
@@ -87,10 +110,24 @@ def _largest_leaves(ctx: TruthContext) -> Result:
     if miss:
         return out(miss)
     assert isinstance(share, Figure) and isinstance(mrr, Figure)
-    lost = derived("redteam.largest_customer_mrr", "MRR from the largest customer", share.value * mrr.value, ctx.currency,
-                   f"share {share.display} × MRR {mrr.display}", [share, mrr], period=mrr.period)
-    arr_after = derived("redteam.arr_without_largest", "ARR if the largest customer leaves", (mrr.value - lost.value) * 12,
-                        ctx.currency, f"(MRR {mrr.display} − {lost.display}) × 12", [mrr, lost], projection=True)
+    lost = derived(
+        "redteam.largest_customer_mrr",
+        "MRR from the largest customer",
+        share.value * mrr.value,
+        ctx.currency,
+        f"share {share.display} × MRR {mrr.display}",
+        [share, mrr],
+        period=mrr.period,
+    )
+    arr_after = derived(
+        "redteam.arr_without_largest",
+        "ARR if the largest customer leaves",
+        (mrr.value - lost.value) * 12,
+        ctx.currency,
+        f"(MRR {mrr.display} − {lost.display}) × 12",
+        [mrr, lost],
+        projection=True,
+    )
     parts: dict = {"top_customer_share": share, "mrr": mrr, "lost_mrr": lost, "arr_after": arr_after}
     miss_after: list[MissingFigure] = []
     g = fig(ctx, "cmgr_recent")
@@ -98,23 +135,39 @@ def _largest_leaves(ctx: TruthContext) -> Result:
         mo = months_to_reach(mrr.value - lost.value, mrr.value, g.value)
         if mo is not None:
             parts["months_to_recover"] = derived(
-                "redteam.months_to_recover_largest", "Months of recent growth needed to replace the largest customer", mo,
-                "months", f"ln({fmt(mrr.value, ctx.currency)} ÷ {fmt(mrr.value - lost.value, ctx.currency)}) ÷ ln(1 + {pct(g.value)})",
-                [mrr, lost, g], projection=True)
+                "redteam.months_to_recover_largest",
+                "Months of recent growth needed to replace the largest customer",
+                mo,
+                "months",
+                f"ln({fmt(mrr.value, ctx.currency)} ÷ {fmt(mrr.value - lost.value, ctx.currency)}) ÷ ln(1 + {pct(g.value)})",
+                [mrr, lost, g],
+                projection=True,
+            )
     burn, cash = fig(ctx, "burn"), fig(ctx, "cash_balance")
     gm = fig(ctx, "gross_margin_incl_cs") or fig(ctx, "gross_margin")
     if burn is not None:
         margin = gm.value if gm else 1.0
-        burn_after = derived("redteam.burn_without_largest", "Monthly burn if the largest customer leaves",
-                             burn.value + lost.value * margin, ctx.currency,
-                             f"burn {burn.display} + lost MRR {lost.display} × gross margin "
-                             f"{gm.display if gm else '100% (no margin figure, worst case)'}",
-                             [burn, lost] + ([gm] if gm else []), projection=True)
+        burn_after = derived(
+            "redteam.burn_without_largest",
+            "Monthly burn if the largest customer leaves",
+            burn.value + lost.value * margin,
+            ctx.currency,
+            f"burn {burn.display} + lost MRR {lost.display} × gross margin "
+            f"{gm.display if gm else '100% (no margin figure, worst case)'}",
+            [burn, lost] + ([gm] if gm else []),
+            projection=True,
+        )
         parts["burn_after"] = burn_after
         if cash is not None and burn_after.value > 0:
-            parts["runway_after"] = derived("redteam.runway_without_largest", "Runway if the largest customer leaves",
-                                            cash.value / burn_after.value, "months",
-                                            f"cash {cash.display} ÷ burn {burn_after.display}", [cash, burn_after], projection=True)
+            parts["runway_after"] = derived(
+                "redteam.runway_without_largest",
+                "Runway if the largest customer leaves",
+                cash.value / burn_after.value,
+                "months",
+                f"cash {cash.display} ÷ burn {burn_after.display}",
+                [cash, burn_after],
+                projection=True,
+            )
         elif cash is None:
             cash_missing = get(ctx, "cash_balance")
             if isinstance(cash_missing, MissingFigure):
@@ -124,11 +177,18 @@ def _largest_leaves(ctx: TruthContext) -> Result:
     return res
 
 
-@tool(KIT, "redteam_stress",
-      "Stress scenarios: growth keeps decaying at the recent CMGR trend for 12 months; the largest customer leaves. "
-      "Returns forecast Figures: arr_after_12m, path[].arr, growth_after_12m, arr_if_recent_growth_holds; lost_mrr, "
-      "arr_after, months_to_recover, burn_after, runway_after.",
-      schema(scenario=enum(["all", "growth_decay", "largest_customer_leaves"], "Which scenario to run; 'all' runs both")))
+@tool(
+    KIT,
+    "redteam_stress",
+    "Stress scenarios: growth keeps decaying at the recent CMGR trend for 12 months; the largest customer leaves. "
+    "Returns forecast Figures: arr_after_12m, path[].arr, growth_after_12m, arr_if_recent_growth_holds; lost_mrr, "
+    "arr_after, months_to_recover, burn_after, runway_after.",
+    schema(
+        scenario=enum(
+            ["all", "growth_decay", "largest_customer_leaves"], "Which scenario to run; 'all' runs both"
+        )
+    ),
+)
 def stress(ctx: TruthContext, scenario: str) -> Result:
     runs = {"growth_decay": _growth_decay, "largest_customer_leaves": _largest_leaves}
     if scenario not in (*runs, "all"):
@@ -138,11 +198,24 @@ def stress(ctx: TruthContext, scenario: str) -> Result:
 
 
 PREFIXES = ("plan.", "plan_", "forecast.", "forecast_")
-RATE_ALIASES = {"logo_churn_monthly": "logo_churn_rate", "revenue_churn_monthly": "revenue_churn_rate",
-                "churn_monthly": "logo_churn_rate", "growth_monthly": "cmgr_recent", "mrr_growth_monthly": "cmgr_recent",
-                "runway": "runway_months"}
-LOWER_IS_BETTER = {"logo_churn_rate", "revenue_churn_rate", "burn", "burn_incl_credits", "burn_multiple", "cac",
-                   "cac_payback_months", "top_customer_share"}
+RATE_ALIASES = {
+    "logo_churn_monthly": "logo_churn_rate",
+    "revenue_churn_monthly": "revenue_churn_rate",
+    "churn_monthly": "logo_churn_rate",
+    "growth_monthly": "cmgr_recent",
+    "mrr_growth_monthly": "cmgr_recent",
+    "runway": "runway_months",
+}
+LOWER_IS_BETTER = {
+    "logo_churn_rate",
+    "revenue_churn_rate",
+    "burn",
+    "burn_incl_credits",
+    "burn_multiple",
+    "cac",
+    "cac_payback_months",
+    "top_customer_share",
+}
 REVENUE_LEVELS = {"mrr": "mrr", "arr": "arr", "revenue": "revenue", "revenue.total": "revenue"}
 COUNT_LEVELS = {"customers.count", "customers", "headcount.total", "headcount"}
 FLOW_LEVELS = {"revenue", "revenue.total"}
@@ -153,7 +226,7 @@ MAX_PER_METRIC = 2  # first and last plan period of each level metric
 def _plan_name(name: str) -> str:
     for p in PREFIXES:
         if name.startswith(p):
-            return name[len(p):]
+            return name[len(p) :]
     return name
 
 
@@ -174,9 +247,15 @@ def _count_growth(ctx: TruthContext, field_id: str) -> Figure | MissingFigure:
     n = months_between(first.period, last.period)
     if n <= 0:
         return missing(fid, label, [field_id], "Needs counts at two different dates")
-    return derived(fid, label, (last.value / first.value) ** (1 / n) - 1, "pct",
-                   f"({last.display} in {label_period(last.period)} ÷ {first.display} in {label_period(first.period)})^(1/{n}) − 1",
-                   [first, last], period=f"{first.period}..{last.period}")
+    return derived(
+        fid,
+        label,
+        (last.value / first.value) ** (1 / n) - 1,
+        "pct",
+        f"({last.display} in {label_period(last.period)} ÷ {first.display} in {label_period(first.period)})^(1/{n}) − 1",
+        [first, last],
+        period=f"{first.period}..{last.period}",
+    )
 
 
 def _level_gaps(ctx: TruthContext, key: str, facts: list[Fact]) -> list[Result]:
@@ -191,7 +270,11 @@ def _level_gaps(ctx: TruthContext, key: str, facts: list[Fact]) -> list[Result]:
         hist_g = _count_growth(ctx, field_id)
     if not isinstance(actual, Figure) or not actual.period or not PERIOD_RX.match(actual.period):
         return []
-    ahead = [f for f in facts if f.period and PERIOD_RX.match(f.period) and months_between(actual.period, f.period) > 0]
+    ahead = [
+        f
+        for f in facts
+        if f.period and PERIOD_RX.match(f.period) and months_between(actual.period, f.period) > 0
+    ]
     if not ahead:
         return []
     picks = [ahead[0]] + ([ahead[-1]] if len(ahead) > 1 else [])
@@ -205,23 +288,42 @@ def _level_gaps(ctx: TruthContext, key: str, facts: list[Fact]) -> list[Result]:
         if a_eq <= 0 or p_eq <= 0:
             continue
         per = " (monthly equivalents)" if flow else ""
-        implied = derived(f"redteam.plan_growth.{key}.{fact.period}", f"Monthly growth the plan needs to reach {fc.display}",
-                          (p_eq / a_eq) ** (1 / n) - 1, "pct",
-                          f"(plan {fc.display} in {label_period(fact.period)} ÷ actual {actual.display} in "
-                          f"{label_period(actual.period)}{per})^(1/{n}) − 1", [fc, actual], projection=True)
-        point: Result = {"forecast": fc.model_dump(mode="json"), "implied_growth": implied.model_dump(mode="json")}
+        implied = derived(
+            f"redteam.plan_growth.{key}.{fact.period}",
+            f"Monthly growth the plan needs to reach {fc.display}",
+            (p_eq / a_eq) ** (1 / n) - 1,
+            "pct",
+            f"(plan {fc.display} in {label_period(fact.period)} ÷ actual {actual.display} in "
+            f"{label_period(actual.period)}{per})^(1/{n}) − 1",
+            [fc, actual],
+            projection=True,
+        )
+        point: Result = {
+            "forecast": fc.model_dump(mode="json"),
+            "implied_growth": implied.model_dump(mode="json"),
+        }
         for tag, g in (("recent", hist_g), ("l12m", hist_l)):
             if isinstance(g, Figure):
                 point[f"gap_vs_{tag}"] = derived(
-                    f"redteam.plan_growth_gap.{key}.{fact.period}.{tag}", f"Plan growth minus {g.label.lower()}",
-                    implied.value - g.value, "pct", f"{implied.display} − {g.display}", [implied, g],
-                    projection=True).model_dump(mode="json")
+                    f"redteam.plan_growth_gap.{key}.{fact.period}.{tag}",
+                    f"Plan growth minus {g.label.lower()}",
+                    implied.value - g.value,
+                    "pct",
+                    f"{implied.display} − {g.display}",
+                    [implied, g],
+                    projection=True,
+                ).model_dump(mode="json")
         if isinstance(hist_g, Figure) and not key.startswith("headcount"):
             point["plan_is_kinder"] = implied.value > hist_g.value
         points.append(point)
     if not points:
         return []
-    item: Result = {"metric": key, "kind": "level", "history": actual.model_dump(mode="json"), "points": points}
+    item: Result = {
+        "metric": key,
+        "kind": "level",
+        "history": actual.model_dump(mode="json"),
+        "points": points,
+    }
     for tag, g in (("recent", hist_g), ("l12m", hist_l)):
         if isinstance(g, Figure):
             item[f"history_growth_{tag}"] = g.model_dump(mode="json")
@@ -243,18 +345,29 @@ def _compatible(a: str, b: str) -> bool:
     return a == b or (a in CURRENCIES and b in CURRENCIES)
 
 
-@tool(KIT, "redteam_forecast_gaps",
-      "Plan assumptions (facts of kind forecast) against history. Levels (MRR, ARR, revenue, customers, headcount): "
-      "the monthly growth the plan needs vs historical growth. Rates (churn, ramp, margins): plan vs history. Returns "
-      "Figures: forecast, history, implied_growth, gap_vs_recent / gap_vs_l12m, or gap (plan ÷ history − 1).")
+@tool(
+    KIT,
+    "redteam_forecast_gaps",
+    "Plan assumptions (facts of kind forecast) against history. Levels (MRR, ARR, revenue, customers, headcount): "
+    "the monthly growth the plan needs vs historical growth. Rates (churn, ramp, margins): plan vs history. Returns "
+    "Figures: forecast, history, implied_growth, gap_vs_recent / gap_vs_l12m, or gap (plan ÷ history − 1).",
+)
 def forecast_gaps(ctx: TruthContext) -> Result:
     plans: dict[str, list[Fact]] = {}
     for fact in ctx.facts:
         if fact.status != "removed" and fact.kind == "forecast":
             plans.setdefault(_plan_name(fact.name), []).append(fact)
     if not plans:
-        return out([missing("redteam.forecast_gaps", "Plan vs history", ["forecast / plan facts"],
-                            "No plan or forecast figures in the source of truth; upload the financial plan to compare")])
+        return out(
+            [
+                missing(
+                    "redteam.forecast_gaps",
+                    "Plan vs history",
+                    ["forecast / plan facts"],
+                    "No plan or forecast figures in the source of truth; upload the financial plan to compare",
+                )
+            ]
+        )
     levels, rates, unmatched = [], [], []
     for key, facts in plans.items():
         facts.sort(key=_sort_key)
@@ -278,10 +391,22 @@ def forecast_gaps(ctx: TruthContext) -> Result:
             unmatched.append(key)
             continue
         fc = fact_to_figure(ctx, fact, unit=hist.unit, value=value)
-        gap = derived(f"redteam.gap.{key}", f"Plan vs history: {fact.label or key}", value / hist.value - 1, "pct",
-                      f"plan {fc.display} ÷ history {hist.display} − 1", [fc, hist], projection=True)
-        item: Result = {"metric": key, "kind": "rate", "forecast": fc.model_dump(mode="json"),
-                        "history": hist.model_dump(mode="json"), "gap": gap.model_dump(mode="json")}
+        gap = derived(
+            f"redteam.gap.{key}",
+            f"Plan vs history: {fact.label or key}",
+            value / hist.value - 1,
+            "pct",
+            f"plan {fc.display} ÷ history {hist.display} − 1",
+            [fc, hist],
+            projection=True,
+        )
+        item: Result = {
+            "metric": key,
+            "kind": "rate",
+            "forecast": fc.model_dump(mode="json"),
+            "history": hist.model_dump(mode="json"),
+            "gap": gap.model_dump(mode="json"),
+        }
         hist_id = RATE_ALIASES.get(key) or FACT_ALIASES.get(key) or hist.id
         if hist_id in LOWER_IS_BETTER or key.endswith(("_ramp_months", "churn_monthly")):
             item["plan_is_kinder"] = value < hist.value

@@ -15,7 +15,13 @@ DEFAULT_PANEL = ["aristotle", "thales", "xenophon", "plato", "socrates"]
 MAX_PANEL = 5
 # The built-ins before the philosopher rename (ADR 0002). Sessions recorded under these ids still open,
 # show the new names and can be continued; new sessions seat the new investors.
-LEGACY_IDS = {"james": "aristotle", "alex": "thales", "mark": "socrates", "claire": "plato", "kenji": "xenophon"}
+LEGACY_IDS = {
+    "james": "aristotle",
+    "alex": "thales",
+    "mark": "socrates",
+    "claire": "plato",
+    "kenji": "xenophon",
+}
 
 
 def canonical(pid: str) -> str:
@@ -42,8 +48,15 @@ def templates() -> list[VCPersona]:
 
 
 def _from_row(r: dict) -> VCPersona:
-    return VCPersona.model_validate({**r["spec"], "id": r["slug"], "builtin": False, "version": r["version"],
-                                     "base_archetype": r["base_archetype"]})
+    return VCPersona.model_validate(
+        {
+            **r["spec"],
+            "id": r["slug"],
+            "builtin": False,
+            "version": r["version"],
+            "base_archetype": r["base_archetype"],
+        }
+    )
 
 
 async def custom() -> list[VCPersona]:
@@ -71,10 +84,15 @@ def _slug(name: str) -> str:
 async def create(spec: dict, base_archetype: str | None = None) -> VCPersona:
     data = {k: v for k, v in spec.items() if k not in ("id", "builtin", "version")}
     slug = _slug(str(data.get("name") or "vc"))
-    p = VCPersona.model_validate({**data, "id": slug, "builtin": False,
-                                  "base_archetype": base_archetype or data.get("base_archetype")})
-    await db.execute("insert into vc_personas (slug, spec, base_archetype) values ($1, $2, $3)",
-                     slug, p.model_dump(mode="json"), p.base_archetype)
+    p = VCPersona.model_validate(
+        {**data, "id": slug, "builtin": False, "base_archetype": base_archetype or data.get("base_archetype")}
+    )
+    await db.execute(
+        "insert into vc_personas (slug, spec, base_archetype) values ($1, $2, $3)",
+        slug,
+        p.model_dump(mode="json"),
+        p.base_archetype,
+    )
     return p
 
 
@@ -86,7 +104,11 @@ async def update(pid: str, spec: dict) -> VCPersona:
         raise KeyError(pid)
     data = {**r["spec"], **{k: v for k, v in spec.items() if k not in ("id", "builtin", "version")}}
     p = VCPersona.model_validate({**data, "id": pid, "builtin": False, "version": r["version"] + 1})
-    await db.execute("update vc_personas set spec = $2, version = version + 1 where slug = $1", pid, p.model_dump(mode="json"))
+    await db.execute(
+        "update vc_personas set spec = $2, version = version + 1 where slug = $1",
+        pid,
+        p.model_dump(mode="json"),
+    )
     return p
 
 
@@ -104,7 +126,9 @@ async def fork(pid: str) -> VCPersona:
         raise KeyError(pid)
     data = src.model_dump(mode="json")
     data["name"] = f"{src.name} (fork)"
-    return await create(data, base_archetype=src.archetype if src.builtin else src.base_archetype or src.archetype)
+    return await create(
+        data, base_archetype=src.archetype if src.builtin else src.base_archetype or src.archetype
+    )
 
 
 async def panel(ids: list[str] | None, strict: bool = True) -> list[VCPersona]:

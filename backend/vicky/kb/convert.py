@@ -36,8 +36,19 @@ log = logging.getLogger(__name__)
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp"}
 TEXT_EXT = {".txt", ".text", ".md", ".markdown", ".rst", ".log", ".yaml", ".yml", ".xml", ".toml", ".ini"}
-KINDS = {".csv": "csv", ".tsv": "csv", ".xlsx": "xlsx", ".xlsm": "xlsx", ".pdf": "pdf", ".docx": "docx",
-         ".pptx": "pptx", ".json": "json", ".html": "html", ".htm": "html", ".zip": "zip"}
+KINDS = {
+    ".csv": "csv",
+    ".tsv": "csv",
+    ".xlsx": "xlsx",
+    ".xlsm": "xlsx",
+    ".pdf": "pdf",
+    ".docx": "docx",
+    ".pptx": "pptx",
+    ".json": "json",
+    ".html": "html",
+    ".htm": "html",
+    ".zip": "zip",
+}
 MAX_TABLE_ROWS = 100_000
 MAX_TEXT_CHARS = 2_000_000
 MAX_ZIP_ENTRIES = 1000
@@ -47,12 +58,13 @@ MIN_FIGURE_CHARS = 6  # OCR output shorter than this (letters/digits) is noise, 
 @dataclass
 class Draft:
     """A note before it has a path in the vault."""
-    name: str               # file name with extension (.md / .csv)
+
+    name: str  # file name with extension (.md / .csv)
     title: str
-    kind: str               # table | document | note
-    format: str             # md | csv
+    kind: str  # table | document | note
+    format: str  # md | csv
     content: str
-    folder: str = ""        # from a zip's folders; "" lands in the inbox
+    folder: str = ""  # from a zip's folders; "" lands in the inbox
     meta: dict[str, Any] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
     summary: str = ""
@@ -63,6 +75,7 @@ class Unreadable(Exception):
 
 
 # ---------------------------------------------------------------- helpers
+
 
 def file_kind(filename: str) -> str:
     ext = PurePosixPath(filename.lower()).suffix
@@ -210,7 +223,7 @@ def split_frontmatter(text: str) -> tuple[dict, str]:
         data = yaml.safe_load(m.group(1)) or {}
     except yaml.YAMLError:
         return {}, text
-    return (data if isinstance(data, dict) else {}), text[m.end():].lstrip("\n")
+    return (data if isinstance(data, dict) else {}), text[m.end() :].lstrip("\n")
 
 
 def first_heading(md: str) -> str | None:
@@ -278,7 +291,10 @@ def chart_markdown(xml: bytes, label: str) -> str:
         # No cached values (some writers don't store them): say which cells the chart draws instead.
         if not refs:
             return ""
-        return f"### Chart: {title or label}\n\nThe chart stores no values of its own. It plots:\n" + "\n".join(refs)
+        return (
+            f"### Chart: {title or label}\n\nThe chart stores no values of its own. It plots:\n"
+            + "\n".join(refs)
+        )
     idx = sorted({i for _, cats, vals, _ in series for i in (*cats, *vals)})
     cats_all: dict[int, str] = {}
     for _, cats, _, _ in series:
@@ -287,7 +303,9 @@ def chart_markdown(xml: bytes, label: str) -> str:
     rows = [["Category", *[s[0] for s in series]]]
     rows += [[cats_all.get(i, str(i + 1)), *[s[2].get(i, "") for s in series]] for i in idx]
     plot = root.find(f".//{_C}plotArea")
-    kinds = sorted({el.tag.replace(_C, "") for el in (plot if plot is not None else []) if el.tag.endswith("Chart")})
+    kinds = sorted(
+        {el.tag.replace(_C, "") for el in (plot if plot is not None else []) if el.tag.endswith("Chart")}
+    )
     lines = [f"### Chart: {title or label}", ""]
     if kinds:
         lines.append(f"Type: {', '.join(kinds)}. Values as stored in the chart.")
@@ -303,7 +321,9 @@ def ooxml_charts(data: bytes, prefix: str) -> list[str]:
     out = []
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as z:
-            names = sorted(n for n in z.namelist() if n.startswith(prefix) and re.search(r"chart\d*\.xml$", n))
+            names = sorted(
+                n for n in z.namelist() if n.startswith(prefix) and re.search(r"chart\d*\.xml$", n)
+            )
             for i, n in enumerate(names, 1):
                 md = chart_markdown(z.read(n), f"chart {i}")
                 if md:
@@ -331,17 +351,29 @@ def ooxml_images_ocr(data: bytes, prefix: str, limit: int = 40) -> list[str]:
 
 # ---------------------------------------------------------------- per format
 
+
 def from_csv(stem: str, folder: str, text: str, source: str) -> list[Draft]:
     sample = text[:20000]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
     except csv.Error:
         dialect = csv.excel
-    rows = trim_rows([[c.strip() for c in r] for r in csv.reader(io.StringIO(text), dialect)][:MAX_TABLE_ROWS + 1])
+    rows = trim_rows(
+        [[c.strip() for c in r] for r in csv.reader(io.StringIO(text), dialect)][: MAX_TABLE_ROWS + 1]
+    )
     if not rows:
         raise Unreadable("no rows")
-    return [Draft(name=f"{stem}.csv", title=stem, kind="table", format="csv", content=to_csv(rows), folder=folder,
-                  meta={"source": source, "columns": rows[0], "rows": len(rows) - 1})]
+    return [
+        Draft(
+            name=f"{stem}.csv",
+            title=stem,
+            kind="table",
+            format="csv",
+            content=to_csv(rows),
+            folder=folder,
+            meta={"source": source, "columns": rows[0], "rows": len(rows) - 1},
+        )
+    ]
 
 
 def from_xlsx(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
@@ -361,16 +393,36 @@ def from_xlsx(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
             if not rows:
                 continue
             name = stem if len(sheets) == 1 else f"{stem} - {clean_segment(ws.title) or 'sheet'}"
-            drafts.append(Draft(name=f"{name}.csv", title=name, kind="table", format="csv", content=to_csv(rows),
-                                folder=folder, meta={"source": source, "sheet": ws.title, "columns": rows[0],
-                                                     "rows": len(rows) - 1}))
+            drafts.append(
+                Draft(
+                    name=f"{name}.csv",
+                    title=name,
+                    kind="table",
+                    format="csv",
+                    content=to_csv(rows),
+                    folder=folder,
+                    meta={"source": source, "sheet": ws.title, "columns": rows[0], "rows": len(rows) - 1},
+                )
+            )
     finally:
         wb.close()
     charts = ooxml_charts(data, "xl/charts/")
     if charts:
-        body = f"# {stem}: charts\n\n> Chart data from `{source}`, as stored in the workbook.\n\n" + "\n\n".join(charts)
-        drafts.append(Draft(name=f"{stem} - charts.md", title=f"{stem}: charts", kind="document", format="md",
-                            content=body, folder=folder, meta={"source": source, "charts": len(charts)}))
+        body = (
+            f"# {stem}: charts\n\n> Chart data from `{source}`, as stored in the workbook.\n\n"
+            + "\n\n".join(charts)
+        )
+        drafts.append(
+            Draft(
+                name=f"{stem} - charts.md",
+                title=f"{stem}: charts",
+                kind="document",
+                format="md",
+                content=body,
+                folder=folder,
+                meta={"source": source, "charts": len(charts)},
+            )
+        )
     if not drafts:
         raise Unreadable("the workbook has no cells with values")
     return drafts
@@ -420,7 +472,9 @@ def from_pdf(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
     unread = [n for n in blank if not ocr_text.get(n, "").strip()]
     head = [f"# {stem}", "", f"> Source: `{source}` · {len(pages)} page{'s' if len(pages) != 1 else ''}"]
     if ocr_text:
-        head[-1] += f" · OCR on page{'s' if len(ocr_text) > 1 else ''} {', '.join(map(str, sorted(ocr_text)))}"
+        head[-1] += (
+            f" · OCR on page{'s' if len(ocr_text) > 1 else ''} {', '.join(map(str, sorted(ocr_text)))}"
+        )
     if unread and not can_ocr:
         head[-1] += " · pages without a text layer were not read (OCR isn't installed on this server)"
     body = []
@@ -432,9 +486,23 @@ def from_pdf(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
             body.append(f"### Figure {k} on page {n} (OCR)")
             body.append(fenced(fig))
     content = "\n\n".join(["\n".join(head), *body])
-    return [Draft(name=f"{stem}.md", title=stem, kind="document", format="md", content=content[:MAX_TEXT_CHARS],
-                  folder=folder, meta={"source": source, "pages": len(pages), "ocr_pages": sorted(ocr_text),
-                                       "figure_pages": sorted(figures), "unread_pages": unread})]
+    return [
+        Draft(
+            name=f"{stem}.md",
+            title=stem,
+            kind="document",
+            format="md",
+            content=content[:MAX_TEXT_CHARS],
+            folder=folder,
+            meta={
+                "source": source,
+                "pages": len(pages),
+                "ocr_pages": sorted(ocr_text),
+                "figure_pages": sorted(figures),
+                "unread_pages": unread,
+            },
+        )
+    ]
 
 
 def from_docx(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
@@ -474,8 +542,17 @@ def from_docx(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
     if figs:
         parts += ["## Images (OCR)", *[fenced(f) for f in figs]]
     content = "\n\n".join(p for p in parts if p is not None)
-    return [Draft(name=f"{stem}.md", title=stem, kind="document", format="md", content=content[:MAX_TEXT_CHARS],
-                  folder=folder, meta={"source": source, "charts": len(charts), "images_ocr": len(figs)})]
+    return [
+        Draft(
+            name=f"{stem}.md",
+            title=stem,
+            kind="document",
+            format="md",
+            content=content[:MAX_TEXT_CHARS],
+            folder=folder,
+            meta={"source": source, "charts": len(charts), "images_ocr": len(figs)},
+        )
+    ]
 
 
 def _pptx_shapes(shapes):
@@ -528,13 +605,23 @@ def from_pptx(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
                     parts.append(f"### Picture on slide {i} (OCR)\n\n{fenced(t)}")
                     n_ocr += 1
         if slide.has_notes_slide:
-            notes = slide.notes_slide.notes_text_frame.text.strip() if slide.notes_slide.notes_text_frame else ""
+            notes = (
+                slide.notes_slide.notes_text_frame.text.strip() if slide.notes_slide.notes_text_frame else ""
+            )
             if notes:
                 parts.append("> Speaker notes: " + notes.replace("\n", "\n> "))
     content = "\n\n".join(parts)
-    return [Draft(name=f"{stem}.md", title=stem, kind="document", format="md", content=content[:MAX_TEXT_CHARS],
-                  folder=folder, meta={"source": source, "slides": len(prs.slides), "charts": n_charts,
-                                       "images_ocr": n_ocr})]
+    return [
+        Draft(
+            name=f"{stem}.md",
+            title=stem,
+            kind="document",
+            format="md",
+            content=content[:MAX_TEXT_CHARS],
+            folder=folder,
+            meta={"source": source, "slides": len(prs.slides), "charts": n_charts, "images_ocr": n_ocr},
+        )
+    ]
 
 
 def from_image(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
@@ -548,11 +635,38 @@ def from_image(stem: str, folder: str, data: bytes, source: str) -> list[Draft]:
         body = fenced(text) if text else "_No text found in this image._"
         meta = {"source": source, "ocr": True}
     content = f"# {stem}\n\n> Source: `{source}` · image, text read by OCR\n\n{body}"
-    return [Draft(name=f"{stem}.md", title=stem, kind="document", format="md", content=content, folder=folder, meta=meta)]
+    return [
+        Draft(
+            name=f"{stem}.md",
+            title=stem,
+            kind="document",
+            format="md",
+            content=content,
+            folder=folder,
+            meta=meta,
+        )
+    ]
 
 
 class _Html(HTMLParser):
-    BLOCK = {"p", "div", "section", "article", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6", "table", "ul", "ol"}
+    BLOCK = {
+        "p",
+        "div",
+        "section",
+        "article",
+        "br",
+        "tr",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "table",
+        "ul",
+        "ol",
+    }
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -616,8 +730,17 @@ def from_html(stem: str, folder: str, text: str, source: str) -> list[Draft]:
     body = tidy_text("".join(p.out))
     title = p.title.strip()[:200] or stem
     content = f"# {title}\n\n> Source: `{source}`\n\n{body}"
-    return [Draft(name=f"{stem}.md", title=title, kind="document", format="md", content=content[:MAX_TEXT_CHARS],
-                  folder=folder, meta={"source": source})]
+    return [
+        Draft(
+            name=f"{stem}.md",
+            title=title,
+            kind="document",
+            format="md",
+            content=content[:MAX_TEXT_CHARS],
+            folder=folder,
+            meta={"source": source},
+        )
+    ]
 
 
 def from_json(stem: str, folder: str, text: str, source: str) -> list[Draft]:
@@ -629,14 +752,26 @@ def from_json(stem: str, folder: str, text: str, source: str) -> list[Draft]:
     if isinstance(data, dict):
         lists = [v for v in data.values() if isinstance(v, list)]
         records = lists[0] if len(lists) == 1 else None
-    if records and all(isinstance(r, dict) for r in records) and all(
-            not isinstance(v, dict | list) for r in records for v in r.values()):
+    if (
+        records
+        and all(isinstance(r, dict) for r in records)
+        and all(not isinstance(v, dict | list) for r in records for v in r.values())
+    ):
         cols: list[str] = []
         for r in records:
             cols += [k for k in r if k not in cols]
         rows = [cols, *[[cell_text(r.get(c)) for c in cols] for r in records[:MAX_TABLE_ROWS]]]
-        return [Draft(name=f"{stem}.csv", title=stem, kind="table", format="csv", content=to_csv(rows), folder=folder,
-                      meta={"source": source, "columns": cols, "rows": len(rows) - 1})]
+        return [
+            Draft(
+                name=f"{stem}.csv",
+                title=stem,
+                kind="table",
+                format="csv",
+                content=to_csv(rows),
+                folder=folder,
+                meta={"source": source, "columns": cols, "rows": len(rows) - 1},
+            )
+        ]
     pretty = json.dumps(data, indent=2, ensure_ascii=False)
     return from_text(stem, folder, pretty, source, lang="json")
 
@@ -644,17 +779,38 @@ def from_json(stem: str, folder: str, text: str, source: str) -> list[Draft]:
 def from_text(stem: str, folder: str, text: str, source: str, lang: str | None = None) -> list[Draft]:
     if lang:
         content = f"# {stem}\n\n> Source: `{source}`\n\n{fenced(text[:MAX_TEXT_CHARS], lang)}"
-        return [Draft(name=f"{stem}.md", title=stem, kind="document", format="md", content=content, folder=folder,
-                      meta={"source": source})]
+        return [
+            Draft(
+                name=f"{stem}.md",
+                title=stem,
+                kind="document",
+                format="md",
+                content=content,
+                folder=folder,
+                meta={"source": source},
+            )
+        ]
     front, body = split_frontmatter(text)
     title = str(front.get("title") or first_heading(body) or stem)[:200]
     tags = front.get("tags") or []
     tags = [str(t) for t in (tags if isinstance(tags, list) else str(tags).split(","))]
-    return [Draft(name=f"{stem}.md", title=title, kind="note", format="md", content=body[:MAX_TEXT_CHARS],
-                  folder=folder, meta={"source": source}, tags=tags, summary=str(front.get("summary") or "")[:500])]
+    return [
+        Draft(
+            name=f"{stem}.md",
+            title=title,
+            kind="note",
+            format="md",
+            content=body[:MAX_TEXT_CHARS],
+            folder=folder,
+            meta={"source": source},
+            tags=tags,
+            summary=str(front.get("summary") or "")[:500],
+        )
+    ]
 
 
 # ---------------------------------------------------------------- entry points
+
 
 def expand(filename: str, data: bytes) -> list[tuple[str, bytes]]:
     """A zip's entries as (path inside the zip, bytes); any other file as itself. Guards zip bombs."""
@@ -690,8 +846,12 @@ def convert(filename: str, data: bytes) -> list[Draft]:
     """Notes made from one file (not a zip: `expand` first). Raises Unreadable."""
     drafts = _convert(filename, data)
     for d in drafts:  # one NUL anywhere would fail the whole insert
-        d.name, d.title, d.content, d.folder = (strip_nul(d.name), strip_nul(d.title), strip_nul(d.content),
-                                                strip_nul(d.folder))
+        d.name, d.title, d.content, d.folder = (
+            strip_nul(d.name),
+            strip_nul(d.title),
+            strip_nul(d.content),
+            strip_nul(d.folder),
+        )
         d.summary, d.tags, d.meta = strip_nul(d.summary), strip_nul(d.tags), strip_nul(d.meta)
     return drafts
 

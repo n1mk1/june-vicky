@@ -19,19 +19,32 @@ from vicky.court import referee
 
 VERDICTS = ("knows", "partial", "contradicts", "missed", "unverified")
 PROBES_PER_VC = 2
-KNOW_GAP = 3            # questions between two knowledge checks
+KNOW_GAP = 3  # questions between two knowledge checks
 QUOTE_MAX = 280
-STOP = set("""a an and are as at be been but by can could did do does for from had has have how i if in into is it its
+STOP = set(
+    """a an and are as at be been but by can could did do does for from had has have how i if in into is it its
 of on or our out so than that the their them then there these they this to was we were what when where which who why
 will with would you your about after also any been being just more most much not only other over some such very
-""".split())
-DONT_KNOW = ("don't know", "do not know", "not sure", "no idea", "can't remember", "cannot remember", "don't remember",
-             "need to check", "i'd have to look")
+""".split()
+)
+DONT_KNOW = (
+    "don't know",
+    "do not know",
+    "not sure",
+    "no idea",
+    "can't remember",
+    "cannot remember",
+    "don't remember",
+    "need to check",
+    "i'd have to look",
+)
 
 
-ASK = ("Without looking at your notes: what have you written down about {topic}?",
-       "From memory, no slides: what do your own notes say about {topic}?",
-       "Quick check before we go on. What have you recorded about {topic}?")
+ASK = (
+    "Without looking at your notes: what have you written down about {topic}?",
+    "From memory, no slides: what do your own notes say about {topic}?",
+    "Quick check before we go on. What have you recorded about {topic}?",
+)
 
 
 def _norm(s: str) -> str:
@@ -48,7 +61,9 @@ def _nums(s: str) -> set[str]:
 
 def key_quote(text: str) -> str:
     """The answer key: the first full sentence (or two) of a passage with substance, copied verbatim."""
-    body = "\n".join(ln for ln in (text or "").splitlines() if ln.strip() and not ln.lstrip().startswith(("#", "|", "---")))
+    body = "\n".join(
+        ln for ln in (text or "").splitlines() if ln.strip() and not ln.lstrip().startswith(("#", "|", "---"))
+    )
     for s in re.split(r"(?<=[.!?])\s+|\n+", body):
         s = s.strip().lstrip("-*• ").strip()
         if len(s.split()) >= 6 and s.count(",") <= 6:  # a sentence, not a CSV header or a list of fields
@@ -78,12 +93,25 @@ def probe_from(passage: dict, vc: str, lens: str, n: int) -> dict | None:
     if not quote or not verbatim_in(quote, passage.get("text", "")):
         return None
     topic = _topic(passage, lens)
-    return {"id": f"k:{vc}.{n}", "vc": vc, "lens": lens, "topic": topic,
-            "question": ASK[(n + len(vc)) % len(ASK)].format(topic=topic),
-            "expected": {"chunk_id": passage.get("id"), "note_id": passage.get("note_id"), "cite": passage.get("cite"),
-                         "path": passage.get("path"), "title": passage.get("title"), "heading": passage.get("heading"),
-                         "quote": quote, "text": (passage.get("text") or "")[:800]},
-            "asked": False, "source": "offline"}
+    return {
+        "id": f"k:{vc}.{n}",
+        "vc": vc,
+        "lens": lens,
+        "topic": topic,
+        "question": ASK[(n + len(vc)) % len(ASK)].format(topic=topic),
+        "expected": {
+            "chunk_id": passage.get("id"),
+            "note_id": passage.get("note_id"),
+            "cite": passage.get("cite"),
+            "path": passage.get("path"),
+            "title": passage.get("title"),
+            "heading": passage.get("heading"),
+            "quote": quote,
+            "text": (passage.get("text") or "")[:800],
+        },
+        "asked": False,
+        "source": "offline",
+    }
 
 
 def build_probes(passages: dict[str, list[tuple[str, dict]]]) -> list[dict]:
@@ -105,8 +133,10 @@ def build_probes(passages: dict[str, list[tuple[str, dict]]]) -> list[dict]:
 
 # ---------------------------------------------------------------- orchestration
 
-def candidate(state: dict, ranked: list[referee.Candidate], *, question_count: int, cap: int,
-              weak: bool) -> referee.Candidate | None:
+
+def candidate(
+    state: dict, ranked: list[referee.Candidate], *, question_count: int, cap: int, weak: bool
+) -> referee.Candidate | None:
     """Vicky's call on whether a knowledge check is due now, and whose. Code decides; the chair may
     still pick another candidate. Never right after a weak answer (the follow-up comes first)."""
     probes = [p for p in state.get("probes") or [] if not p["asked"] and p["vc"] in state["vcs"]]
@@ -117,13 +147,22 @@ def candidate(state: dict, ranked: list[referee.Candidate], *, question_count: i
         return None
     last = state.get("last_knowledge_q")
     left = cap - question_count
-    due = (last is None and (question_count >= 2 or left <= 2)) or (last is not None and question_count - last >= KNOW_GAP)
+    due = (last is None and (question_count >= 2 or left <= 2)) or (
+        last is not None and question_count - last >= KNOW_GAP
+    )
     if not due:
         return None
-    pick = min(probes, key=lambda p: (not p.get("drill"), state["vcs"][p["vc"]]["last_spoke"], p["id"]))  # drilled first
+    pick = min(
+        probes, key=lambda p: (not p.get("drill"), state["vcs"][p["vc"]]["last_spoke"], p["id"])
+    )  # drilled first
     top = max((c.score for c in ranked), default=0.5)
-    return referee.Candidate(pick["vc"], "knowledge", pick["id"], round(top + 0.05, 4),
-                             ["Vicky: knowledge check due", f"tests {pick['expected'].get('path') or 'a note'}"])
+    return referee.Candidate(
+        pick["vc"],
+        "knowledge",
+        pick["id"],
+        round(top + 0.05, 4),
+        ["Vicky: knowledge check due", f"tests {pick['expected'].get('path') or 'a note'}"],
+    )
 
 
 def probe(state: dict, probe_id: str | None) -> dict | None:
@@ -132,14 +171,19 @@ def probe(state: dict, probe_id: str | None) -> dict | None:
 
 # ---------------------------------------------------------------- verification
 
+
 def verify(answer: str, pr: dict, passages: list[dict]) -> dict[str, Any]:
     """Vicky's verdict on a knowledge answer, by code: overlap with the answer key and the notes found
     for the answer, a number that disagrees with the note, or an admitted blank."""
     exp = pr.get("expected") or {}
     quote = exp.get("quote") or ""
     if not quote:
-        return {"verdict": "unverified", "explanation": "There was nothing in your notes to check that answer against.",
-                "cite": None, "source": "offline"}
+        return {
+            "verdict": "unverified",
+            "explanation": "There was nothing in your notes to check that answer against.",
+            "cite": None,
+            "source": "offline",
+        }
     t = answer.lower()
     same_note = [c for c in passages if c.get("note_id") and c.get("note_id") == exp.get("note_id")]
     key = _words(quote)
@@ -156,17 +200,23 @@ def verify(answer: str, pr: dict, passages: list[dict]) -> dict[str, Any]:
         verdict = "partial"
     else:
         verdict = "missed"
-    return {"verdict": verdict, "explanation": explain(verdict, quote, exp.get("cite")), "cite": exp.get("cite"),
-            "source": "offline"}
+    return {
+        "verdict": verdict,
+        "explanation": explain(verdict, quote, exp.get("cite")),
+        "cite": exp.get("cite"),
+        "source": "offline",
+    }
 
 
 def explain(verdict: str, quote: str, cite: str | None) -> str:
     said = f'Your notes say "{quote}" {cite}' if quote and cite else "Your notes say otherwise"
-    return {"knows": f"That matches your notes. {said}.",
-            "partial": f"Part of it. {said}.",
-            "contradicts": f"That disagrees with your own notes. {said}.",
-            "missed": f"You didn't recall it. {said}.",
-            "unverified": "There was nothing in your notes to check that answer against."}[verdict]
+    return {
+        "knows": f"That matches your notes. {said}.",
+        "partial": f"Part of it. {said}.",
+        "contradicts": f"That disagrees with your own notes. {said}.",
+        "missed": f"You didn't recall it. {said}.",
+        "unverified": "There was nothing in your notes to check that answer against.",
+    }[verdict]
 
 
 def adjust_score(score: dict, check: dict) -> dict:
@@ -188,5 +238,10 @@ def adjust_score(score: dict, check: dict) -> dict:
 
 
 def label(verdict: str) -> str:
-    return {"knows": "Knew it", "partial": "Partly", "contradicts": "Contradicts notes", "missed": "Missed",
-            "unverified": "Not checked"}.get(verdict, verdict)
+    return {
+        "knows": "Knew it",
+        "partial": "Partly",
+        "contradicts": "Contradicts notes",
+        "missed": "Missed",
+        "unverified": "Not checked",
+    }.get(verdict, verdict)

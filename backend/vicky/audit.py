@@ -58,13 +58,43 @@ class AuditResult(BaseModel):
 
 # Money markers, lowercase (patterns run on lowered text): a dollar prefix (C$, US$, S$ …), a symbol,
 # or an ISO code (CAD, CHF …). `CUR` may be absent; `CUR_REQ` must be there.
-_CUR_MARK = (rf"(?:{_PREFIX_RX}|{_SYMBOL_RX}|\$|\b(?:{'|'.join(sorted(CURRENCY_CODES, key=len, reverse=True))})\s?)")
+_CUR_MARK = (
+    rf"(?:{_PREFIX_RX}|{_SYMBOL_RX}|\$|\b(?:{'|'.join(sorted(CURRENCY_CODES, key=len, reverse=True))})\s?)"
+)
 CUR, CUR_REQ = rf"{_CUR_MARK}?", _CUR_MARK
 _SCALE = r"(?:k|m|mm|b|bn|thousand|million|billion)"
-_UNITS_W = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
-            "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
-            "seventeen": 17, "eighteen": 18, "nineteen": 19}
-_TENS_W = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+_UNITS_W = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+}
+_TENS_W = {
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
 _SCALES_W = {"thousand": 1e3, "million": 1e6, "billion": 1e9}
 _NUM_W = "|".join([*_UNITS_W, *_TENS_W])
 
@@ -86,7 +116,9 @@ VALUATION_PATTERNS = [
     r"\b(thousand|million|billion)\b[^.!?\n]{0,20}\b(valuation|pre-money|post-money|pre money|post money)\b",
     rf"\bworth\s+(about\s+|around\s+|roughly\s+|over\s+)?((a|{_NUM_W}|hundred|point|and)[\s-]+){{1,6}}(thousand|million|billion)\b",
 ]
-_DEAL = r"(term ?sheets?|offers?|deals?|round|investment|money|cheque|check|safe|notes?|terms|valuation|cap)\b"
+_DEAL = (
+    r"(term ?sheets?|offers?|deals?|round|investment|money|cheque|check|safe|notes?|terms|valuation|cap)\b"
+)
 _DEAL_OBJ = rf"\s+((the|this|that|their|our|any|an?|his|her)\s+)?([\w-]+\s+){{0,2}}?{_DEAL}"
 _DEAL_VERB = r"(accept|take|sign|reject|decline|turn down|walk away from)"
 ADVICE_PATTERNS = [
@@ -101,30 +133,49 @@ ADVICE_PATTERNS = [
     r"\b(buy|sell)\s+(shares|stock|equity)\s+in\b",
 ]
 BENCHMARK_PATTERNS = [
-    r"\bbenchmarks?\b", r"\btop[- ]quartile\b", r"\bbottom[- ]quartile\b", r"\bmedian\b", r"\bbest[- ]in[- ]class\b",
-    r"\bindustry (average|standard|norm)\b", r"\binvestors (usually|typically|generally) (expect|look for|want)\b",
-    r"\brule of 40\b", r"\bthe norm\b", r"\bgood looks like\b", r"\bhealthy (range|level)\b",
-    r"\b(typical|typically) (for|at) (seed|series a|saas)\b", r"\bpeers\b",
+    r"\bbenchmarks?\b",
+    r"\btop[- ]quartile\b",
+    r"\bbottom[- ]quartile\b",
+    r"\bmedian\b",
+    r"\bbest[- ]in[- ]class\b",
+    r"\bindustry (average|standard|norm)\b",
+    r"\binvestors (usually|typically|generally) (expect|look for|want)\b",
+    r"\brule of 40\b",
+    r"\bthe norm\b",
+    r"\bgood looks like\b",
+    r"\bhealthy (range|level)\b",
+    r"\b(typical|typically) (for|at) (seed|series a|saas)\b",
+    r"\bpeers\b",
 ]
 
 SRC_RE = re.compile(r"\[src:([a-z0-9_\-.]+)\]", re.I)
 KB_RE = re.compile(r"\[kb:([^\[\]\n]{1,400})\]")
-OPEN_QUOTES, CLOSE_QUOTES = "\"“„«", "\"”“»"
+OPEN_QUOTES, CLOSE_QUOTES = '"“„«', '"”“»'
 NOTE_QUOTE_MAX = 1200
 FOUNDER_QUOTE_MIN = 8
 _NUM = r"(\d[\d,]*(?:\.\d+)?)"
 _CODE_RX = "|".join(sorted(CURRENCY_CODES | {"rmb"}, key=len, reverse=True))
 # A marker before the number ("C$1.3M", "£80K", "CHF 4.2M") or a code or currency word after it ("4.2M CAD").
-MONEY_RE = re.compile(rf"(?<![\w.])(?:({_PREFIX_RX})|({_SYMBOL_RX}|\$)|({_CODE_RX})\s?)\s?{_NUM}\s*({_SCALE})?\b", re.I)
-MONEY_AFTER_RE = re.compile(rf"(?<![\w.$£€]){_NUM}\s*({_SCALE})?\s?(?:({_CODE_RX})|(dollars?|bucks|euros?|pounds))(?![a-z])", re.I)
+MONEY_RE = re.compile(
+    rf"(?<![\w.])(?:({_PREFIX_RX})|({_SYMBOL_RX}|\$)|({_CODE_RX})\s?)\s?{_NUM}\s*({_SCALE})?\b", re.I
+)
+MONEY_AFTER_RE = re.compile(
+    rf"(?<![\w.$£€]){_NUM}\s*({_SCALE})?\s?(?:({_CODE_RX})|(dollars?|bucks|euros?|pounds))(?![a-z])", re.I
+)
 TRAILING_CODE_RE = re.compile(rf"\s?({_CODE_RX})(?![a-z])", re.I)
 CURRENCY_WORDS = {"euro": "eur", "euros": "eur", "pounds": "gbp"}
-SCALED_RE = re.compile(rf"(?<![\w.$£€/:])(?<![\w.]-){_NUM}\s?({_SCALE})\b", re.I)  # "4.2M", "85K": money or a count
-PCT_RE = re.compile(r"(?<![\w.$£€])(-?\d[\d,]*(?:\.\d+)?)\s?(%|percent\b|per cent\b|pp\b|percentage points?\b)", re.I)
+SCALED_RE = re.compile(
+    rf"(?<![\w.$£€/:])(?<![\w.]-){_NUM}\s?({_SCALE})\b", re.I
+)  # "4.2M", "85K": money or a count
+PCT_RE = re.compile(
+    r"(?<![\w.$£€])(-?\d[\d,]*(?:\.\d+)?)\s?(%|percent\b|per cent\b|pp\b|percentage points?\b)", re.I
+)
 MONTHS_RE = re.compile(r"(?<![\w.$£€])(\d+(?:\.\d+)?)\s?(months?|mo)\b", re.I)
 MULT_RE = re.compile(r"(?<![\w.$£€])(\d+(?:\.\d+)?)\s?x\b", re.I)
 # A number may end a sentence ("CAC payback is 9."), but "1.5" or "1,500" is never read as "1".
-PLAIN_RE = re.compile(r"(?<![\w.$£€/:])(?<![\w.]-)(\d[\d,]*(?:\.\d+)?)(?![\w%]|[.,]\d|\s?(%|x\b|months?|mo\b|k\b|m\b))", re.I)
+PLAIN_RE = re.compile(
+    r"(?<![\w.$£€/:])(?<![\w.]-)(\d[\d,]*(?:\.\d+)?)(?![\w%]|[.,]\d|\s?(%|x\b|months?|mo\b|k\b|m\b))", re.I
+)
 QUOTE_RE = re.compile(r"[\"“]([^\"”]{2,300})[\"”]")
 # Numbers in words: "sixty thousand dollars", "nine point nine million", "twenty-five percent".
 _GROUP_W = rf"(?:(?:{'|'.join(_TENS_W)})(?:[\s-]+(?:{'|'.join(list(_UNITS_W)[1:10])}))?|{'|'.join(_UNITS_W)})"
@@ -132,17 +183,34 @@ _HGROUP_W = rf"{_GROUP_W}(?:\s+hundred(?:\s+(?:and\s+)?{_GROUP_W})?)?"
 WORD_NUM_RE = re.compile(
     rf"\b(?:{_HGROUP_W}(?:\s+point(?:\s+(?:{'|'.join(list(_UNITS_W)[:10])}))+)?|a(?=\s+(?:hundred|thousand|million|billion)\s+(?:dollars?|bucks|euros?|pounds)\b))"
     rf"(?:,?\s+(?:thousand|million|billion|hundred)(?:,?\s+(?:and\s+)?{_HGROUP_W})?)*"
-    r"(?:[\s-]+(percent|per cent|dollars?|bucks|euros?|pounds|months?))?\b", re.I)
-WINDOW_RE = re.compile(r"\b(over|last|past|previous|trailing|next|within|every|per|first|in the|across|for the)\s+(the\s+)?$")
-LAST_VERB_RE = re.compile(r"\b(will|would|could|should|might|may|can|to|only|still|it'll|it’ll)\s+last\s+$")  # "cash will last 40 months"
+    r"(?:[\s-]+(percent|per cent|dollars?|bucks|euros?|pounds|months?))?\b",
+    re.I,
+)
+WINDOW_RE = re.compile(
+    r"\b(over|last|past|previous|trailing|next|within|every|per|first|in the|across|for the)\s+(the\s+)?$"
+)
+LAST_VERB_RE = re.compile(
+    r"\b(will|would|could|should|might|may|can|to|only|still|it'll|it’ll)\s+last\s+$"
+)  # "cash will last 40 months"
 MONTH_METRICS = {"runway_months", "cac_payback_months"}
 # A count noun right after a small number or a year makes it a claim ("2000 customers"), unless it ranks ("top 3 customers").
 COUNT_AFTER_RE = re.compile(r"^\s*(customers?|clients?|users?|logos?|accounts?|employees|hires)\b")
 RANK_BEFORE_RE = re.compile(r"\b(top|largest|biggest|first|last|next|of the|of your)\s*$")
-METRIC_IS_RE = re.compile(rf"\b({'|'.join(re.escape(a) for a in sorted(METRIC_ALIASES, key=len, reverse=True))})"
-                          r"\s+(is|was|are|were|of|at|stands at|sits at|=|:)\s*(about\s+|around\s+|roughly\s+|~\s*)?$")
+METRIC_IS_RE = re.compile(
+    rf"\b({'|'.join(re.escape(a) for a in sorted(METRIC_ALIASES, key=len, reverse=True))})"
+    r"\s+(is|was|are|were|of|at|stands at|sits at|=|:)\s*(about\s+|around\s+|roughly\s+|~\s*)?$"
+)
 
-MULTIPLIERS = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mm": 1e6, "million": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9}
+MULTIPLIERS = {
+    "k": 1e3,
+    "thousand": 1e3,
+    "m": 1e6,
+    "mm": 1e6,
+    "million": 1e6,
+    "b": 1e9,
+    "bn": 1e9,
+    "billion": 1e9,
+}
 
 
 def _num(s: str) -> float:
@@ -155,21 +223,31 @@ def _spans_overlap(a: tuple[int, int], spans: list[tuple[int, int]]) -> bool:
 
 def _names_metric(text: str, start: int, end: int) -> bool:
     """A small number or a year is a claim when it is stated as a metric: "payback is 11", "2000 customers"."""
-    before = text[max(0, start - 40):start].lower()
-    if COUNT_AFTER_RE.match(text[end:end + 20].lower()) and not RANK_BEFORE_RE.search(before):
+    before = text[max(0, start - 40) : start].lower()
+    if COUNT_AFTER_RE.match(text[end : end + 20].lower()) and not RANK_BEFORE_RE.search(before):
         return True
     return bool(METRIC_IS_RE.search(before))
 
 
 def _ignorable_plain(text: str, start: int, end: int, value: float) -> bool:
-    before = text[max(0, start - 12):start].lower()
-    after = text[end:end + 12].lower()
+    before = text[max(0, start - 12) : start].lower()
+    after = text[end : end + 12].lower()
     stated = _names_metric(text, start, end)
-    if 1900 <= value <= 2100 and float(value).is_integer() and "," not in text[start:end].rstrip(",") and not stated:
+    if (
+        1900 <= value <= 2100
+        and float(value).is_integer()
+        and "," not in text[start:end].rstrip(",")
+        and not stated
+    ):
         return True
     # Period labels with a two-digit year: "Sep 26", "Mar '25", "Q3 26".
-    if value < 100 and float(value).is_integer() and re.search(
-            r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*'?$|\bq[1-4]\s*'?$", before):
+    if (
+        value < 100
+        and float(value).is_integer()
+        and re.search(
+            r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*'?$|\bq[1-4]\s*'?$", before
+        )
+    ):
         return True
     if re.search(r"(slide|page|p\.|q|question|step|round|#|section|appendix|no\.)\s*$", before):
         return True
@@ -223,7 +301,16 @@ def extract_numbers(text: str) -> list[dict]:
     spans: list[tuple[int, int]] = []
 
     def add(start: int, end: int, value: float, unit: str, currency: str | None = None) -> None:
-        found.append({"start": start, "end": end, "text": text[start:end], "value": value, "unit": unit, "currency": currency})
+        found.append(
+            {
+                "start": start,
+                "end": end,
+                "text": text[start:end],
+                "value": value,
+                "unit": unit,
+                "currency": currency,
+            }
+        )
         spans.append((start, end))
 
     for m in MONEY_RE.finditer(text):
@@ -232,10 +319,19 @@ def extract_numbers(text: str) -> list[dict]:
         prefix, sym, code = m.group(1), m.group(2), m.group(3)
         if code and code.lower() in ("try", "pen") and not code.isupper():
             continue  # "try 3" is a verb, "TRY 3" is Turkish lira
-        cur = (_PREFIXES[prefix.lower()] if prefix else _SYMBOLS.get(sym) if sym and sym != "$" else
-               (code.lower() if code and code.lower() != "rmb" else "cny" if code else None))
+        cur = (
+            _PREFIXES[prefix.lower()]
+            if prefix
+            else _SYMBOLS.get(sym)
+            if sym and sym != "$"
+            else (code.lower() if code and code.lower() != "rmb" else "cny" if code else None)
+        )
         end = m.end()
-        if sym == "$" and (tail := TRAILING_CODE_RE.match(text, end)) and (tail.group(1).isupper() or tail.group(1).lower() not in ("try", "pen")):
+        if (
+            sym == "$"
+            and (tail := TRAILING_CODE_RE.match(text, end))
+            and (tail.group(1).isupper() or tail.group(1).lower() not in ("try", "pen"))
+        ):
             end, cur = tail.end(), tail.group(1).lower().replace("rmb", "cny")  # "$1.29M USD" is US dollars
         v = _num(m.group(4)) * MULTIPLIERS.get((m.group(5) or "").lower(), 1.0)
         start, v = _signed(text, m.start(), v)
@@ -274,7 +370,7 @@ def extract_numbers(text: str) -> list[dict]:
         if _spans_overlap((m.start(), m.end()), spans) or not m.group(0).strip():
             continue
         unit_word = (m.group(1) or "").lower()
-        v = _word_value(m.group(0)[:m.start(1) - m.start()] if m.group(1) else m.group(0))
+        v = _word_value(m.group(0)[: m.start(1) - m.start()] if m.group(1) else m.group(0))
         if unit_word in ("percent", "per cent"):
             add(m.start(), m.end(), v / 100, "pct")
         elif unit_word.startswith(("dollar", "buck", "euro", "pound")):
@@ -300,7 +396,7 @@ def extract_numbers(text: str) -> list[dict]:
 def _time_window(text: str, start: int, end: int) -> bool:
     """ "over 12 months", "the last 6 months": a period, not a figure. "Runway for the next 40 months" is still a claim,
     and "cash will last 40 months" never was a window."""
-    before = text[max(0, start - 20):start].lower()
+    before = text[max(0, start - 20) : start].lower()
     w = WINDOW_RE.search(before)
     if not w or LAST_VERB_RE.search(before):
         return False
@@ -318,7 +414,11 @@ def _compatible(fig: Figure, unit: str, currency: str | None = None, named: bool
         return fig.unit == "months"
     if unit == "x":
         return fig.unit in ("x", "ratio")
-    return fig.unit in ("count",) or fig.unit in CURRENCY_UNITS or (named and fig.unit in ("months", "x", "ratio"))
+    return (
+        fig.unit in ("count",)
+        or fig.unit in CURRENCY_UNITS
+        or (named and fig.unit in ("months", "x", "ratio"))
+    )
 
 
 _CLAUSE_END = re.compile(r"[.!?](?=\s|$)|[;:\n]|,\s")
@@ -341,7 +441,7 @@ def metric_context(text: str, start: int, end: int) -> list[str]:
                     hits.append((m.start(), m.end(), alias))
         return hits
 
-    left = sorted(scan(text[lo:start].lower()), key=lambda h: -h[1])   # nearest to the number first
+    left = sorted(scan(text[lo:start].lower()), key=lambda h: -h[1])  # nearest to the number first
     right = sorted(scan(text[end:hi].lower()), key=lambda h: h[0])
     ordered = [a for _, _, a in left] + [a for _, _, a in right]
     ids: list[str] = []
@@ -352,14 +452,26 @@ def metric_context(text: str, start: int, end: int) -> list[str]:
     return ids
 
 
-def match_figure(value: float, unit: str, figures: list[Figure], prefer: list[str] | None = None,
-                 currency: str | None = None) -> Figure | None:
+def match_figure(
+    value: float,
+    unit: str,
+    figures: list[Figure],
+    prefer: list[str] | None = None,
+    currency: str | None = None,
+) -> Figure | None:
     if prefer:
-        def is_named(f: Figure) -> bool:
-            return f.id in prefer or f.id.removeprefix("fact.") in prefer  # non-metric facts are figures named fact.<id>
 
-        named = [f for f in figures if (is_named(f) or f.group == "answer")  # answer figures are built for this very reply
-                 and _compatible(f, unit, currency, named=True)]
+        def is_named(f: Figure) -> bool:
+            return (
+                f.id in prefer or f.id.removeprefix("fact.") in prefer
+            )  # non-metric facts are figures named fact.<id>
+
+        named = [
+            f
+            for f in figures
+            if (is_named(f) or f.group == "answer")  # answer figures are built for this very reply
+            and _compatible(f, unit, currency, named=True)
+        ]
         if named:
             # The sentence names a metric: the number must be that metric, not any figure that happens to match.
             return _closest(value, unit, named, currency, named=True)
@@ -368,7 +480,9 @@ def match_figure(value: float, unit: str, figures: list[Figure], prefer: list[st
     return _closest(value, unit, figures, currency)
 
 
-def _closest(value: float, unit: str, figures: list[Figure], currency: str | None, named: bool = False) -> Figure | None:
+def _closest(
+    value: float, unit: str, figures: list[Figure], currency: str | None, named: bool = False
+) -> Figure | None:
     best: tuple[float, Figure] | None = None
     for f in figures:
         if not _compatible(f, unit, currency, named):
@@ -384,7 +498,7 @@ def _closest(value: float, unit: str, figures: list[Figure], currency: str | Non
 def _sentences(text: str) -> list[tuple[int, int, str]]:
     out, start = [], 0
     for m in re.finditer(r"[.!?](\s|$)", text):
-        out.append((start, m.end(), text[start:m.end()]))
+        out.append((start, m.end(), text[start : m.end()]))
         start = m.end()
     if start < len(text):
         out.append((start, len(text), text[start:]))
@@ -393,8 +507,11 @@ def _sentences(text: str) -> list[tuple[int, int, str]]:
 
 _CLAIM_END = re.compile(r"[.!?][\"”’»)\]]*(?=\s|$)|\[(?:kb|src):[^\[\]\n]{1,400}\]")
 # "U.S.", "e.g.", "Inc." end in a period without ending the sentence.
-_ABBREV = re.compile(r"(?:\b[A-Za-z]\.){1,3}$|\b(?:e\.g|i\.e|etc|vs|inc|ltd|corp|co|no|mr|mrs|ms|dr|st|approx|fig|jan|feb|"
-                     r"mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.$", re.I)
+_ABBREV = re.compile(
+    r"(?:\b[A-Za-z]\.){1,3}$|\b(?:e\.g|i\.e|etc|vs|inc|ltd|corp|co|no|mr|mrs|ms|dr|st|approx|fig|jan|feb|"
+    r"mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.$",
+    re.I,
+)
 
 
 def _claim_sentences(text: str) -> list[tuple[int, int, str]]:
@@ -403,10 +520,14 @@ def _claim_sentences(text: str) -> list[tuple[int, int, str]]:
     abbreviation ("U.S.", "e.g.") doesn't end one."""
     out, start = [], 0
     for m in _CLAIM_END.finditer(text):
-        nxt = text[m.end():].lstrip()[:1]
-        if m.group(0)[0] == "." and _ABBREV.search(text[start:m.start() + 1]) and (nxt.islower() or nxt.isdigit() or nxt in OPEN_QUOTES):
+        nxt = text[m.end() :].lstrip()[:1]
+        if (
+            m.group(0)[0] == "."
+            and _ABBREV.search(text[start : m.start() + 1])
+            and (nxt.islower() or nxt.isdigit() or nxt in OPEN_QUOTES)
+        ):
             continue  # "U.S. stores", "e.g. churn"; but "the U.S. It will…" is two sentences
-        out.append((start, m.end(), text[start:m.end()]))
+        out.append((start, m.end(), text[start : m.end()]))
         start = m.end()
     if start < len(text):
         out.append((start, len(text), text[start:]))
@@ -431,7 +552,7 @@ def _note_quote(text: str, lo: int, token_start: int, content: str) -> tuple[int
     body = _norm_quote(content)
     for i in range(max(lo, close - NOTE_QUOTE_MAX), close):
         if text[i] in OPEN_QUOTES:
-            inner = _norm_quote(text[i + 1:close])
+            inner = _norm_quote(text[i + 1 : close])
             if len(inner) >= 2 and inner in body:
                 return i, close + 1
     return None
@@ -444,9 +565,14 @@ def _lookup_note(notes: dict[str, dict], path: str) -> dict | None:
     return next((n for p, n in notes.items() if p.lower() == low or p.lower().rsplit(".", 1)[0] == low), None)
 
 
-def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | None = None,
-               extra_allowed: list[float] | None = None, notes: dict[str, dict] | None = None,
-               require_citations: bool = False) -> AuditResult:
+def audit_text(
+    text: str,
+    figures: list[Figure],
+    founder_quotes: list[str] | None = None,
+    extra_allowed: list[float] | None = None,
+    notes: dict[str, dict] | None = None,
+    require_citations: bool = False,
+) -> AuditResult:
     """`notes` maps note path → {id, title, content} for the notes the agent's kb tools returned.
     `require_citations`: every sentence that isn't a question must overlap a citation (rule 5)."""
     findings: list[Finding] = []
@@ -455,16 +581,28 @@ def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | Non
 
     for pat in VALUATION_PATTERNS:
         for m in re.finditer(pat, lower):
-            findings.append(Finding(kind="valuation", text=text[m.start():m.end()],
-                                    detail="Valuation figures are never given; explain how valuation and SAFE conversion work instead."))
+            findings.append(
+                Finding(
+                    kind="valuation",
+                    text=text[m.start() : m.end()],
+                    detail="Valuation figures are never given; explain how valuation and SAFE conversion work instead.",
+                )
+            )
     for pat in ADVICE_PATTERNS:
         for m in re.finditer(pat, lower):
-            findings.append(Finding(kind="advice", text=text[m.start():m.end()], detail="No investment advice."))
+            findings.append(
+                Finding(kind="advice", text=text[m.start() : m.end()], detail="No investment advice.")
+            )
 
     for _s_start, _s_end, sentence in _sentences(text):
         if any(re.search(p, sentence.lower()) for p in BENCHMARK_PATTERNS) and not SRC_RE.search(sentence):
-            findings.append(Finding(kind="benchmark", text=sentence.strip()[:160],
-                                    detail="Benchmark language needs a [src:id] from cite_source, or must be removed."))
+            findings.append(
+                Finding(
+                    kind="benchmark",
+                    text=sentence.strip()[:160],
+                    detail="Benchmark language needs a [src:id] from cite_source, or must be removed.",
+                )
+            )
 
     marker = 0
     for m in SRC_RE.finditer(text):
@@ -474,10 +612,26 @@ def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | Non
             findings.append(Finding(kind="source", text=m.group(0), detail=f"Unknown source id '{sid}'."))
             continue
         marker += 1
-        citations.append(Citation(marker=marker, start=m.start(), end=m.end(), text=m.group(0), source_id=sid,
-                                  label=src.get("publisher", ""), display=src.get("title") or src.get("publisher", ""),
-                                  formula=src.get("claim", ""), kind="benchmark", url=src.get("url"),
-                                  source={"kind": "benchmark", "ref": src.get("title") or "", "url": src.get("url"), "source_id": sid}))
+        citations.append(
+            Citation(
+                marker=marker,
+                start=m.start(),
+                end=m.end(),
+                text=m.group(0),
+                source_id=sid,
+                label=src.get("publisher", ""),
+                display=src.get("title") or src.get("publisher", ""),
+                formula=src.get("claim", ""),
+                kind="benchmark",
+                url=src.get("url"),
+                source={
+                    "kind": "benchmark",
+                    "ref": src.get("title") or "",
+                    "url": src.get("url"),
+                    "source_id": sid,
+                },
+            )
+        )
 
     note_spans: list[tuple[int, int]] = []
     lo = 0
@@ -486,27 +640,51 @@ def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | Non
         note_spans.append((m.start(), m.end()))  # numbers in the path are not claims
         note = _lookup_note(notes or {}, path)
         if note is None:
-            findings.append(Finding(kind="source", text=m.group(0),
-                                    detail=f"Unknown note '{path}'; cite only notes returned by kb_search or kb_read."))
+            findings.append(
+                Finding(
+                    kind="source",
+                    text=m.group(0),
+                    detail=f"Unknown note '{path}'; cite only notes returned by kb_search or kb_read.",
+                )
+            )
         elif (span := _note_quote(text, lo, m.start(), note.get("content") or "")) is None:
-            findings.append(Finding(kind="note", text=text[max(lo, m.start() - 120):m.end()].strip(),
-                                    detail=f"A [kb:{path}] cite must follow a word-for-word quote from that note in "
-                                           "double quotes; never restate a note's numbers."))
+            findings.append(
+                Finding(
+                    kind="note",
+                    text=text[max(lo, m.start() - 120) : m.end()].strip(),
+                    detail=f"A [kb:{path}] cite must follow a word-for-word quote from that note in "
+                    "double quotes; never restate a note's numbers.",
+                )
+            )
         else:
             note_spans.append(span)
             marker += 1
             npath = note.get("path") or path
-            citations.append(Citation(marker=marker, start=span[0], end=m.end(), text=text[span[0]:m.end()],
-                                      label=note.get("title") or npath, display=npath, kind="note",
-                                      source={"kind": "note", "ref": npath, "note_id": note.get("id")}))
+            citations.append(
+                Citation(
+                    marker=marker,
+                    start=span[0],
+                    end=m.end(),
+                    text=text[span[0] : m.end()],
+                    label=note.get("title") or npath,
+                    display=npath,
+                    kind="note",
+                    source={"kind": "note", "ref": npath, "note_id": note.get("id")},
+                )
+            )
         lo = m.end()
 
     quote_spans = [(m.start(), m.end()) for m in QUOTE_RE.finditer(text)]
     quotes_norm = [_norm_quote(q) for q in founder_quotes or []]
     src_spans = [(m.start(), m.end()) for m in SRC_RE.finditer(text)] + note_spans
     allowed = extra_allowed or []
-    valuation_spans = [(m.start(), m.end()) for f in findings if f.kind == "valuation"
-                       for m in [re.search(re.escape(f.text.lower()), lower)] if m]
+    valuation_spans = [
+        (m.start(), m.end())
+        for f in findings
+        if f.kind == "valuation"
+        for m in [re.search(re.escape(f.text.lower()), lower)]
+        if m
+    ]
 
     for n in extract_numbers(text):
         span = (n["start"], n["end"])
@@ -515,20 +693,38 @@ def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | Non
         if _spans_overlap(span, quote_spans):
             # Only the founder's own words, 8+ characters of them: a quote that merely contains a short
             # answer ("Yes") is not a quote of it.
-            quoted = _norm_quote(next(text[a:b] for a, b in quote_spans if a <= span[0] < b).strip("\"“” "))
+            quoted = _norm_quote(next(text[a:b] for a, b in quote_spans if a <= span[0] < b).strip('"“” '))
             if len(quoted) >= FOUNDER_QUOTE_MIN and any(quoted in q for q in quotes_norm):
                 continue
         if any(abs(n["value"] - a) <= max(abs(a) * 0.02, 1e-9) for a in allowed):
             continue
-        fig = match_figure(n["value"], n["unit"], figures, metric_context(text, n["start"], n["end"]), n.get("currency"))
+        fig = match_figure(
+            n["value"], n["unit"], figures, metric_context(text, n["start"], n["end"]), n.get("currency")
+        )
         if fig is None:
-            findings.append(Finding(kind="number", text=n["text"],
-                                    detail="No computed figure matches this number; use get_metric and quote the figure."))
+            findings.append(
+                Finding(
+                    kind="number",
+                    text=n["text"],
+                    detail="No computed figure matches this number; use get_metric and quote the figure.",
+                )
+            )
             continue
         marker += 1
-        citations.append(Citation(marker=marker, start=n["start"], end=n["end"], text=n["text"], figure_id=fig.id,
-                                  label=fig.label, display=fig.display, formula=fig.formula,
-                                  source=fig.source.model_dump(mode="json"), kind=fig.kind))
+        citations.append(
+            Citation(
+                marker=marker,
+                start=n["start"],
+                end=n["end"],
+                text=n["text"],
+                figure_id=fig.id,
+                label=fig.label,
+                display=fig.display,
+                formula=fig.formula,
+                source=fig.source.model_dump(mode="json"),
+                kind=fig.kind,
+            )
+        )
     citations.sort(key=lambda c: c.start)
     for i, c in enumerate(citations, 1):
         c.marker = i
@@ -540,9 +736,14 @@ def audit_text(text: str, figures: list[Figure], founder_quotes: list[str] | Non
                 continue
             if any(a < s_end and s_start < b for a, b in cited):
                 continue
-            findings.append(Finding(kind="uncited", text=st[:160],
-                                    detail="Every statement needs a citation: quote the note word for word with its "
-                                           "[kb:path] token, or state a computed figure. Drop what you can't cite."))
+            findings.append(
+                Finding(
+                    kind="uncited",
+                    text=st[:160],
+                    detail="Every statement needs a citation: quote the note word for word with its "
+                    "[kb:path] token, or state a computed figure. Drop what you can't cite.",
+                )
+            )
     return AuditResult(passed=not findings, findings=findings, citations=citations)
 
 

@@ -27,14 +27,18 @@ EXCERPT_CHARS = 280
 READ_CHARS = 12000
 RESULT_CHARS = 20000
 
-STOPWORDS = set("""a about after all also am an and any are as at be been before but by can could did do does doing
+STOPWORDS = set(
+    """a about after all also am an and any are as at be been before but by can could did do does doing
 for from had has have how i if in into is it its me my no not of on or our out over said say says so some than that
 the their them then there these they this those to up us was we were what when where which while who why will with
-would you your vicky note notes knowledge base vault doc docs document documents tell show find give""".split())
+would you your vicky note notes knowledge base vault doc docs document documents tell show find give""".split()
+)
 
-CITE_RULE = ("Quote a note only word for word inside double quotes, followed by its cite token, e.g. "
-             "\"exact words\" [kb:folder/Note.md]. Never restate, round, convert or compute a number from a note; "
-             "numbers you state yourself must come from the figures.")
+CITE_RULE = (
+    "Quote a note only word for word inside double quotes, followed by its cite token, e.g. "
+    '"exact words" [kb:folder/Note.md]. Never restate, round, convert or compute a number from a note; '
+    "numbers you state yourself must come from the figures."
+)
 
 
 def terms(query: str) -> list[str]:
@@ -70,7 +74,9 @@ def _trim(line: str, ts: list[str], width: int = EXCERPT_CHARS) -> str:
 def excerpts(content: str, ts: list[str], n: int = EXCERPTS) -> list[str]:
     """Up to `n` lines of the note that name the most query terms (headings count for less), best
     first; each is a verbatim piece of the note."""
-    lines = [ln.strip() for ln in (content or "").splitlines() if ln.strip() and not ln.strip().startswith("---")]
+    lines = [
+        ln.strip() for ln in (content or "").splitlines() if ln.strip() and not ln.strip().startswith("---")
+    ]
     scored = [(_hits(ln, ts) - (0.5 if ln.startswith("#") else 0), i, ln) for i, ln in enumerate(lines)]
     best = sorted((s for s in scored if s[0] > 0), key=lambda s: (-s[0], s[1]))[:n]
     if not best:
@@ -94,6 +100,7 @@ async def has_notes() -> bool:
 @dataclass
 class Vault:
     """One agent turn's view of the vault: what its tools returned, so the audit can verify quotes."""
+
     seen: dict[str, dict] = field(default_factory=dict)  # path → {id, path, title, kind, content}
 
     def _keep(self, n: dict) -> None:
@@ -132,13 +139,23 @@ class Vault:
             if n is None:
                 continue
             self._keep(n)
-            item = {"id": n["id"], "path": n["path"], "title": n["title"], "kind": n["kind"], "cite": cite(n["path"]),
-                    "summary": n["summary"], "excerpts": excerpts(n["content"], ts)}
+            item = {
+                "id": n["id"],
+                "path": n["path"],
+                "title": n["title"],
+                "kind": n["kind"],
+                "cite": cite(n["path"]),
+                "summary": n["summary"],
+                "excerpts": excerpts(n["content"], ts),
+            }
             if n["format"] == "csv":
                 item["header"] = n["content"].split("\n", 1)[0][:400]
             out.append(item)
-        return {"notes": out, "how_to_cite": CITE_RULE,
-                "note": "The summary is a description written for the vault; quote only from excerpts or kb_read."}
+        return {
+            "notes": out,
+            "how_to_cite": CITE_RULE,
+            "note": "The summary is a description written for the vault; quote only from excerpts or kb_read.",
+        }
 
     async def from_retrieval(self, r: Any, limit: int = SEARCH_LIMIT) -> dict[str, Any]:
         """kb_search's result from retrieved chunks: one entry per note, its chunks as excerpts."""
@@ -152,13 +169,23 @@ class Vault:
             if item is None:
                 if len(by_note) >= limit:
                     continue
-                item = by_note[c["path"]] = {"id": c["note_id"], "path": c["path"], "title": c["title"],
-                                             "kind": c["kind"], "cite": c["cite"], "excerpts": [], "headings": []}
+                item = by_note[c["path"]] = {
+                    "id": c["note_id"],
+                    "path": c["path"],
+                    "title": c["title"],
+                    "kind": c["kind"],
+                    "cite": c["cite"],
+                    "excerpts": [],
+                    "headings": [],
+                }
             item["excerpts"].append(c["text"][:1600])
             if c["heading"] and c["heading"] not in item["headings"]:
                 item["headings"].append(c["heading"])
-        return {"notes": list(by_note.values()), "how_to_cite": CITE_RULE,
-                "note": "Excerpts are passages of the note, word for word; quote only from them or kb_read."}
+        return {
+            "notes": list(by_note.values()),
+            "how_to_cite": CITE_RULE,
+            "note": "Excerpts are passages of the note, word for word; quote only from them or kb_read.",
+        }
 
     async def read(self, ref: str) -> dict[str, Any]:
         n = await store.find_note(str(ref or ""))
@@ -166,9 +193,17 @@ class Vault:
             return {"error": f"no note {ref!r}; use an id or path from kb_search"}
         self._keep(n)
         text = n["content"]
-        return {"id": n["id"], "path": n["path"], "title": n["title"], "kind": n["kind"], "format": n["format"],
-                "cite": cite(n["path"]), "content": text[:READ_CHARS], "truncated": len(text) > READ_CHARS,
-                "how_to_cite": CITE_RULE}
+        return {
+            "id": n["id"],
+            "path": n["path"],
+            "title": n["title"],
+            "kind": n["kind"],
+            "format": n["format"],
+            "cite": cite(n["path"]),
+            "content": text[:READ_CHARS],
+            "truncated": len(text) > READ_CHARS,
+            "how_to_cite": CITE_RULE,
+        }
 
     def tools(self) -> list[Any]:
         async def kb_search(query: str) -> str:
@@ -178,17 +213,33 @@ class Vault:
             return json.dumps(await self.read(note), default=str)[:RESULT_CHARS]
 
         return [
-            beta_async_tool(kb_search, name="kb_search", strict=True,
-                            description="Keyword search over the founder's knowledge base (their own notes: decks, "
-                                        "memos, board packs, tables). Returns note title, path, cite token and "
-                                        "verbatim excerpts. " + CITE_RULE,
-                            input_schema={"type": "object", "properties": {"query": {"type": "string"}},
-                                          "required": ["query"], "additionalProperties": False}),
-            beta_async_tool(kb_read, name="kb_read", strict=True,
-                            description="Read one note from the knowledge base by id or path (from kb_search). "
-                                        + CITE_RULE,
-                            input_schema={"type": "object", "properties": {"note": {"type": "string"}},
-                                          "required": ["note"], "additionalProperties": False}),
+            beta_async_tool(
+                kb_search,
+                name="kb_search",
+                strict=True,
+                description="Keyword search over the founder's knowledge base (their own notes: decks, "
+                "memos, board packs, tables). Returns note title, path, cite token and "
+                "verbatim excerpts. " + CITE_RULE,
+                input_schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            ),
+            beta_async_tool(
+                kb_read,
+                name="kb_read",
+                strict=True,
+                description="Read one note from the knowledge base by id or path (from kb_search). "
+                + CITE_RULE,
+                input_schema={
+                    "type": "object",
+                    "properties": {"note": {"type": "string"}},
+                    "required": ["note"],
+                    "additionalProperties": False,
+                },
+            ),
         ]
 
 

@@ -8,11 +8,42 @@ from pydantic import BaseModel, Field
 
 from vicky.model.currencies import CURRENCY_CODES, DEFAULT_CURRENCY, symbol
 
-Unit = Literal["cad", "usd", "eur", "gbp", "aud", "nzd", "jpy", "cny", "hkd", "sgd", "twd", "krw", "inr", "idr", "myr",
-               "thb", "chf", "nok", "sek", "pln", "try", "zar", "mxn", "brl", "pen",
-               "pct", "months", "count", "ratio", "x"]
+Unit = Literal[
+    "cad",
+    "usd",
+    "eur",
+    "gbp",
+    "aud",
+    "nzd",
+    "jpy",
+    "cny",
+    "hkd",
+    "sgd",
+    "twd",
+    "krw",
+    "inr",
+    "idr",
+    "myr",
+    "thb",
+    "chf",
+    "nok",
+    "sek",
+    "pln",
+    "try",
+    "zar",
+    "mxn",
+    "brl",
+    "pen",
+    "pct",
+    "months",
+    "count",
+    "ratio",
+    "x",
+]
 FigureKind = Literal["historical", "forecast", "founder_claim", "benchmark"]
-SourceKind = Literal["csv", "xlsx", "pdf", "docx", "md", "pack_summary", "founder_stated", "benchmark", "derived"]
+SourceKind = Literal[
+    "csv", "xlsx", "pdf", "docx", "md", "pack_summary", "founder_stated", "benchmark", "derived"
+]
 
 CURRENCY_UNITS = set(CURRENCY_CODES)
 UNITS = CURRENCY_UNITS | {"pct", "months", "count", "ratio", "x"}

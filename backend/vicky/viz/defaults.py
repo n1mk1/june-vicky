@@ -20,8 +20,13 @@ from vicky.viz.spec import Presentation, SeriesSpec, WidgetSpec, Window
 GRID_COLUMNS = 12
 ROW = 4  # grid units per wireframe row
 
-OPEX_NAMES = {"opex.r_and_d": "R&D", "opex.s_and_m": "Sales & marketing", "opex.g_and_a": "G&A",
-              "opex.customer_success": "Customer success", "opex.other": "Other"}
+OPEX_NAMES = {
+    "opex.r_and_d": "R&D",
+    "opex.s_and_m": "Sales & marketing",
+    "opex.g_and_a": "G&A",
+    "opex.customer_success": "Customer success",
+    "opex.other": "Other",
+}
 
 # Metrics worth a missing-data tile when the data can't support them.
 KEY_MISSING = ["nrr", "cash_balance", "cac_payback_months", "top_customer_share"]
@@ -71,20 +76,30 @@ def _build(ctx: TruthContext) -> list[tuple[str, str, WidgetSpec]]:
 
     # 1. Gross margin ring: booked, plus incl. customer success when it can be computed
     rings = [SeriesSpec(ref="gross_margin", label="As booked")]
-    incl = next((fid for fid in ("gross_margin_incl_cs", "gross_margin_incl_cs_l12m") if _fig(ctx, fid)), None)
+    incl = next(
+        (fid for fid in ("gross_margin_incl_cs", "gross_margin_incl_cs_l12m") if _fig(ctx, fid)), None
+    )
     if incl:
         rings.append(SeriesSpec(ref=incl, label="Incl. customer success"))
     out.append(("margin_ring", "kpi", WidgetSpec(template="gauge_ring", title="Gross margin", series=rings)))
 
     # 2. Headline KPI card with a 2×2 of secondaries
     if recurring:
-        kpi = [SeriesSpec(ref="arr", label="ARR"), SeriesSpec(ref="cmgr_12m", label="Growth, 12 months"),
-               SeriesSpec(ref="cmgr_recent", label="Growth, recent"), SeriesSpec(ref="burn", label="Burn"),
-               SeriesSpec(ref="runway_months", label="Runway")]
+        kpi = [
+            SeriesSpec(ref="arr", label="ARR"),
+            SeriesSpec(ref="cmgr_12m", label="Growth, 12 months"),
+            SeriesSpec(ref="cmgr_recent", label="Growth, recent"),
+            SeriesSpec(ref="burn", label="Burn"),
+            SeriesSpec(ref="runway_months", label="Runway"),
+        ]
         title = "ARR"
     else:
-        kpi = [SeriesSpec(ref="revenue", label="Revenue"), SeriesSpec(ref="revenue_growth", label="Growth"),
-               SeriesSpec(ref="burn", label="Burn"), SeriesSpec(ref="runway_months", label="Runway")]
+        kpi = [
+            SeriesSpec(ref="revenue", label="Revenue"),
+            SeriesSpec(ref="revenue_growth", label="Growth"),
+            SeriesSpec(ref="burn", label="Burn"),
+            SeriesSpec(ref="runway_months", label="Runway"),
+        ]
         title = "Revenue"
     out.append(("headline_kpi", "kpi", WidgetSpec(template="kpi", title=title, series=kpi)))
 
@@ -92,34 +107,79 @@ def _build(ctx: TruthContext) -> list[tuple[str, str, WidgetSpec]]:
     lead = SeriesSpec(ref="mrr", label="MRR") if recurring else SeriesSpec(ref="revenue", label="Revenue")
     trend = [lead]
     if m.has("net_income"):
-        trend.append(SeriesSpec(ref="burn", label="Burn ex-credits" if credits else "Burn", axis="right", style="dashed"))
-    out.append(("trend", "chart", WidgetSpec(
-        template="line", title=f"{lead.label} and burn" if len(trend) > 1 else lead.label or "Revenue", series=trend,
-        presentation=Presentation(dual_axis=len(trend) > 1))))
+        trend.append(
+            SeriesSpec(
+                ref="burn", label="Burn ex-credits" if credits else "Burn", axis="right", style="dashed"
+            )
+        )
+    out.append(
+        (
+            "trend",
+            "chart",
+            WidgetSpec(
+                template="line",
+                title=f"{lead.label} and burn" if len(trend) > 1 else lead.label or "Revenue",
+                series=trend,
+                presentation=Presentation(dual_axis=len(trend) > 1),
+            ),
+        )
+    )
 
     # 4. Burn excluding credits as a share of revenue, by quarter
     if credits:
-        out.append(("burn_ex_credits", "chart", WidgetSpec(
-            template="combo_bar_line", title="Burn excluding credits, % of revenue by quarter",
-            series=[SeriesSpec(ref="burn_ex_non_dilutive", label="Burn ex-credits"),
-                    SeriesSpec(ref="pct_of(burn_ex_non_dilutive, revenue)", label="% of revenue", axis="right")],
-            group_by="quarter" if m.granularity in ("month", "quarter") else None)))
+        out.append(
+            (
+                "burn_ex_credits",
+                "chart",
+                WidgetSpec(
+                    template="combo_bar_line",
+                    title="Burn excluding credits, % of revenue by quarter",
+                    series=[
+                        SeriesSpec(ref="burn_ex_non_dilutive", label="Burn ex-credits"),
+                        SeriesSpec(
+                            ref="pct_of(burn_ex_non_dilutive, revenue)", label="% of revenue", axis="right"
+                        ),
+                    ],
+                    group_by="quarter" if m.granularity in ("month", "quarter") else None,
+                ),
+            )
+        )
 
     # 5. Opex mix by category
     cats = [c for c in OPEX_CATEGORIES if m.has(c)]
     if cats:
-        out.append(("opex_mix", "chart", WidgetSpec(
-            template="stacked_bar", title="Operating expenses by category",
-            series=[SeriesSpec(ref=c, label=OPEX_NAMES[c]) for c in cats],
-            group_by="quarter" if monthly else None, window=Window(last_n=8),
-            presentation=Presentation(stack=True))))
+        out.append(
+            (
+                "opex_mix",
+                "chart",
+                WidgetSpec(
+                    template="stacked_bar",
+                    title="Operating expenses by category",
+                    series=[SeriesSpec(ref=c, label=OPEX_NAMES[c]) for c in cats],
+                    group_by="quarter" if monthly else None,
+                    window=Window(last_n=8),
+                    presentation=Presentation(stack=True),
+                ),
+            )
+        )
 
     # 6. Retention: cohort heatmap and NRR/GRR card
     if m.cohort_mrr:
-        out.append(("cohort_retention", "chart", WidgetSpec(
-            template="heatmap", title="Revenue retention by cohort", series=[SeriesSpec(ref="cohort_retention")])))
+        out.append(
+            (
+                "cohort_retention",
+                "chart",
+                WidgetSpec(
+                    template="heatmap",
+                    title="Revenue retention by cohort",
+                    series=[SeriesSpec(ref="cohort_retention")],
+                ),
+            )
+        )
     if _fig(ctx, "nrr"):
-        nrr = [SeriesSpec(ref="nrr", label="NRR")] + ([SeriesSpec(ref="grr", label="GRR")] if _fig(ctx, "grr") else [])
+        nrr = [SeriesSpec(ref="nrr", label="NRR")] + (
+            [SeriesSpec(ref="grr", label="GRR")] if _fig(ctx, "grr") else []
+        )
         out.append(("nrr", "kpi", WidgetSpec(template="kpi", title="Net revenue retention", series=nrr)))
 
     # 7. Missing-data tiles for key metrics the data can't support yet
@@ -128,8 +188,13 @@ def _build(ctx: TruthContext) -> list[tuple[str, str, WidgetSpec]]:
         f = ctx.figures.get(fid)
         if not isinstance(f, MissingFigure) or fid in shown or "Recurring-revenue metric" in f.reason:
             continue
-        out.append((f"missing:{fid}", "missing", WidgetSpec(template="kpi", title=f.label or fid,
-                                                             series=[SeriesSpec(ref=fid)])))
+        out.append(
+            (
+                f"missing:{fid}",
+                "missing",
+                WidgetSpec(template="kpi", title=f.label or fid, series=[SeriesSpec(ref=fid)]),
+            )
+        )
     return out
 
 
@@ -157,8 +222,12 @@ def _layout(items: list[tuple[str, str, WidgetSpec]]) -> list[LayoutItem]:
 def default_dashboard(ctx: TruthContext) -> DefaultDashboard:
     """Widgets plus the default layout `[{widget_index, x, y, w, h}]` and the reserved non-widget slots."""
     items = _build(ctx)
-    return DefaultDashboard(widgets=[w for _, _, w in items], roles=[r for r, _, _ in items], layout=_layout(items),
-                            reserved=[dict(r) for r in RESERVED])
+    return DefaultDashboard(
+        widgets=[w for _, _, w in items],
+        roles=[r for r, _, _ in items],
+        layout=_layout(items),
+        reserved=[dict(r) for r in RESERVED],
+    )
 
 
 def default_layout(ctx: TruthContext) -> list[dict]:

@@ -31,7 +31,9 @@ def _signer() -> TimestampSigner:
 def code_tag() -> bytes:
     """Names the access code a token was issued under without revealing it."""
     s = get_settings()
-    return hmac.new(s.cookie_secret.encode(), s.access_code.encode(), hashlib.sha256).hexdigest()[:16].encode()
+    return (
+        hmac.new(s.cookie_secret.encode(), s.access_code.encode(), hashlib.sha256).hexdigest()[:16].encode()
+    )
 
 
 def make_token() -> str:
@@ -134,8 +136,10 @@ async def require_budget() -> None:
     except Exception:
         return
     if spent >= s.daily_usd_budget:
-        raise HTTPException(status_code=402,
-                            detail="Daily budget reached. Dashboards and reports still work; new VC turns resume tomorrow.")
+        raise HTTPException(
+            status_code=402,
+            detail="Daily budget reached. Dashboards and reports still work; new VC turns resume tomorrow.",
+        )
 
 
 class AccessIn(BaseModel):
@@ -151,8 +155,15 @@ async def access(body: AccessIn, request: Request, response: Response) -> dict:
     if not hmac.compare_digest(body.code.strip().encode(), s.access_code.encode()):
         await _count_failure()
         raise HTTPException(status_code=401, detail="That code didn't work.")
-    response.set_cookie(s.cookie_name, make_token(), max_age=s.cookie_max_age_s, httponly=True,
-                        samesite="lax", secure=s.cookie_secure, path="/")
+    response.set_cookie(
+        s.cookie_name,
+        make_token(),
+        max_age=s.cookie_max_age_s,
+        httponly=True,
+        samesite="lax",
+        secure=s.cookie_secure,
+        path="/",
+    )
     return {"ok": True}
 
 

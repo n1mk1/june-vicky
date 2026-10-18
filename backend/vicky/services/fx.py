@@ -69,7 +69,9 @@ async def fetch_year(client: httpx.AsyncClient, codes: list[str], year: int) -> 
     return out
 
 
-async def load(codes: set[str], since: date | None = None, *, transport: httpx.AsyncBaseTransport | None = None) -> Rates:
+async def load(
+    codes: set[str], since: date | None = None, *, transport: httpx.AsyncBaseTransport | None = None
+) -> Rates:
     """Daily rates for `codes` from the start of `since`'s year (default: this year) to today."""
     wanted = sorted(c for c in codes if c in FOREIGN)
     rates = Rates()

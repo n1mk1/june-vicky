@@ -23,7 +23,7 @@ from vicky.model.context import TruthContext
 MARKS = ("repeat", "study")
 DRILL_BOOST = {"repeat": 0.3, "study": 0.2}
 WEAK_BOOST = 0.1
-WEAK_SESSIONS = 3     # weak spots from the last N reports
+WEAK_SESSIONS = 3  # weak spots from the last N reports
 MAX_DRILLS = 10
 MAX_WEAK = 15
 
@@ -38,6 +38,7 @@ def _hyp_of(state: dict, hyp_id: str | None) -> tuple[str | None, dict | None]:
 
 # ---------------------------------------------------------------- write
 
+
 async def save_drills(sid: str, items: list[dict]) -> list[dict]:
     """Store the marked questions of session `sid` as drills. `items` are `{seq, mark}`; re-marking a
     question replaces its pending drill. Returns the stored drills."""
@@ -50,7 +51,9 @@ async def save_drills(sid: str, items: list[dict]) -> list[dict]:
     turns = await db.fetch(
         """select id::text, seq, speaker, intent, hypothesis_id, text from turns
            where session_id = $1 and kind in ('question', 'interject') and seq = any($2::int[]) order by seq""",
-        sess["id"], list(marks))
+        sess["id"],
+        list(marks),
+    )
     state = sess["state"] or {"vcs": {}}
     out = []
     async with db.acquire() as conn, conn.transaction():
@@ -60,17 +63,33 @@ async def save_drills(sid: str, items: list[dict]) -> list[dict]:
             pr = knowledge.probe(state, t["hypothesis_id"]) if h is None else None
             lens = h["lens"] if h else (pr or {}).get("lens")
             topic = h["claim"] if h else (pr or {}).get("topic") or t["text"][:120]
-            payload = {"session_id": sid, "turn_id": t["id"], "seq": t["seq"], "mark": mark, "question": t["text"],
-                       "vc_id": t["speaker"], "intent": t["intent"], "hypothesis_id": t["hypothesis_id"],
-                       "attack_id": h["attack_id"] if h else None,
-                       "note_path": ((pr or {}).get("expected") or {}).get("path")}
+            payload = {
+                "session_id": sid,
+                "turn_id": t["id"],
+                "seq": t["seq"],
+                "mark": mark,
+                "question": t["text"],
+                "vc_id": t["speaker"],
+                "intent": t["intent"],
+                "hypothesis_id": t["hypothesis_id"],
+                "attack_id": h["attack_id"] if h else None,
+                "note_path": ((pr or {}).get("expected") or {}).get("path"),
+            }
             await conn.execute(
                 """delete from founder_memory where engagement_id = $1 and kind = 'drill'
-                     and payload->>'turn_id' = $2 and not payload ? 'used_by'""", sess["engagement_id"], t["id"])
+                     and payload->>'turn_id' = $2 and not payload ? 'used_by'""",
+                sess["engagement_id"],
+                t["id"],
+            )
             mid = await conn.fetchval(
                 """insert into founder_memory (engagement_id, kind, lens, topic, payload, severity)
                    values ($1, 'drill', $2, $3, $4, $5) returning id::text""",
-                sess["engagement_id"], lens, topic, payload, h["severity"] if h else None)
+                sess["engagement_id"],
+                lens,
+                topic,
+                payload,
+                h["severity"] if h else None,
+            )
             out.append({"id": mid, "seq": t["seq"], "mark": mark, "topic": topic, "lens": lens})
     return out
 
@@ -79,10 +98,14 @@ async def mark_used(ids: list[str], sid: str) -> None:
     if ids:
         await db.execute(
             """update founder_memory set payload = payload || jsonb_build_object('used_by', $2::text), last_seen_at = now()
-               where id::text = any($1::text[])""", ids, sid)
+               where id::text = any($1::text[])""",
+            ids,
+            sid,
+        )
 
 
 # ---------------------------------------------------------------- read
+
 
 async def recall(eid: str, drill_ids: list[str] | None = None) -> dict[str, list[dict]]:
     """Drills (the given ones, or every pending one, in the order they were marked) and the weak spots of
@@ -91,21 +114,33 @@ async def recall(eid: str, drill_ids: list[str] | None = None) -> dict[str, list
         drills = await db.fetch(
             """select id::text, lens, topic, payload, severity from founder_memory
                where engagement_id = $1 and kind = 'drill' and id::text = any($2::text[])
-               order by last_seen_at desc, (payload->>'seq')::int limit $3""", eid, drill_ids, MAX_DRILLS)
+               order by last_seen_at desc, (payload->>'seq')::int limit $3""",
+            eid,
+            drill_ids,
+            MAX_DRILLS,
+        )
     else:
         drills = await db.fetch(
             """select id::text, lens, topic, payload, severity from founder_memory
                where engagement_id = $1 and kind = 'drill' and not payload ? 'used_by'
-               order by last_seen_at desc, (payload->>'seq')::int limit $2""", eid, MAX_DRILLS)
+               order by last_seen_at desc, (payload->>'seq')::int limit $2""",
+            eid,
+            MAX_DRILLS,
+        )
     weak = await db.fetch(
         """select id::text, lens, topic, payload, severity from founder_memory
            where engagement_id = $1 and kind = 'weakness' and payload->>'session_id' in (
              select session_id::text from reports where engagement_id = $1 order by created_at desc limit $2)
-           order by severity desc nulls last, last_seen_at desc limit $3""", eid, WEAK_SESSIONS, MAX_WEAK)
+           order by severity desc nulls last, last_seen_at desc limit $3""",
+        eid,
+        WEAK_SESSIONS,
+        MAX_WEAK,
+    )
     return {"drills": [dict(r) for r in drills], "weaknesses": [dict(r) for r in weak]}
 
 
 # ---------------------------------------------------------------- the agenda (pure)
+
 
 def _find(memos: dict[str, dict], row: dict) -> tuple[str | None, dict | None]:
     """The new session's hypothesis for a remembered topic: same attack item, else same doubt. A gap two
@@ -113,15 +148,21 @@ def _find(memos: dict[str, dict], row: dict) -> tuple[str | None, dict | None]:
     pl = row.get("payload") or {}
     aid, topic = pl.get("attack_id"), (row.get("topic") or "").strip().lower()
     for key in ("attack", "topic"):
-        hits = [(vc, h) for vc, m in memos.items() for h in m["hypotheses"]
-                if (key == "attack" and aid and h["attack_id"] == aid)
-                or (key == "topic" and topic and h["claim"].strip().lower() == topic)]
+        hits = [
+            (vc, h)
+            for vc, m in memos.items()
+            for h in m["hypotheses"]
+            if (key == "attack" and aid and h["attack_id"] == aid)
+            or (key == "topic" and topic and h["claim"].strip().lower() == topic)
+        ]
         if hits:
             return min(hits, key=lambda x: (x[0] != pl.get("vc_id"), bool(x[1].get("shared"))))
     return None, None
 
 
-def _seat(memos: dict[str, dict], panel: list[VCPersona], ctx: TruthContext, row: dict) -> tuple[str | None, dict | None]:
+def _seat(
+    memos: dict[str, dict], panel: list[VCPersona], ctx: TruthContext, row: dict
+) -> tuple[str | None, dict | None]:
     """A drilled topic no one on this panel owns: the best-weighted investor takes it, if the attack item
     still exists in the data."""
     aid = (row.get("payload") or {}).get("attack_id")
@@ -137,8 +178,9 @@ def _seat(memos: dict[str, dict], panel: list[VCPersona], ctx: TruthContext, row
     return p.id, h
 
 
-def carry_over(memos: dict[str, dict], panel: list[VCPersona], ctx: TruthContext, memory: dict[str, list[dict]],
-               cap: int) -> tuple[list[dict], list[str]]:
+def carry_over(
+    memos: dict[str, dict], panel: list[VCPersona], ctx: TruthContext, memory: dict[str, list[dict]], cap: int
+) -> tuple[list[dict], list[str]]:
     """Apply remembered drills and weak spots to the new memos, in place.
 
     Returns (carried, queue): what came back and where, for the view; and the drilled hypotheses in agenda
@@ -149,9 +191,19 @@ def carry_over(memos: dict[str, dict], panel: list[VCPersona], ctx: TruthContext
     for row in memory.get("drills") or []:
         pl = row.get("payload") or {}
         mark = pl.get("mark") if pl.get("mark") in MARKS else "repeat"
-        entry = {"memory_id": row["id"], "kind": "drill", "mark": mark, "topic": row.get("topic"),
-                 "lens": row.get("lens"), "question": pl.get("question"), "from_session": pl.get("session_id"),
-                 "hypothesis_id": None, "probe_id": None, "vc_id": None, "note_path": pl.get("note_path")}
+        entry = {
+            "memory_id": row["id"],
+            "kind": "drill",
+            "mark": mark,
+            "topic": row.get("topic"),
+            "lens": row.get("lens"),
+            "question": pl.get("question"),
+            "from_session": pl.get("session_id"),
+            "hypothesis_id": None,
+            "probe_id": None,
+            "vc_id": None,
+            "note_path": pl.get("note_path"),
+        }
         if pl.get("intent") == "knowledge" and not pl.get("attack_id"):
             carried.append(entry)  # matched to a knowledge check once the probes are written (`carry_probes`)
             continue
@@ -173,14 +225,30 @@ def carry_over(memos: dict[str, dict], panel: list[VCPersona], ctx: TruthContext
         sev = float(row["severity"]) if row.get("severity") is not None else h["severity"]
         h["severity"] = round(max(h["severity"], min(1.0, sev + WEAK_BOOST)), 2)
         if pl.get("confidence") is not None:
-            h["confidence"] = round(max(h["confidence"], float(pl["confidence"])), 2)  # the doubt stands as it was left
+            h["confidence"] = round(
+                max(h["confidence"], float(pl["confidence"])), 2
+            )  # the doubt stands as it was left
         h["carried"] = "weakness"
-        carried.append({"memory_id": row["id"], "kind": "weakness", "mark": None, "topic": row.get("topic"),
-                        "lens": row.get("lens"), "question": None, "from_session": pl.get("session_id"),
-                        "hypothesis_id": h["id"], "probe_id": None, "vc_id": vc, "note_path": None})
-    order = (queue["repeat"] + queue["study"])[:max(1, cap // 2)]
+        carried.append(
+            {
+                "memory_id": row["id"],
+                "kind": "weakness",
+                "mark": None,
+                "topic": row.get("topic"),
+                "lens": row.get("lens"),
+                "question": None,
+                "from_session": pl.get("session_id"),
+                "hypothesis_id": h["id"],
+                "probe_id": None,
+                "vc_id": vc,
+                "note_path": None,
+            }
+        )
+    order = (queue["repeat"] + queue["study"])[: max(1, cap // 2)]
     for vc in memos:  # the memo lists drilled doubts first, then the rest by severity
-        memos[vc]["hypotheses"].sort(key=lambda h: (h["id"] not in order, order.index(h["id"]) if h["id"] in order else 0))
+        memos[vc]["hypotheses"].sort(
+            key=lambda h: (h["id"] not in order, order.index(h["id"]) if h["id"] in order else 0)
+        )
     return carried, order
 
 
@@ -189,7 +257,14 @@ def carry_probes(carried: list[dict], probes: list[dict]) -> None:
     for e in carried:
         if e["kind"] != "drill" or e["hypothesis_id"] or not e.get("note_path"):
             continue
-        pr = next((p for p in probes if not p.get("drill") and (p.get("expected") or {}).get("path") == e["note_path"]), None)
+        pr = next(
+            (
+                p
+                for p in probes
+                if not p.get("drill") and (p.get("expected") or {}).get("path") == e["note_path"]
+            ),
+            None,
+        )
         if pr is not None:
             pr["drill"] = e["mark"]
             e |= {"probe_id": pr["id"], "vc_id": pr["vc"]}
@@ -205,8 +280,13 @@ def agenda_candidate(state: dict, ranked: list[referee.Candidate], *, weak: bool
         if h is None or h["asked"] or h["status"] != "open":
             continue
         top = max((c.score for c in ranked), default=0.5)
-        return referee.Candidate(vc, "new_topic", hid, round(top + 0.05, 4),
-                                 [f"Vicky: drilled last session ({h.get('drill') or 'repeat'})"])
+        return referee.Candidate(
+            vc,
+            "new_topic",
+            hid,
+            round(top + 0.05, 4),
+            [f"Vicky: drilled last session ({h.get('drill') or 'repeat'})"],
+        )
     return None
 
 
@@ -221,6 +301,21 @@ def carried_view(state: dict, turns: list[Any], live: bool) -> list[dict]:
         target = e.get("hypothesis_id") or e.get("probe_id")
         seq = first.get(target) if target else None
         status = "asked" if seq else "unmatched" if not target else "queued" if live else "not_reached"
-        out.append({k: e.get(k) for k in ("memory_id", "kind", "mark", "topic", "lens", "question", "vc_id",
-                                          "hypothesis_id", "probe_id")} | {"status": status, "asked_seq": seq})
+        out.append(
+            {
+                k: e.get(k)
+                for k in (
+                    "memory_id",
+                    "kind",
+                    "mark",
+                    "topic",
+                    "lens",
+                    "question",
+                    "vc_id",
+                    "hypothesis_id",
+                    "probe_id",
+                )
+            }
+            | {"status": status, "asked_seq": seq}
+        )
     return out

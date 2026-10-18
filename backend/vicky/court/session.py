@@ -89,8 +89,15 @@ async def _check_kb(query: str) -> tuple[list[dict], dict]:
 
 def _expected_passage(pr: dict) -> dict:
     e = pr["expected"]
-    return {"id": e.get("chunk_id"), "note_id": e.get("note_id"), "path": e.get("path"), "title": e.get("title"),
-            "heading": e.get("heading"), "text": e.get("text") or e.get("quote") or "", "cite": e.get("cite")}
+    return {
+        "id": e.get("chunk_id"),
+        "note_id": e.get("note_id"),
+        "path": e.get("path"),
+        "title": e.get("title"),
+        "heading": e.get("heading"),
+        "text": e.get("text") or e.get("quote") or "",
+        "cite": e.get("cite"),
+    }
 
 
 async def _no_probes() -> list[dict]:
@@ -103,8 +110,9 @@ async def _prose_notes(note_ids: list[str]) -> set[str]:
     ids = sorted({i for i in note_ids if i})
     if not ids:
         return set()
-    rows = await db.fetch("select id::text from kb_notes where id::text = any($1::text[]) and kind in ('note', 'document')",
-                          ids)
+    rows = await db.fetch(
+        "select id::text from kb_notes where id::text = any($1::text[]) and kind in ('note', 'document')", ids
+    )
     return {r["id"] for r in rows}
 
 
@@ -128,29 +136,56 @@ def _speaker_name(speaker: str, panel: dict[str, VCPersona]) -> str:
     return panel[speaker].name if speaker in panel else speaker
 
 
-async def _add_turn(conn, sid: str, speaker: str, kind: str, text: str, ctx: TruthContext, *, intent: str | None = None,
-                    hyp: str | None = None, quotes: list[str] | None = None, audit_text: bool = True,
-                    regenerated: bool = False, notes: dict[str, dict] | None = None,
-                    review: dict | None = None) -> dict:
+async def _add_turn(
+    conn,
+    sid: str,
+    speaker: str,
+    kind: str,
+    text: str,
+    ctx: TruthContext,
+    *,
+    intent: str | None = None,
+    hyp: str | None = None,
+    quotes: list[str] | None = None,
+    audit_text: bool = True,
+    regenerated: bool = False,
+    notes: dict[str, dict] | None = None,
+    review: dict | None = None,
+) -> dict:
     seq = await conn.fetchval("select coalesce(max(seq), 0) + 1 from turns where session_id = $1", sid)
     citations, audit = [], None
     if audit_text:
         res = minds.audit_text(text, ctx.available(), quotes, notes=notes)
         citations = [c.model_dump(mode="json") for c in res.citations]
-        audit = {"passed": res.passed, "regenerated": regenerated, "findings": [f.model_dump() for f in res.findings]}
+        audit = {
+            "passed": res.passed,
+            "regenerated": regenerated,
+            "findings": [f.model_dump() for f in res.findings],
+        }
     if review:
         audit = {**(audit or {}), "review": review}  # Vicky's review of the drafted line
     row = await conn.fetchrow(
         """insert into turns (session_id, seq, speaker, kind, intent, hypothesis_id, text, citations, audit)
            values ($1,$2,$3,$4::turn_kind,$5,$6,$7,$8,$9) returning id::text, seq""",
-        sid, seq, speaker, kind, intent, hyp, text, citations, audit)
+        sid,
+        seq,
+        speaker,
+        kind,
+        intent,
+        hyp,
+        text,
+        citations,
+        audit,
+    )
     return {"id": row["id"], "seq": row["seq"]}
 
 
 async def _lock_unchanged(conn, session_id: Any, version: int) -> None:
     """Lock the session row for the write and check nothing was stored since `version` was read: the
     turn being stored was computed from that state (LLM calls run before the transaction)."""
-    row = await conn.fetchrow("select status::text, version from sessions where id = $1 for update", session_id)
+    row = await conn.fetchrow(
+        "select status::text, version from sessions where id = $1 for update", session_id
+    )
     if row is None:
         raise engagements.NotFound("session")
     if row["status"] != "live":
@@ -167,8 +202,14 @@ def _hyp(state: dict, hyp_id: str | None) -> tuple[str | None, dict | None]:
     return None, None
 
 
-async def start(panel_ids: list[str] | None, question_cap: int | None, coaching: str | None, focus: str | None,
-                knowledge_on: bool = True, drills: list[str] | None = None) -> str:
+async def start(
+    panel_ids: list[str] | None,
+    question_cap: int | None,
+    coaching: str | None,
+    focus: str | None,
+    knowledge_on: bool = True,
+    drills: list[str] | None = None,
+) -> str:
     eid = await engagements.require_confirmed()
     ctx = await engagements.context(eid)
     panel = await registry.panel(panel_ids)
@@ -178,15 +219,28 @@ async def start(panel_ids: list[str] | None, question_cap: int | None, coaching:
 
     build = await active_build_id()
     # Passages for knowledge checks (by each investor's lenses) are searched while the memos are written.
-    lens_q = [(p.id, lens, q) for p in panel for lens, q in knowledge.lens_queries(p)] if build and knowledge_on else []
-    memos, lens_found, remembered = await asyncio.gather(agents.build_memos(panel, ctx, focus),
-                                                         asyncio.gather(*(_court_kb(q, k=3) for _, _, q in lens_q)),
-                                                         memory.recall(eid, drills))
+    lens_q = (
+        [(p.id, lens, q) for p in panel for lens, q in knowledge.lens_queries(p)]
+        if build and knowledge_on
+        else []
+    )
+    memos, lens_found, remembered = await asyncio.gather(
+        agents.build_memos(panel, ctx, focus),
+        asyncio.gather(*(_court_kb(q, k=3) for _, _, q in lens_q)),
+        memory.recall(eid, drills),
+    )
     carried, drill_agenda = memory.carry_over(memos, panel, ctx, remembered, cap)
-    state: dict[str, Any] = {"vcs": {p.id: {"hyps": memos[p.id]["hypotheses"], "last_spoke": -99, "asked": []}
-                                     for p in panel},
-                             "thread": None, "turn_no": 0, "asked_bank": [], "asked_lines": [], "probes": [],
-                             "knowledge_on": knowledge_on, "carried": carried, "drill_agenda": drill_agenda}
+    state: dict[str, Any] = {
+        "vcs": {p.id: {"hyps": memos[p.id]["hypotheses"], "last_spoke": -99, "asked": []} for p in panel},
+        "thread": None,
+        "turn_no": 0,
+        "asked_bank": [],
+        "asked_lines": [],
+        "probes": [],
+        "knowledge_on": knowledge_on,
+        "carried": carried,
+        "drill_agenda": drill_agenda,
+    }
     passages: dict[str, list[tuple[str, dict]]] = {p.id: [] for p in panel}
     prose = await _prose_notes([c["note_id"] for kb, _b in lens_found for c in kb])
     for (vc, lens, _q), (kb, _b) in zip(lens_q, lens_found, strict=True):
@@ -197,7 +251,8 @@ async def start(panel_ids: list[str] | None, question_cap: int | None, coaching:
         hyps = [h for vs in state["vcs"].values() for h in vs["hyps"]]
         found, probes = await asyncio.gather(
             asyncio.gather(*(_court_kb(f"{h['claim']} {h.get('detail') or ''}", k=3) for h in hyps)),
-            agents.build_probes(panel, passages, ctx) if any(passages.values()) else _no_probes())
+            agents.build_probes(panel, passages, ctx) if any(passages.values()) else _no_probes(),
+        )
         for h, (kb, _b) in zip(hyps, found, strict=True):
             h["kb"] = [{**c, "text": c["text"][:800]} for c in kb]  # a prefix is still a quotable span
         state["kb_build"] = build
@@ -210,26 +265,47 @@ async def start(panel_ids: list[str] | None, question_cap: int | None, coaching:
         if not hs:
             continue
         top = max(hs, key=lambda h: h["severity"] * (0.5 + p.weight(h["lens"])))
-        bids.append(referee.Bid(p.id, round(top["confidence"] * (0.5 + top["severity"] / 2), 3), "new_topic", top["id"],
-                                lane_fit=0.4 + 0.6 * p.weight(top["lens"])))
+        bids.append(
+            referee.Bid(
+                p.id,
+                round(top["confidence"] * (0.5 + top["severity"] / 2), 3),
+                "new_topic",
+                top["id"],
+                lane_fit=0.4 + 0.6 * p.weight(top["lens"]),
+            )
+        )
     ranked = referee.rank(bids, answer_weak=False)
     if not ranked:
         raise CourtError("No investor found anything to ask; check the source of truth")
     if (dc := memory.agenda_candidate(state, ranked, weak=False)) is not None:  # a drilled question opens
         ranked.insert(0, dc)
-    line = await _next_line(state, {p.id: p for p in panel}, ctx, ranked, question_count=0, cap=cap, build=build)
+    line = await _next_line(
+        state, {p.id: p for p in panel}, ctx, ranked, question_count=0, cap=cap, build=build
+    )
     async with db.acquire() as conn, conn.transaction():
         sid = await conn.fetchval(
             """insert into sessions (engagement_id, truthpack_id, mode, panel, settings, agenda, state, status)
                values ($1, $2, 'prepare', $3, $4, $5, $6, 'live') returning id::text""",
-            eid, ctx.truthpack_id, [p.id for p in panel],
+            eid,
+            ctx.truthpack_id,
+            [p.id for p in panel],
             {"question_cap": cap, "coaching": coaching, "focus": focus, "knowledge": knowledge_on},
-            _agenda(memos, drill_agenda), state)
+            _agenda(memos, drill_agenda),
+            state,
+        )
         for p in panel:
             await conn.execute(
                 """insert into memos (session_id, vc_id, persona_version, truthpack_version, memo)
-                   values ($1, $2, $3, $4, $5)""", sid, p.id, p.version, ctx.version, memos[p.id])
-        await _add_turn(conn, sid, "vicky", "intro", minds.intro(panel, ctx, coaching, cap, bool(state["probes"])), ctx)
+                   values ($1, $2, $3, $4, $5)""",
+                sid,
+                p.id,
+                p.version,
+                ctx.version,
+                memos[p.id],
+            )
+        await _add_turn(
+            conn, sid, "vicky", "intro", minds.intro(panel, ctx, coaching, cap, bool(state["probes"])), ctx
+        )
         line_turn = await _store_line(conn, sid, line, ctx, ranked, after_seq=1)
         await conn.execute("update sessions set state = $2, question_count = 1 where id = $1", sid, state)
     await memory.mark_used([r["id"] for r in remembered["drills"]], sid)
@@ -241,17 +317,31 @@ async def start(panel_ids: list[str] | None, question_cap: int | None, coaching:
 def _agenda(memos: dict[str, dict], drill_agenda: list[str]) -> list[dict]:
     """`sessions.agenda`: drilled topics first (in drill order), then every other doubt; each says what it
     carries over from founder memory."""
-    rows = [{"hypothesis_id": h["id"], "lens": h["lens"], "owner_vc": vc, "severity": h["severity"],
-             "carried": "drill_" + h["drill"] if h.get("drill") else h.get("carried")}
-            for vc, m in memos.items() for h in m["hypotheses"]]
-    return sorted(rows, key=lambda r: (r["hypothesis_id"] not in drill_agenda,
-                                       drill_agenda.index(r["hypothesis_id"]) if r["hypothesis_id"] in drill_agenda else 0,
-                                       r["carried"] is None))
+    rows = [
+        {
+            "hypothesis_id": h["id"],
+            "lens": h["lens"],
+            "owner_vc": vc,
+            "severity": h["severity"],
+            "carried": "drill_" + h["drill"] if h.get("drill") else h.get("carried"),
+        }
+        for vc, m in memos.items()
+        for h in m["hypotheses"]
+    ]
+    return sorted(
+        rows,
+        key=lambda r: (
+            r["hypothesis_id"] not in drill_agenda,
+            drill_agenda.index(r["hypothesis_id"]) if r["hypothesis_id"] in drill_agenda else 0,
+            r["carried"] is None,
+        ),
+    )
 
 
 @dataclass
 class _Line:
     """The next VC line, decided and worded before the transaction that stores it."""
+
     pick: agents.ChairPick
     vc: str
     hyp: dict | None
@@ -273,19 +363,28 @@ def _reviewed(first: dict, final: dict | None, revised: bool) -> dict:
     return out
 
 
-async def _knowledge_line(state: dict, p: VCPersona, pick: agents.ChairPick, ctx: TruthContext,
-                          question_count: int) -> _Line:
+async def _knowledge_line(
+    state: dict, p: VCPersona, pick: agents.ChairPick, ctx: TruthContext, question_count: int
+) -> _Line:
     pr = knowledge.probe(state, pick.candidate.target_hyp)
     if pr is None:  # the candidate came from this state, so this only happens on a corrupt state
         raise CourtError("That knowledge check is no longer available")
     prior = [q["text"] for q in state.get("asked_lines", []) if q.get("intent") != "knowledge"]
     spoken = await agents.ask_knowledge(p, pr, ctx)
-    first = await agents.review_line(p, spoken.text, intent="knowledge", about=f"knowledge check on {pr['topic']}",
-                                     asked=prior, answer_key=pr["expected"].get("quote"))
+    first = await agents.review_line(
+        p,
+        spoken.text,
+        intent="knowledge",
+        about=f"knowledge check on {pr['topic']}",
+        asked=prior,
+        answer_key=pr["expected"].get("quote"),
+    )
     text, revised, final = spoken.text, False, None
     if first["verdict"] == "revise" and spoken.source == "llm":
         again = await agents.ask_knowledge(p, pr, ctx, review={**first, "draft": spoken.text})
-        final = code_review.review(again.text, asked=prior, intent="knowledge", answer_key=pr["expected"].get("quote"))
+        final = code_review.review(
+            again.text, asked=prior, intent="knowledge", answer_key=pr["expected"].get("quote")
+        )
         # A rewrite that still fails code's checks gives way to the probe's own question, which passed them.
         text, revised = (again.text, True) if final["verdict"] == "approve" else (pr["question"], True)
     pr["asked"] = True
@@ -293,13 +392,26 @@ async def _knowledge_line(state: dict, p: VCPersona, pick: agents.ChairPick, ctx
     state["thread"] = {"vc": p.id, "hyp": None, "probe": pr["id"], "depth": 0, "weak": 0}
     state["vcs"][p.id]["last_spoke"] = state["turn_no"]
     state.setdefault("asked_lines", []).append({"text": text, "intent": "knowledge"})
-    return _Line(pick, p.id, None, "knowledge", text, revised, [], None, _reviewed(first, final, revised), pr["id"])
+    return _Line(
+        pick, p.id, None, "knowledge", text, revised, [], None, _reviewed(first, final, revised), pr["id"]
+    )
 
 
-async def _next_line(state: dict, panel: dict[str, VCPersona], ctx: TruthContext, ranked: list[referee.Candidate], *,
-                     answer: str = "", checks: list[dict] | None = None, weak: bool = False, question: str = "",
-                     question_count: int = 0, cap: int = DEFAULT_CAP, kb: list[dict] | None = None,
-                     build: str | None = None) -> _Line:
+async def _next_line(
+    state: dict,
+    panel: dict[str, VCPersona],
+    ctx: TruthContext,
+    ranked: list[referee.Candidate],
+    *,
+    answer: str = "",
+    checks: list[dict] | None = None,
+    weak: bool = False,
+    question: str = "",
+    question_count: int = 0,
+    cap: int = DEFAULT_CAP,
+    kb: list[dict] | None = None,
+    build: str | None = None,
+) -> _Line:
     """Vicky's pick, the VC's line and her review of it; updates the court state (thread, asked,
     discussed) in place."""
     pick = await agents.chair(ranked, state, panel, weak=weak, question_count=question_count, cap=cap)
@@ -319,17 +431,43 @@ async def _next_line(state: dict, panel: dict[str, VCPersona], ctx: TruthContext
     hyp_kb = hyp.get("kb") if build and state.get("kb_build") == build else None
     line_kb = _merge_kb(kb, hyp_kb)
     notes = await _notes_for(line_kb)
-    spoken = await agents.speak(p, hyp, ctx, intent, asked, answer=answer, question=question, checks=checks,
-                                follow_up=follow_up, kb=line_kb, notes=notes)
+    spoken = await agents.speak(
+        p,
+        hyp,
+        ctx,
+        intent,
+        asked,
+        answer=answer,
+        question=question,
+        checks=checks,
+        follow_up=follow_up,
+        kb=line_kb,
+        notes=notes,
+    )
     prior = [q["text"] for q in state.get("asked_lines", [])]
     first = await agents.review_line(p, spoken.text, intent=intent, about=hyp["claim"], asked=prior)
     revised, final = False, None
     if first["verdict"] == "revise" and spoken.source == "llm":
-        again = await agents.speak(p, hyp, ctx, intent, asked, answer=answer, question=question, checks=checks,
-                                   follow_up=follow_up, kb=line_kb, notes=notes, review={**first, "draft": spoken.text})
+        again = await agents.speak(
+            p,
+            hyp,
+            ctx,
+            intent,
+            asked,
+            answer=answer,
+            question=question,
+            checks=checks,
+            follow_up=follow_up,
+            kb=line_kb,
+            notes=notes,
+            review={**first, "draft": spoken.text},
+        )
         final = code_review.review(again.text, asked=prior, intent=intent)
         # Keep the rewrite unless it fails code's checks where the first draft didn't.
-        if final["verdict"] == "approve" or code_review.review(spoken.text, asked=prior, intent=intent)["issues"]:
+        if (
+            final["verdict"] == "approve"
+            or code_review.review(spoken.text, asked=prior, intent=intent)["issues"]
+        ):
             spoken, revised = again, True
     state.setdefault("asked_lines", []).append({"text": spoken.text, "intent": intent})
     if follow_up:
@@ -344,20 +482,50 @@ async def _next_line(state: dict, panel: dict[str, VCPersona], ctx: TruthContext
             discussed.append(key)
     vs["last_spoke"] = state["turn_no"]
     quotes = [*(hyp.get("quotes") or []), *([answer] if answer else [])]
-    return _Line(pick, p.id, hyp, intent, spoken.text, spoken.regenerated or revised, quotes, notes,
-                 _reviewed(first, final, revised), hyp["id"])
+    return _Line(
+        pick,
+        p.id,
+        hyp,
+        intent,
+        spoken.text,
+        spoken.regenerated or revised,
+        quotes,
+        notes,
+        _reviewed(first, final, revised),
+        hyp["id"],
+    )
 
 
-async def _store_line(conn, sid: str, line: _Line, ctx: TruthContext, ranked: list[referee.Candidate],
-                      after_seq: int) -> dict:
+async def _store_line(
+    conn, sid: str, line: _Line, ctx: TruthContext, ranked: list[referee.Candidate], after_seq: int
+) -> dict:
     pk = line.pick
     await conn.execute(
         """insert into chair_decisions (session_id, after_turn_seq, candidates, decision, valid, fallback, latency_ms, reason)
            values ($1, $2, $3, $4, $5, $6, $7, $8)""",
-        sid, after_seq, [c.__dict__ for c in ranked], pk.decision, pk.valid, pk.fallback, pk.latency_ms, pk.reason)
-    return await _add_turn(conn, sid, line.vc, "question", line.text, ctx, intent=line.intent, hyp=line.target,
-                           quotes=line.quotes or None, regenerated=line.regenerated, notes=line.notes,
-                           review=line.review)
+        sid,
+        after_seq,
+        [c.__dict__ for c in ranked],
+        pk.decision,
+        pk.valid,
+        pk.fallback,
+        pk.latency_ms,
+        pk.reason,
+    )
+    return await _add_turn(
+        conn,
+        sid,
+        line.vc,
+        "question",
+        line.text,
+        ctx,
+        intent=line.intent,
+        hyp=line.target,
+        quotes=line.quotes or None,
+        regenerated=line.regenerated,
+        notes=line.notes,
+        review=line.review,
+    )
 
 
 async def _publish_line(sid: str, line: _Line, turn: dict) -> None:
@@ -372,9 +540,13 @@ def _checked(kc: dict, pr: dict, answer_text: str, ctx: TruthContext, notes: dic
     if res.passed:
         return {**kc, "citations": [c.model_dump(mode="json") for c in res.citations]}
     log.info("knowledge check %s: explanation failed the audit (%s)", pr["id"], res.feedback())
-    return {**kc, "verdict": "unverified", "citations": [],
-            "explanation": "Your notes changed after the search index was built, so this answer couldn't be checked. "
-                           "Press Fill dashboard to rebuild it."}
+    return {
+        **kc,
+        "verdict": "unverified",
+        "citations": [],
+        "explanation": "Your notes changed after the search index was built, so this answer couldn't be checked. "
+        "Press Fill dashboard to rebuild it.",
+    }
 
 
 async def answer(sid: str, text: str) -> None:
@@ -389,7 +561,9 @@ async def answer(sid: str, text: str) -> None:
     version = sess["version"]  # the state this answer is computed from; checked again before it is stored
     ctx = await engagements.context(str(sess["engagement_id"]))
     panel = {p.id: p for p in await registry.panel(sess["panel"], strict=False)}
-    if set(panel) != set(sess["state"]["vcs"]):  # an investor was removed (or renamed) since the session started
+    if set(panel) != set(
+        sess["state"]["vcs"]
+    ):  # an investor was removed (or renamed) since the session started
         raise CourtError("An investor on this panel no longer exists. Start a new session.")
     state = sess["state"]
     settings = sess["settings"]
@@ -398,8 +572,10 @@ async def answer(sid: str, text: str) -> None:
     pr = knowledge.probe(state, thread.get("probe"))  # the question was a knowledge check
     if pr is not None:
         cur_vc = thread.get("vc")
-    last_q = await db.fetchrow("select * from turns where session_id = $1 and kind = 'question' order by seq desc limit 1",
-                               sess["id"])
+    last_q = await db.fetchrow(
+        "select * from turns where session_id = $1 and kind = 'question' order by seq desc limit 1",
+        sess["id"],
+    )
 
     question = last_q["text"] if last_q else ""
 
@@ -407,19 +583,34 @@ async def answer(sid: str, text: str) -> None:
     # check, Vicky's own search over the answer is what she verifies it with, beside the note it was written from.
     kmeta: dict | None = None
     if pr is not None:
-        claims, (found, kmeta) = await asyncio.gather(agents.extract_claims(text),
-                                                      _check_kb(f"{pr['question']} {text}"))
+        claims, (found, kmeta) = await asyncio.gather(
+            agents.extract_claims(text), _check_kb(f"{pr['question']} {text}")
+        )
         turn_kb, kb_build = _merge_kb([_expected_passage(pr)], found), kmeta.get("build_id")
     else:
         claims, (turn_kb, kb_build) = await asyncio.gather(
-            agents.extract_claims(text), _court_kb(f"{text} {(hyp or {}).get('claim') or ''}"))
+            agents.extract_claims(text), _court_kb(f"{text} {(hyp or {}).get('claim') or ''}")
+        )
     turn_notes = await _notes_for(turn_kb)
     checks = []
     for c in claims:
-        r = check_claim(c["metric"], c["value"], c["unit"], ctx.figures, period=c.get("period"),
-                        is_forecast=c.get("is_forecast", False), facts=ctx.facts)
-        checks.append({**r.model_dump(mode="json"), "text": c["text"], "period": c.get("period"),
-                       "is_forecast": bool(c.get("is_forecast", False))})
+        r = check_claim(
+            c["metric"],
+            c["value"],
+            c["unit"],
+            ctx.figures,
+            period=c.get("period"),
+            is_forecast=c.get("is_forecast", False),
+            facts=ctx.facts,
+        )
+        checks.append(
+            {
+                **r.model_dump(mode="json"),
+                "text": c["text"],
+                "period": c.get("period"),
+                "is_forecast": bool(c.get("is_forecast", False)),
+            }
+        )
     # Vicky's score and every VC's belief update run in parallel; the VCs get code's weak/adequate call.
     weak_hint = minds.is_weak(minds.judge(text, hyp, checks, ctx, question))
     state["turn_no"] += 1
@@ -431,15 +622,37 @@ async def answer(sid: str, text: str) -> None:
             kc = await agents.verify_knowledge(pr, question, text, turn_kb, ctx, turn_notes)
             kc = _checked(kc, pr, text, ctx, turn_notes)
         # The score shows the note's answer key as the strong answer, so the verdict carries it.
-        return kc, await agents.judge(text, hyp, checks, ctx, question, kb=turn_kb, notes=turn_notes,
-                                      check={**kc, "expected": pr["expected"]} if kc is not None else None)
+        return kc, await agents.judge(
+            text,
+            hyp,
+            checks,
+            ctx,
+            question,
+            kb=turn_kb,
+            notes=turn_notes,
+            check={**kc, "expected": pr["expected"]} if kc is not None else None,
+        )
 
     results = await asyncio.gather(
         scored(),
-        *(agents.update_and_bid(p, state["vcs"][vid], checks, weak_hint, cur_vc, thread.get("hyp"),
-                                state["turn_no"] - state["vcs"][vid]["last_spoke"], discussed, ctx=ctx, answer=text,
-                                question=question, kb=turn_kb)
-          for vid, p in panel.items()))
+        *(
+            agents.update_and_bid(
+                p,
+                state["vcs"][vid],
+                checks,
+                weak_hint,
+                cur_vc,
+                thread.get("hyp"),
+                state["turn_no"] - state["vcs"][vid]["last_spoke"],
+                discussed,
+                ctx=ctx,
+                answer=text,
+                question=question,
+                kb=turn_kb,
+            )
+            for vid, p in panel.items()
+        ),
+    )
     (kcheck, score), upds = results[0], dict(zip(panel, results[1:], strict=True))
     weak = minds.is_weak(score)
     if hyp is not None and weak:
@@ -450,9 +663,19 @@ async def answer(sid: str, text: str) -> None:
     for vid, p in panel.items():
         vs, upd = state["vcs"][vid], upds[vid]
         belief_rows.append((vid, {"hypotheses": copy.deepcopy(vs["hyps"]), "deltas": upd["deltas"]}, upd))
-        bids.append(referee.Bid(vid, upd["bid"], upd["intent"], upd["target_hyp"], lane_fit=upd["lane_fit"],
-                                turns_since_spoke=state["turn_no"] - vs["last_spoke"], is_current=vid == cur_vc,
-                                depth=thread.get("depth", 0), max_depth=p.style.follow_up_depth))
+        bids.append(
+            referee.Bid(
+                vid,
+                upd["bid"],
+                upd["intent"],
+                upd["target_hyp"],
+                lane_fit=upd["lane_fit"],
+                turns_since_spoke=state["turn_no"] - vs["last_spoke"],
+                is_current=vid == cur_vc,
+                depth=thread.get("depth", 0),
+                max_depth=p.style.follow_up_depth,
+            )
+        )
 
     count = sess["question_count"]
     cap = settings.get("question_cap", DEFAULT_CAP)
@@ -466,8 +689,11 @@ async def answer(sid: str, text: str) -> None:
                     if h_["attack_id"] == hyp["attack_id"]:
                         h_["status"] = "confirmed"
             state["thread"] = None
-            ranked = [c for c in referee.rank([b for b in bids if b.target_hyp != hyp["id"]], answer_weak=False)
-                      if c.intent != "follow_up"]
+            ranked = [
+                c
+                for c in referee.rank([b for b in bids if b.target_hyp != hyp["id"]], answer_weak=False)
+                if c.intent != "follow_up"
+            ]
         # Vicky's orchestration: a knowledge check goes to the top of the list when one is due.
         if (kc := knowledge.candidate(state, ranked, question_count=count, cap=cap, weak=weak)) is not None:
             ranked.insert(0, kc)
@@ -477,8 +703,20 @@ async def answer(sid: str, text: str) -> None:
         if not ranked:
             ended = True
         else:
-            line = await _next_line(state, panel, ctx, ranked, answer=text, checks=checks, weak=weak, question=question,
-                                    question_count=count, cap=cap, kb=turn_kb, build=kb_build)
+            line = await _next_line(
+                state,
+                panel,
+                ctx,
+                ranked,
+                answer=text,
+                checks=checks,
+                weak=weak,
+                question=question,
+                question_count=count,
+                cap=cap,
+                kb=turn_kb,
+                build=kb_build,
+            )
 
     async with db.acquire() as conn, conn.transaction():
         await _lock_unchanged(conn, sess["id"], version)
@@ -487,40 +725,80 @@ async def answer(sid: str, text: str) -> None:
             await conn.execute(
                 """insert into claims (session_id, turn_id, text, metric, value, unit, period, is_forecast, status, figure_id,
                      figure, severity) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::claim_status,$10,$11,$12)""",
-                sess["id"], turn["id"], c["text"], c["metric"], c["value"], c["unit"], c["period"], c["is_forecast"],
+                sess["id"],
+                turn["id"],
+                c["text"],
+                c["metric"],
+                c["value"],
+                c["unit"],
+                c["period"],
+                c["is_forecast"],
                 c["status"],
-                c.get("figure_id"), c.get("figure"), 0.85 if c["status"] == "contradicts" else 0.3)
+                c.get("figure_id"),
+                c.get("figure"),
+                0.85 if c["status"] == "contradicts" else 0.3,
+            )
         await conn.execute(
             "insert into scores (turn_id, question_turn_id, accuracy, dims, rationale) values ($1, $2, $3, $4, $5)",
-            turn["id"], last_q["id"] if last_q else None, score["accuracy"], score["dims"], score["rationale"])
+            turn["id"],
+            last_q["id"] if last_q else None,
+            score["accuracy"],
+            score["dims"],
+            score["rationale"],
+        )
         if kcheck is not None and pr is not None:
             exp = {k: pr["expected"].get(k) for k in ("cite", "path", "heading", "title", "quote")}
             await conn.execute(
                 """insert into knowledge_checks (session_id, turn_id, question_turn_id, probe_id, vc_id, lens, verdict,
                      explanation, expected, citations, retrieval, source) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)""",
-                sess["id"], turn["id"], last_q["id"] if last_q else None, pr["id"], pr["vc"], pr.get("lens"),
-                kcheck["verdict"], kcheck["explanation"], exp, kcheck.get("citations") or [], kmeta,
-                kcheck.get("source") or "offline")
+                sess["id"],
+                turn["id"],
+                last_q["id"] if last_q else None,
+                pr["id"],
+                pr["vc"],
+                pr.get("lens"),
+                kcheck["verdict"],
+                kcheck["explanation"],
+                exp,
+                kcheck.get("citations") or [],
+                kmeta,
+                kcheck.get("source") or "offline",
+            )
         for vid, snapshot, upd in belief_rows:
             await conn.execute(
                 """insert into beliefs (session_id, vc_id, turn_seq, state, bid, intent, target_hyp)
                    values ($1, $2, $3, $4, $5, $6, $7) on conflict do nothing""",
-                sess["id"], vid, turn["seq"], snapshot, upd["bid"], upd["intent"], upd["target_hyp"])
+                sess["id"],
+                vid,
+                turn["seq"],
+                snapshot,
+                upd["bid"],
+                upd["intent"],
+                upd["target_hyp"],
+            )
         if coach:
             await _add_turn(conn, sid, "vicky", "coach", coach, ctx)
         line_turn = None
         if line is not None:
             line_turn = await _store_line(conn, sid, line, ctx, ranked, after_seq=turn["seq"])
-            await conn.execute("update sessions set state = $2, question_count = question_count + 1, "
-                               "version = version + 1 where id = $1", sess["id"], state)
+            await conn.execute(
+                "update sessions set state = $2, question_count = question_count + 1, "
+                "version = version + 1 where id = $1",
+                sess["id"],
+                state,
+            )
         else:
-            await conn.execute("update sessions set state = $2, version = version + 1 where id = $1", sess["id"], state)
+            await conn.execute(
+                "update sessions set state = $2, version = version + 1 where id = $1", sess["id"], state
+            )
     if settings.get("coaching") == "coached":
         await publish(f"session:{sid}", "score.ready", {"turn_seq": turn["seq"]})
     if coach and hyp is not None:
         await publish(f"session:{sid}", "coach.timeout", {"hypothesis_id": hyp["id"]})
     if kcheck is not None:
-        await publish(f"session:{sid}", "knowledge.checked", {"turn_seq": turn["seq"], "verdict": kcheck["verdict"]})
+        await publish(
+            f"session:{sid}", "knowledge.checked", {"turn_seq": turn["seq"], "verdict": kcheck["verdict"]}
+        )
     if line is not None and line_turn is not None:
         await _publish_line(sid, line, line_turn)
     if ended:
@@ -543,11 +821,19 @@ async def end(sid: str) -> str:
         # then finds the session ended; an answer in flight finds it ended too and stores nothing.
         status = await conn.fetchval("select status::text from sessions where id = $1 for update", sess["id"])
         if status != "ended":
-            await _add_turn(conn, sid, "vicky", "debrief",
-                            "That's time. Your report is ready: every question, how each answer scored, the strong "
-                            "answer with its sources, and what to drill next.", ctx)
-            await conn.execute("update sessions set status = 'ended', ended_at = now(), version = version + 1 "
-                               "where id = $1", sess["id"])
+            await _add_turn(
+                conn,
+                sid,
+                "vicky",
+                "debrief",
+                "That's time. Your report is ready: every question, how each answer scored, the strong "
+                "answer with its sources, and what to drill next.",
+                ctx,
+            )
+            await conn.execute(
+                "update sessions set status = 'ended', ended_at = now(), version = version + 1 where id = $1",
+                sess["id"],
+            )
     rid = await report.build(sid, ctx, panel)  # one report per session, however many ends race
     await publish(f"session:{sid}", "session.ended", {"report_id": rid})
     return rid
@@ -561,39 +847,98 @@ async def view(sid: str) -> dict:
     panel = {p.id: p for p in panel_list}
     turns = await db.fetch("select * from turns where session_id = $1 order by seq", sess["id"])
     seq_of = {str(t["id"]): t["seq"] for t in turns}
-    scores = await db.fetch("select s.* from scores s join turns t on t.id = s.turn_id where s.turn_id = any($1::uuid[]) "
-                            "order by t.seq", [t["id"] for t in turns])
+    scores = await db.fetch(
+        "select s.* from scores s join turns t on t.id = s.turn_id where s.turn_id = any($1::uuid[]) "
+        "order by t.seq",
+        [t["id"] for t in turns],
+    )
     claims = await db.fetch("select * from claims where session_id = $1 order by created_at", sess["id"])
     state = sess["state"]
     lens_of = {h["id"]: h["lens"] for s in state["vcs"].values() for h in s["hyps"]}
     lens_of |= {p["id"]: p.get("lens") for p in state.get("probes") or []}
     rid = await db.fetchval("select id::text from reports where session_id = $1", sess["id"])
-    checks = await db.fetch("select * from knowledge_checks where session_id = $1 order by created_at", sess["id"])
-    out_turns = [{"seq": t["seq"], "speaker": t["speaker"], "speaker_name": _speaker_name(t["speaker"], panel),
-                  "kind": t["kind"], "text": t["text"], "lens": lens_of.get(t["hypothesis_id"] or ""),
-                  "hypothesis_id": t["hypothesis_id"], "intent": t["intent"], "citations": t["citations"] or [],
-                  "review": (t["audit"] or {}).get("review"), "created_at": t["created_at"]} for t in turns]
+    checks = await db.fetch(
+        "select * from knowledge_checks where session_id = $1 order by created_at", sess["id"]
+    )
+    out_turns = [
+        {
+            "seq": t["seq"],
+            "speaker": t["speaker"],
+            "speaker_name": _speaker_name(t["speaker"], panel),
+            "kind": t["kind"],
+            "text": t["text"],
+            "lens": lens_of.get(t["hypothesis_id"] or ""),
+            "hypothesis_id": t["hypothesis_id"],
+            "intent": t["intent"],
+            "citations": t["citations"] or [],
+            "review": (t["audit"] or {}).get("review"),
+            "created_at": t["created_at"],
+        }
+        for t in turns
+    ]
     probes = state.get("probes") or []
     last = turns[-1] if turns else None
-    awaiting = None if sess["status"] != "live" else ("founder" if last and last["kind"] in ("question", "coach", "intro") else "panel")
-    return {"id": str(sess["id"]), "status": "ended" if sess["status"] == "ended" else "live", "mode": sess["mode"],
-            "panel": [p.summary() for p in panel_list], "settings": sess["settings"], "turns": out_turns,
-            "scores": [{"turn_seq": seq_of.get(str(s["turn_id"])), "accuracy": float(s["accuracy"]) if s["accuracy"] is not None else None,
-                        "dims": s["dims"], "rationale": s["rationale"]} for s in scores],
-            "claims": [{"turn_seq": seq_of.get(str(c["turn_id"])), "text": c["text"], "metric": c["metric"],
-                        "value": float(c["value"]) if c["value"] is not None else None, "unit": c["unit"],
-                        "status": c["status"], "explanation": _claim_note(c),
-                        "figure_id": c["figure_id"]} for c in claims],
-            "knowledge": [{"turn_seq": seq_of.get(str(k["turn_id"])), "question_seq": seq_of.get(str(k["question_turn_id"])),
-                           "vc_id": k["vc_id"], "lens": k["lens"], "verdict": k["verdict"],
-                           "label": knowledge.label(k["verdict"]), "explanation": k["explanation"],
-                           "citations": k["citations"] or [], "expected": k["expected"], "retrieval": k["retrieval"]}
-                          for k in checks],
-            "knowledge_ready": {"on": bool(sess["settings"].get("knowledge", True)), "probes": len(probes),
-                                "left": sum(1 for p in probes if not p["asked"])},
-            "carried": memory.carried_view(state, turns, sess["status"] == "live"),
-            "question_count": sess["question_count"], "awaiting": awaiting,
-            "next_speaker": None, "report_id": rid, "started_at": sess["started_at"]}
+    awaiting = (
+        None
+        if sess["status"] != "live"
+        else ("founder" if last and last["kind"] in ("question", "coach", "intro") else "panel")
+    )
+    return {
+        "id": str(sess["id"]),
+        "status": "ended" if sess["status"] == "ended" else "live",
+        "mode": sess["mode"],
+        "panel": [p.summary() for p in panel_list],
+        "settings": sess["settings"],
+        "turns": out_turns,
+        "scores": [
+            {
+                "turn_seq": seq_of.get(str(s["turn_id"])),
+                "accuracy": float(s["accuracy"]) if s["accuracy"] is not None else None,
+                "dims": s["dims"],
+                "rationale": s["rationale"],
+            }
+            for s in scores
+        ],
+        "claims": [
+            {
+                "turn_seq": seq_of.get(str(c["turn_id"])),
+                "text": c["text"],
+                "metric": c["metric"],
+                "value": float(c["value"]) if c["value"] is not None else None,
+                "unit": c["unit"],
+                "status": c["status"],
+                "explanation": _claim_note(c),
+                "figure_id": c["figure_id"],
+            }
+            for c in claims
+        ],
+        "knowledge": [
+            {
+                "turn_seq": seq_of.get(str(k["turn_id"])),
+                "question_seq": seq_of.get(str(k["question_turn_id"])),
+                "vc_id": k["vc_id"],
+                "lens": k["lens"],
+                "verdict": k["verdict"],
+                "label": knowledge.label(k["verdict"]),
+                "explanation": k["explanation"],
+                "citations": k["citations"] or [],
+                "expected": k["expected"],
+                "retrieval": k["retrieval"],
+            }
+            for k in checks
+        ],
+        "knowledge_ready": {
+            "on": bool(sess["settings"].get("knowledge", True)),
+            "probes": len(probes),
+            "left": sum(1 for p in probes if not p["asked"]),
+        },
+        "carried": memory.carried_view(state, turns, sess["status"] == "live"),
+        "question_count": sess["question_count"],
+        "awaiting": awaiting,
+        "next_speaker": None,
+        "report_id": rid,
+        "started_at": sess["started_at"],
+    }
 
 
 def _claim_note(c: dict) -> str:
@@ -608,5 +953,6 @@ def _claim_note(c: dict) -> str:
 async def list_sessions() -> list[dict]:
     rows = await db.fetch(
         """select s.id::text, s.mode::text, s.status::text, s.started_at, s.question_count, r.id::text as report_id
-           from sessions s left join reports r on r.session_id = s.id order by s.started_at desc limit 30""")
+           from sessions s left join reports r on r.session_id = s.id order by s.started_at desc limit 30"""
+    )
     return rows

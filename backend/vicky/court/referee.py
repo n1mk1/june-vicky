@@ -24,10 +24,10 @@ class Bid:
     bid: float
     intent: Intent
     target_hyp: str | None
-    lane_fit: float = 1.0          # persona weight on the target hypothesis's lens
+    lane_fit: float = 1.0  # persona weight on the target hypothesis's lens
     turns_since_spoke: int = 99
-    is_current: bool = False       # owns the thread being followed up
-    depth: int = 0                 # follow-ups already asked on the current thread
+    is_current: bool = False  # owns the thread being followed up
+    depth: int = 0  # follow-ups already asked on the current thread
     max_depth: int = DEPTH_CAP
 
 

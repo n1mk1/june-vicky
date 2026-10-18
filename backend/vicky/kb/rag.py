@@ -32,7 +32,7 @@ from vicky.kb.index import active_build_id, has_vector, kb_version, vectors_on
 log = logging.getLogger(__name__)
 Mode = Literal["ask", "court", "recover"]
 RRF_K = 60
-SMALL_WORDS = 90          # a chunk under ~120 tokens gets its neighbours as context
+SMALL_WORDS = 90  # a chunk under ~120 tokens gets its neighbours as context
 PER_NOTE = 3
 RET_TTL_S = 3600
 EMB_TTL_S = 30 * 86400
@@ -60,6 +60,7 @@ def _sha(s: str) -> str:
 
 # ---------------------------------------------------------------- glossary
 
+
 @lru_cache
 def _glossary() -> list[list[tuple[str, ...]]]:
     raw = yaml.safe_load((Path(__file__).with_name("glossary.yaml")).read_text(encoding="utf-8")) or []
@@ -72,7 +73,7 @@ def _glossary() -> list[list[tuple[str, ...]]]:
 
 def _contains(seq: list[str], sub: tuple[str, ...]) -> bool:
     n = len(sub)
-    return any(tuple(seq[i:i + n]) == sub for i in range(len(seq) - n + 1))
+    return any(tuple(seq[i : i + n]) == sub for i in range(len(seq) - n + 1))
 
 
 def expand(query: str, weight: float = 0.5) -> tuple[dict[str, float], list[str]]:
@@ -99,6 +100,7 @@ def _equivalents(t: str) -> set[str]:
 
 # ---------------------------------------------------------------- the in-process index
 
+
 @dataclass
 class _Index:
     build_id: str
@@ -114,6 +116,8 @@ _INDEX: _Index | None = None
 
 def _doc_tokens(r: dict) -> list[str]:
     return tokens(" ".join([r["title"] or "", " ".join(r["tags"] or []), r["heading"] or "", r["text"]]))
+
+
 _LOCK = asyncio.Lock()
 
 
@@ -128,14 +132,21 @@ async def _index(build_id: str) -> _Index:
             """select c.id::text, c.note_id::text, c.note_md5, c.ord, c.heading, c.start_char, c.end_char, c.text,
                       c.text_sha256, n.path, n.title, n.tags, n.links
                from kb_chunks c join kb_notes n on n.id = c.note_id
-               where c.build_id = $1::uuid order by n.path, c.ord""", build_id)
+               where c.build_id = $1::uuid order by n.path, c.ord""",
+            build_id,
+        )
         docs = (_doc_tokens(r) for r in rows)  # streamed: no token list per chunk is kept
         by_note: dict[str, list[int]] = {}
         for i, r in enumerate(rows):
             by_note.setdefault(r["note_id"], []).append(i)
-        vectors = bool(await db.fetchval("select embed_model is not null from kb_index_builds where id = $1::uuid",
-                                         build_id))
-        _INDEX = _Index(build_id, rows, BM25(docs), {r["id"]: i for i, r in enumerate(rows)}, by_note, vectors)
+        vectors = bool(
+            await db.fetchval(
+                "select embed_model is not null from kb_index_builds where id = $1::uuid", build_id
+            )
+        )
+        _INDEX = _Index(
+            build_id, rows, BM25(docs), {r["id"]: i for i, r in enumerate(rows)}, by_note, vectors
+        )
         log.info("kb BM25 index loaded for build %s: %d chunks", build_id, len(rows))
         return _INDEX
 
@@ -146,6 +157,7 @@ def drop_index() -> None:
 
 
 # ---------------------------------------------------------------- result
+
 
 @dataclass
 class Retrieval:
@@ -163,9 +175,22 @@ class Retrieval:
         return self.build_id is not None
 
     def summary(self) -> dict[str, Any]:
-        return {"mode": self.mode, "confidence": round(self.confidence, 3), "signals": self.signals,
-                "chunks": [{"id": c["id"], "path": c["path"], "score": round(c.get("score", 0.0), 4),
-                            "rerank": c.get("rerank")} for c in self.chunks], "cached": self.cached, "ms": self.ms}
+        return {
+            "mode": self.mode,
+            "confidence": round(self.confidence, 3),
+            "signals": self.signals,
+            "chunks": [
+                {
+                    "id": c["id"],
+                    "path": c["path"],
+                    "score": round(c.get("score", 0.0), 4),
+                    "rerank": c.get("rerank"),
+                }
+                for c in self.chunks
+            ],
+            "cached": self.cached,
+            "ms": self.ms,
+        }
 
 
 async def stat(field_: str, n: int = 1) -> None:
@@ -192,6 +217,7 @@ async def _cache_set(key: str, value: Any, ttl: int) -> None:
 
 
 # ---------------------------------------------------------------- pieces
+
 
 async def query_vector(text: str) -> list[float] | None:
     if not vectors_on() or not await has_vector():
@@ -220,7 +246,10 @@ async def _vector_hits(build_id: str, vec: list[float] | None, limit: int) -> li
         rows = await conn.fetch(
             "select id::text, 1 - (embedding <=> $1::halfvec) as sim from kb_chunks "
             "where build_id = $2::uuid and embedding is not null order by embedding <=> $1::halfvec limit $3",
-            voyage.to_pg(vec), build_id, limit)
+            voyage.to_pg(vec),
+            build_id,
+            limit,
+        )
     return [(r["id"], float(r["sim"])) for r in rows]
 
 
@@ -233,12 +262,17 @@ def _rrf(lists: list[list[str]]) -> dict[str, float]:
 
 
 async def _notes_now(note_ids: list[str]) -> dict[str, dict]:
-    rows = await db.fetch("select id::text, md5(content) as md5, path, title, kind, updated_at from kb_notes "
-                          "where id = any($1::uuid[])", note_ids)
+    rows = await db.fetch(
+        "select id::text, md5(content) as md5, path, title, kind, updated_at from kb_notes "
+        "where id = any($1::uuid[])",
+        note_ids,
+    )
     return {r["id"]: r for r in rows}
 
 
-async def _rerank(query: str, idx: _Index, ids: list[str], model: str, build_id: str) -> dict[str, float] | None:
+async def _rerank(
+    query: str, idx: _Index, ids: list[str], model: str, build_id: str
+) -> dict[str, float] | None:
     if not vectors_on() or not ids:
         return None
     key = f"rag:rr:{build_id}:{model}:{_sha(normalize(query))}:{_sha(','.join(ids))}"
@@ -246,8 +280,10 @@ async def _rerank(query: str, idx: _Index, ids: list[str], model: str, build_id:
     if hit:
         await stat("rr_hit")
         return hit
-    docs = [f"{idx.rows[idx.pos[i]]['title']} · {idx.rows[idx.pos[i]]['heading']}\n{idx.rows[idx.pos[i]]['text']}"
-            for i in ids]
+    docs = [
+        f"{idx.rows[idx.pos[i]]['title']} · {idx.rows[idx.pos[i]]['heading']}\n{idx.rows[idx.pos[i]]['text']}"
+        for i in ids
+    ]
     try:
         scored = await voyage.rerank(query, docs, model=model)
     except voyage.VoyageError as e:
@@ -274,15 +310,22 @@ def _context(idx: _Index, i: int) -> list[str]:
 
 def _confidence(signals: dict[str, Any], with_vectors: bool) -> float:
     if with_vectors:
-        return (0.40 * (signals.get("rerank") or 0.0) + 0.20 * signals.get("agree", 0.0)
-                + 0.15 * signals.get("sim", 0.0) + 0.15 * signals.get("cover", 0.0) + 0.10 * signals.get("margin", 0.0))
+        return (
+            0.40 * (signals.get("rerank") or 0.0)
+            + 0.20 * signals.get("agree", 0.0)
+            + 0.15 * signals.get("sim", 0.0)
+            + 0.15 * signals.get("cover", 0.0)
+            + 0.10 * signals.get("margin", 0.0)
+        )
     return 0.6 * signals.get("cover", 0.0) + 0.4 * signals.get("margin", 0.0)
 
 
 # ---------------------------------------------------------------- retrieve
 
-async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
-                   extra_queries: list[str] | None = None) -> Retrieval:
+
+async def retrieve(
+    query: str, *, mode: Mode = "ask", k: int | None = None, extra_queries: list[str] | None = None
+) -> Retrieval:
     t0 = time.perf_counter()
     cfg = MODES[mode]
     k = k or cfg["k"]
@@ -298,8 +341,16 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
     if hit:
         await stat("ret_hit")
         out = await _hydrate(idx, hit["order"], hit["scores"], hit.get("rerank") or {}, k)
-        r = Retrieval(out, hit["confidence"], hit["signals"], build_id, kbv, mode, True,
-                      int((time.perf_counter() - t0) * 1000))
+        r = Retrieval(
+            out,
+            hit["confidence"],
+            hit["signals"],
+            build_id,
+            kbv,
+            mode,
+            True,
+            int((time.perf_counter() - t0) * 1000),
+        )
         return r
     await stat("ret_miss")
 
@@ -309,7 +360,11 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
         queries = [(query, 0.5), (query, 1.0), *((e, 0.5) for e in extra)]
     vec_texts = list(dict.fromkeys([query, *(extra if mode == "recover" else [])]))
     # A build without embeddings has nothing to search by vector: don't embed the question for it.
-    vecs = await asyncio.gather(*(query_vector(t) for t in vec_texts)) if idx.vectors else [None] * len(vec_texts)
+    vecs = (
+        await asyncio.gather(*(query_vector(t) for t in vec_texts))
+        if idx.vectors
+        else [None] * len(vec_texts)
+    )
     vec_lists = await asyncio.gather(*(_vector_hits(build_id, v, cfg["lists"]) for v in vecs))
     lists: list[list[str]] = []
     bm25_top: list[str] = []
@@ -322,7 +377,9 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
         if qtext == query and not bm25_top:
             bm25_top = hits
         lists.append(hits)
-    bm25_scores = dict((idx.rows[i]["id"], s) for i, s in idx.bm25.search(expand(query, 0.5)[0], cfg["lists"]))
+    bm25_scores = dict(
+        (idx.rows[i]["id"], s) for i, s in idx.bm25.search(expand(query, 0.5)[0], cfg["lists"])
+    )
     for vl in vec_lists:
         lists.append([cid for cid, _ in vl if cid in idx.pos])
     sims = {cid: s for vl in vec_lists for cid, s in vl}
@@ -355,8 +412,12 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
     order = sorted(live, key=lambda c: -live[c])
     top_paths = list(dict.fromkeys(idx.rows[idx.pos[c]]["path"] for c in order))[:3]
     if top_paths:
-        top_links = {p for c in order[:12] if idx.rows[idx.pos[c]]["path"] in top_paths
-                     for p in (idx.rows[idx.pos[c]]["links"] or [])}
+        top_links = {
+            p
+            for c in order[:12]
+            if idx.rows[idx.pos[c]]["path"] in top_paths
+            for p in (idx.rows[idx.pos[c]]["links"] or [])
+        }
         for c in order:
             row = idx.rows[idx.pos[c]]
             if row["path"] in top_paths[:3]:
@@ -368,9 +429,9 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
     # 4b: rerank
     s = get_settings()
     model = s.rerank_model_fast if cfg["fast"] else s.rerank_model
-    rr = await _rerank(query, idx, order[:cfg["rerank"]], model, build_id) if order else None
+    rr = await _rerank(query, idx, order[: cfg["rerank"]], model, build_id) if order else None
     if rr:
-        order = sorted(order[:cfg["rerank"]], key=lambda c: -rr.get(c, 0.0)) + order[cfg["rerank"]:]
+        order = sorted(order[: cfg["rerank"]], key=lambda c: -rr.get(c, 0.0)) + order[cfg["rerank"] :]
 
     # 5: keep k (at most PER_NOTE per note), then confidence
     kept: list[str] = []
@@ -396,7 +457,10 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
         # about something the vault lacks scores low, while filler words barely count.
         top_tokens = set().union(*(set(_doc_tokens(idx.rows[idx.pos[c]])) for c in kept[:3]))
         rarest = max(idx.bm25.idf.values(), default=1.0)
-        weight = {t: max((idx.bm25.idf.get(e, 0.0) for e in _equivalents(t)), default=0.0) or rarest for t in q_terms}
+        weight = {
+            t: max((idx.bm25.idf.get(e, 0.0) for e in _equivalents(t)), default=0.0) or rarest
+            for t in q_terms
+        }
         total = sum(weight.values())
         got = sum(w for t, w in weight.items() if _equivalents(t) & top_tokens)
         signals["cover"] = round(got / total, 4) if total else 0.0
@@ -412,14 +476,23 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
         conf = 0.0
     scores_out = {c: live[c] for c in kept}
     rr_out = {c: rr[c] for c in kept if rr and c in rr}
-    await _cache_set(key, {"order": kept, "scores": scores_out, "rerank": rr_out, "confidence": conf,
-                           "signals": signals}, RET_TTL_S)
+    await _cache_set(
+        key,
+        {"order": kept, "scores": scores_out, "rerank": rr_out, "confidence": conf, "signals": signals},
+        RET_TTL_S,
+    )
     out = await _hydrate(idx, kept, scores_out, rr_out, k, now)
     return Retrieval(out, conf, signals, build_id, kbv, mode, False, int((time.perf_counter() - t0) * 1000))
 
 
-async def _hydrate(idx: _Index, order: list[str], scores: dict[str, float], rr: dict[str, float], k: int,
-                   now: dict[str, dict] | None = None) -> list[dict]:
+async def _hydrate(
+    idx: _Index,
+    order: list[str],
+    scores: dict[str, float],
+    rr: dict[str, float],
+    k: int,
+    now: dict[str, dict] | None = None,
+) -> list[dict]:
     ids = [c for c in order if c in idx.pos][:k]
     if now is None:
         now = await _notes_now(list({idx.rows[idx.pos[c]]["note_id"] for c in ids})) if ids else {}
@@ -430,8 +503,21 @@ async def _hydrate(idx: _Index, order: list[str], scores: dict[str, float], rr: 
         note = now.get(row["note_id"])
         if note is None or note["md5"] != row["note_md5"]:
             continue
-        out.append({"id": c, "note_id": row["note_id"], "path": note["path"], "title": note["title"],
-                    "kind": note["kind"], "heading": row["heading"], "text": row["text"], "start": row["start_char"],
-                    "end": row["end_char"], "context": _context(idx, i), "score": scores.get(c, 0.0),
-                    "rerank": rr.get(c), "cite": cite(note["path"])})
+        out.append(
+            {
+                "id": c,
+                "note_id": row["note_id"],
+                "path": note["path"],
+                "title": note["title"],
+                "kind": note["kind"],
+                "heading": row["heading"],
+                "text": row["text"],
+                "start": row["start_char"],
+                "end": row["end_char"],
+                "context": _context(idx, i),
+                "score": scores.get(c, 0.0),
+                "rerank": rr.get(c),
+                "cite": cite(note["path"]),
+            }
+        )
     return out

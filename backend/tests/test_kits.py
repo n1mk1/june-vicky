@@ -23,18 +23,46 @@ from vicky.model.figures import Figure, MissingFigure
 SAMPLES = ["tidewell", "harbor-labs", "services-co"]
 FIG_KEYS = {"id", "value", "formula", "source"}
 META_INT_KEYS = {"month"}
-UNSUPPORTED_SCHEMA_KEYS = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength",
-                           "maxLength", "pattern", "maxItems", "uniqueItems", "minProperties", "maxProperties"}
+UNSUPPORTED_SCHEMA_KEYS = {
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "maxItems",
+    "uniqueItems",
+    "minProperties",
+    "maxProperties",
+}
 
 # Example arguments for tools that take any (all fields are required under strict tool use).
 ARGS: dict[str, dict] = {
     "quant_runway_sensitivity": {"burn_change_pct": 20},
     "redteam_stress": {"scenario": "all"},
-    "market_bottom_up": {"target_accounts": 40000, "annual_value_per_account": 6000, "reachable_share_pct": 25},
-    "terms_dilution": {"instrument": "priced_round", "round_size": 3_000_000, "pre_money_or_cap": 15_000_000,
-                       "option_pool_pct": 0, "safe_amounts": [1_000_000, 500_000], "safe_caps": [10_000_000, 10_000_000]},
-    "terms_waterfall": {"exit_value": 6_000_000, "invested": 3_000_000, "investor_ownership_pct": 20,
-                        "liquidation_multiple": 1, "participating": False, "participation_cap_multiple": None},
+    "market_bottom_up": {
+        "target_accounts": 40000,
+        "annual_value_per_account": 6000,
+        "reachable_share_pct": 25,
+    },
+    "terms_dilution": {
+        "instrument": "priced_round",
+        "round_size": 3_000_000,
+        "pre_money_or_cap": 15_000_000,
+        "option_pool_pct": 0,
+        "safe_amounts": [1_000_000, 500_000],
+        "safe_caps": [10_000_000, 10_000_000],
+    },
+    "terms_waterfall": {
+        "exit_value": 6_000_000,
+        "invested": 3_000_000,
+        "investor_ownership_pct": 20,
+        "liquidation_multiple": 1,
+        "participating": False,
+        "participation_cap_multiple": None,
+    },
     "milestone_use_of_funds": {"round_size": None, "burn_increase_pct": 50},
     "milestone_arr_projection": {"months": 18, "target_arr": 5_000_000},
     "benchmark_compare": {"metric": "burn_multiple"},
@@ -99,6 +127,7 @@ def fval(res: dict, *path: str) -> float:
 
 # ---------------------------------------------------------------- every tool, every sample
 
+
 @pytest.mark.parametrize("sample", SAMPLES)
 @pytest.mark.parametrize("name", sorted(TOOLS))
 def test_tool_runs_and_numbers_are_figures(sample, name):
@@ -128,6 +157,7 @@ def test_projections_are_forecasts():
 
 
 # ---------------------------------------------------------------- kit figures agree with the engine
+
 
 @pytest.mark.parametrize("sample", ["tidewell", "harbor-labs"])
 def test_quant_audit_matches_engine(sample):
@@ -170,7 +200,9 @@ def test_concentration_matches_engine():
 
 def test_largest_customer_leaves_uses_engine_share():
     c = ctx("harbor-labs")
-    r = call("harbor-labs", "redteam_stress", scenario="largest_customer_leaves")["scenarios"]["largest_customer_leaves"]
+    r = call("harbor-labs", "redteam_stress", scenario="largest_customer_leaves")["scenarios"][
+        "largest_customer_leaves"
+    ]
     share, mrr = c.figures["top_customer_share"].value, c.figures["mrr"].value
     assert fval(r, "arr_after") == pytest.approx((mrr - share * mrr) * 12)
 
@@ -207,6 +239,7 @@ def test_milestone_months_arithmetic():
 
 # ---------------------------------------------------------------- missing inputs
 
+
 def test_missing_inputs_name_what_is_needed():
     r = call("services-co", "quant_burn_multiple")
     assert {m["id"] for m in r["missing"]} >= {"burn_multiple"}
@@ -228,6 +261,7 @@ def test_benchmark_only_from_sources():
 
 # ---------------------------------------------------------------- Terms: worked examples
 
+
 def own(res: dict, key: str) -> float:
     return res[key]["value"]
 
@@ -242,7 +276,12 @@ def test_terms_priced_round_with_capped_safes():
     assert r["safes"][1]["value"] == pytest.approx(0.0417, abs=1e-4)
     assert own(r, "existing_holders") == pytest.approx(0.7083, abs=1e-4)
     assert own(r, "implied_post_money") == 18_000_000
-    total = own(r, "existing_holders") + own(r, "new_investor") + own(r, "option_pool") + sum(s["value"] for s in r["safes"])
+    total = (
+        own(r, "existing_holders")
+        + own(r, "new_investor")
+        + own(r, "option_pool")
+        + sum(s["value"] for s in r["safes"])
+    )
     assert total == pytest.approx(1.0)
     assert all(f["source"]["kind"] == "founder_stated" for f in r["inputs"])
     assert "not a view" in r["note"]
@@ -250,8 +289,15 @@ def test_terms_priced_round_with_capped_safes():
 
 def test_terms_option_pool_shuffle():
     """$3M at $12M pre ($15M post) with a 10%-of-post pool created pre-money: investor 20%, pool 10%, existing 70%."""
-    r = call("tidewell", "terms_dilution", round_size=3_000_000, pre_money_or_cap=12_000_000, option_pool_pct=10,
-             safe_amounts=[], safe_caps=[])
+    r = call(
+        "tidewell",
+        "terms_dilution",
+        round_size=3_000_000,
+        pre_money_or_cap=12_000_000,
+        option_pool_pct=10,
+        safe_amounts=[],
+        safe_caps=[],
+    )
     assert own(r, "new_investor") == pytest.approx(0.20)
     assert own(r, "option_pool") == pytest.approx(0.10)
     assert own(r, "existing_holders") == pytest.approx(0.70)
@@ -261,8 +307,15 @@ def test_terms_option_pool_shuffle():
 def test_terms_uncapped_and_out_of_money_safes_convert_at_round_price():
     """$4M at $12M pre ($16M post), one $500K SAFE: it owns 500K / 16M = 3.125% whether uncapped or capped above the price."""
     for caps in ([None], [50_000_000]):
-        r = call("tidewell", "terms_dilution", round_size=4_000_000, pre_money_or_cap=12_000_000, option_pool_pct=0,
-                 safe_amounts=[500_000], safe_caps=caps)
+        r = call(
+            "tidewell",
+            "terms_dilution",
+            round_size=4_000_000,
+            pre_money_or_cap=12_000_000,
+            option_pool_pct=0,
+            safe_amounts=[500_000],
+            safe_caps=caps,
+        )
         assert r["safes"][0]["value"] == pytest.approx(0.03125)
         assert own(r, "new_investor") == pytest.approx(0.25)
         assert own(r, "existing_holders") == pytest.approx(0.71875)
@@ -270,17 +323,30 @@ def test_terms_uncapped_and_out_of_money_safes_convert_at_round_price():
 
 def test_terms_post_money_safe_round():
     """$1M SAFE at a $10M post-money cap, plus an earlier $0.5M SAFE at a $5M cap: 10% + 10%, existing 80%."""
-    r = call("tidewell", "terms_dilution", instrument="post_money_safe", round_size=1_000_000, pre_money_or_cap=10_000_000,
-             option_pool_pct=0, safe_amounts=[500_000], safe_caps=[5_000_000])
+    r = call(
+        "tidewell",
+        "terms_dilution",
+        instrument="post_money_safe",
+        round_size=1_000_000,
+        pre_money_or_cap=10_000_000,
+        option_pool_pct=0,
+        safe_amounts=[500_000],
+        safe_caps=[5_000_000],
+    )
     assert own(r, "new_investor") == pytest.approx(0.10)
     assert r["safes"][0]["value"] == pytest.approx(0.10)
     assert own(r, "existing_holders") == pytest.approx(0.80)
 
 
-@pytest.mark.parametrize("exit_value,participating,investor", [
-    (6_000_000, False, 3_000_000), (6_000_000, True, 3_600_000),
-    (60_000_000, False, 12_000_000), (60_000_000, True, 14_400_000),
-])
+@pytest.mark.parametrize(
+    "exit_value,participating,investor",
+    [
+        (6_000_000, False, 3_000_000),
+        (6_000_000, True, 3_600_000),
+        (60_000_000, False, 12_000_000),
+        (60_000_000, True, 14_400_000),
+    ],
+)
 def test_terms_waterfall_playbook_table(exit_value, participating, investor):
     """Playbook: investor paid $3M for 20%; 1x preference."""
     r = call("tidewell", "terms_waterfall", exit_value=exit_value, participating=participating)
@@ -307,13 +373,16 @@ def test_terms_never_suggests_a_valuation():
 
 # ---------------------------------------------------------------- Governance: country rules
 
+
 def test_country_code_mapping():
     assert country_code({"country": "CA"}) == "CA"
     assert country_code({"country": "GB"}) == "UK"
     assert country_code({"country": "FR"}) == "generic"
 
 
-@pytest.mark.skipif(not ((GEO_DIR / "CA.md").exists() and (GEO_DIR / "US.md").exists()), reason="geo playbooks absent")
+@pytest.mark.skipif(
+    not ((GEO_DIR / "CA.md").exists() and (GEO_DIR / "US.md").exists()), reason="geo playbooks absent"
+)
 def test_governance_rules_differ_by_country():
     ca, us = (call(s, "governance_country_rules") for s in ("tidewell", "harbor-labs"))
     assert ca["playbook"] == "geo/CA.md" and us["playbook"] == "geo/US.md"
@@ -334,12 +403,15 @@ def test_governance_rules_without_playbook(monkeypatch, tmp_path):
 def test_parse_playbook_bullets():
     from vicky.areopagus.kits.governance import parse_playbook
 
-    front, rules = parse_playbook("---\ntitle: X\nversion: 2\n---\n# Head\n## Credits\n- A rule that\n  wraps.\n- **Bold** one\n\nText\n")
+    front, rules = parse_playbook(
+        "---\ntitle: X\nversion: 2\n---\n# Head\n## Credits\n- A rule that\n  wraps.\n- **Bold** one\n\nText\n"
+    )
     assert front == {"title": "X", "version": "2"}
     assert rules == ["Credits: A rule that wraps.", "Credits: Bold one"]
 
 
 # ---------------------------------------------------------------- schemas and registry
+
 
 def _walk_schema(s: dict, path: str = "$") -> list[str]:
     bad = [f"{path}.{k}" for k in s if k in UNSUPPORTED_SCHEMA_KEYS]
@@ -347,7 +419,9 @@ def _walk_schema(s: dict, path: str = "$") -> list[str]:
         if isinstance(v, dict):
             bad += _walk_schema(v, f"{path}.{k}")
         elif isinstance(v, list):
-            bad += [b for i, x in enumerate(v) if isinstance(x, dict) for b in _walk_schema(x, f"{path}.{k}[{i}]")]
+            bad += [
+                b for i, x in enumerate(v) if isinstance(x, dict) for b in _walk_schema(x, f"{path}.{k}[{i}]")
+            ]
     return bad
 
 
@@ -369,8 +443,19 @@ def test_input_schema_is_strict(name):
 def test_tool_names_unique_and_kits_complete():
     names = [t.name for k in KITS.values() for t in k.tools]
     assert len(names) == len(set(names))
-    assert set(KITS) == {"QuantAudit", "Customer", "Channel", "Governance", "RedTeam", "Market", "Terms", "Milestone",
-                         "Benchmark", "Cash", "Product"}
+    assert set(KITS) == {
+        "QuantAudit",
+        "Customer",
+        "Channel",
+        "Governance",
+        "RedTeam",
+        "Market",
+        "Terms",
+        "Milestone",
+        "Benchmark",
+        "Cash",
+        "Product",
+    }
     assert all(k in KITS for kits in LENS_KITS.values() for k in kits)
 
 

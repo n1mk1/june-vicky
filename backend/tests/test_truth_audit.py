@@ -78,8 +78,11 @@ def test_audit_requires_benchmark_source():
 
 def test_audit_allows_founder_quotes_and_small_counts():
     _, _, m = sample_metrics("tidewell")
-    r = audit_text('You said "we grow 10% a month". Give me 3 milestones for 2027.', figs(m),
-                   founder_quotes=["we grow 10% a month"])
+    r = audit_text(
+        'You said "we grow 10% a month". Give me 3 milestones for 2027.',
+        figs(m),
+        founder_quotes=["we grow 10% a month"],
+    )
     assert r.passed, r.feedback()
 
 

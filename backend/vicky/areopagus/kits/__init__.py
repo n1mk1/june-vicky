@@ -19,8 +19,22 @@ from vicky.areopagus.kits.red_team import RED_TEAM
 from vicky.areopagus.kits.terms import TERMS
 from vicky.model.context import TruthContext
 
-KITS: dict[str, Kit] = {k.name: k for k in (QUANT_AUDIT, CUSTOMER, CHANNEL, GOVERNANCE, RED_TEAM, MARKET_KIT, TERMS,
-                                            MILESTONE, BENCHMARK, CASH, PRODUCT)}
+KITS: dict[str, Kit] = {
+    k.name: k
+    for k in (
+        QUANT_AUDIT,
+        CUSTOMER,
+        CHANNEL,
+        GOVERNANCE,
+        RED_TEAM,
+        MARKET_KIT,
+        TERMS,
+        MILESTONE,
+        BENCHMARK,
+        CASH,
+        PRODUCT,
+    )
+}
 
 TOOLS: dict[str, ToolDef] = {t.name: t for k in KITS.values() for t in k.tools}
 
@@ -90,5 +104,15 @@ def run_tool(name: str, ctx: TruthContext, args: dict | None = None) -> dict:
     return t.run(ctx, args)
 
 
-__all__ = ["KITS", "LENS_KITS", "TOOLS", "Kit", "ToolDef", "kit_name", "kit_tools", "kits_for_lenses", "registry_for",
-           "run_tool"]
+__all__ = [
+    "KITS",
+    "LENS_KITS",
+    "TOOLS",
+    "Kit",
+    "ToolDef",
+    "kit_name",
+    "kit_tools",
+    "kits_for_lenses",
+    "registry_for",
+    "run_tool",
+]

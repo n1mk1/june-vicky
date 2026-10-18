@@ -62,8 +62,12 @@ class CanonicalModel:
     table_sources: dict[str, str] = field(default_factory=dict)
     datasets: dict[str, DatasetInput] = field(default_factory=dict)
     fx_skipped: list[str] = field(default_factory=list)  # "<dataset>:<column> <period>" left unconverted
-    fx_gaps: dict[str, list[tuple[str, str]]] = field(default_factory=dict)  # field or table kind → [(src, period)]
-    table_fx: dict[str, str] = field(default_factory=dict)  # table kind → " · converted …" for its source refs
+    fx_gaps: dict[str, list[tuple[str, str]]] = field(
+        default_factory=dict
+    )  # field or table kind → [(src, period)]
+    table_fx: dict[str, str] = field(
+        default_factory=dict
+    )  # table kind → " · converted …" for its source refs
     # The customer and cohort tables in their source currency (one currency per table, else empty): retention
     # and concentration are ratios, so exchange-rate moves must not show up in them.
     customer_mrr_src: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -71,7 +75,9 @@ class CanonicalModel:
     notes: list[str] = field(default_factory=list)  # what the build left out or reinterpreted, in plain words
     fx: Rates | None = None
 
-    def convert(self, val: float, src: str, period: str, agg: str = "sum") -> tuple[float, FxRate | None] | None:
+    def convert(
+        self, val: float, src: str, period: str, agg: str = "sum"
+    ) -> tuple[float, FxRate | None] | None:
         """A `src` amount for a period in the model currency (with the rate used), or None without a rate."""
         if src == self.currency or src not in CURRENCY_CODES:
             return val, None
@@ -115,7 +121,12 @@ class CanonicalModel:
         if any(c.derived for c in cells):
             # A derived cell carries the file provenance of its inputs (dataset, columns), so it still points at the file.
             origin = f" (from {dsi.name} · {', '.join(cols)})" if dsi and cols else ""
-            return ds, f"derived: {cells[0].derived}{origin}" + fx_note([r for c in cells for r in c.fx], self.currency), kind
+            return (
+                ds,
+                f"derived: {cells[0].derived}{origin}"
+                + fx_note([r for c in cells for r in c.fx], self.currency),
+                kind,
+            )
         if dsi and dsi.transposed:
             ref = f"{', '.join(cols)} · {periods[0]}" + (f"–{periods[-1]}" if len(periods) > 1 else "")
         else:
@@ -127,7 +138,7 @@ class CanonicalModel:
 
 
 def fx_note(rates: list[FxRate], currency: str) -> str:
-    """" · converted …" for a source reference, or "" when nothing was converted."""
+    """ " · converted …" for a source reference, or "" when nothing was converted."""
     if not rates:
         return ""
     if len(rates) == 1:
@@ -161,12 +172,22 @@ def _mostly_negative(values: list) -> bool:
     return bool(nums) and sum(1 for v in nums if v < 0) > len(nums) / 2
 
 
-def build_model(datasets: list[DatasetInput], currency: str, target_granularity: str | None = None,
-                fx: Rates | None = None) -> CanonicalModel:
+def build_model(
+    datasets: list[DatasetInput],
+    currency: str,
+    target_granularity: str | None = None,
+    fx: Rates | None = None,
+) -> CanonicalModel:
     series_ds = [d for d in datasets if d.table_kind == "series"]
     grans = {d.granularity for d in series_ds if d.granularity in ("month", "quarter", "year")}
     if target_granularity not in grans:
-        target_granularity = "month" if "month" in grans else "quarter" if "quarter" in grans else (next(iter(grans)) if grans else "month")
+        target_granularity = (
+            "month"
+            if "month" in grans
+            else "quarter"
+            if "quarter" in grans
+            else (next(iter(grans)) if grans else "month")
+        )
     model = CanonicalModel(currency=currency.lower(), granularity=target_granularity, fx=fx)
     convert = model.convert
 
@@ -178,11 +199,17 @@ def build_model(datasets: list[DatasetInput], currency: str, target_granularity:
         model.datasets[d.id] = d
         m_by_col = {m["source_column"]: m.get("canonical_field") for m in d.mapping}
         cur_by_col = {m["source_column"]: column_currency(m, model.currency) for m in d.mapping}
-        foreign = {c for c, u in cur_by_col.items() if u != model.currency}  # raw columns in a currency convert too
+        foreign = {
+            c for c, u in cur_by_col.items() if u != model.currency
+        }  # raw columns in a currency convert too
         if d.table_kind == "series":
-            if d.rows and all(_to_target(row["period"], d.granularity, target_granularity) is None for row in d.rows):
-                model.notes.append(f"{d.name} is {d.granularity}ly and the model is {target_granularity}ly: "
-                                   f"its {d.granularity}s can't be split into {target_granularity}s, so it is left out")
+            if d.rows and all(
+                _to_target(row["period"], d.granularity, target_granularity) is None for row in d.rows
+            ):
+                model.notes.append(
+                    f"{d.name} is {d.granularity}ly and the model is {target_granularity}ly: "
+                    f"its {d.granularity}s can't be split into {target_granularity}s, so it is left out"
+                )
                 continue
             # Months rolled into quarters: a quarter with fewer than 3 months would understate every flow in it.
             partial: dict[str, int] = {}
@@ -192,11 +219,19 @@ def build_model(datasets: list[DatasetInput], currency: str, target_granularity:
                     months_in[quarter_of(row["period"])].add(row["period"])
                 partial = {q: len(ms) for q, ms in months_in.items() if len(ms) < 3}
                 for q in sorted(partial, key=period_sort_key):
-                    model.notes.append(f"{_quarter_label(q)} has {partial[q]} of 3 months in {d.name}: its amounts are "
-                                       f"left out rather than summed short (balances still count)")
-            flip = {col for col, t in m_by_col.items() if t in COST_FIELDS and _mostly_negative([r.get(col) for r in d.rows])}
+                    model.notes.append(
+                        f"{_quarter_label(q)} has {partial[q]} of 3 months in {d.name}: its amounts are "
+                        f"left out rather than summed short (balances still count)"
+                    )
+            flip = {
+                col
+                for col, t in m_by_col.items()
+                if t in COST_FIELDS and _mostly_negative([r.get(col) for r in d.rows])
+            }
             if flip:
-                model.notes.append(f"Costs shown as negatives were read as positive ({d.name}: {', '.join(sorted(flip))})")
+                model.notes.append(
+                    f"Costs shown as negatives were read as positive ({d.name}: {', '.join(sorted(flip))})"
+                )
             accum: dict[str, dict[str, Cell]] = defaultdict(dict)
             for i, row in enumerate(d.rows):
                 p = _to_target(row["period"], d.granularity, target_granularity)
@@ -231,8 +266,9 @@ def build_model(datasets: list[DatasetInput], currency: str, target_granularity:
                     agg = FIELDS[target].agg
                     cell = accum[target].get(p)
                     if cell is None:
-                        accum[target][p] = Cell(float(val), d.id, [col], list(src_rows), d.upload_kind,
-                                                fx=[rate] if rate else [])
+                        accum[target][p] = Cell(
+                            float(val), d.id, [col], list(src_rows), d.upload_kind, fx=[rate] if rate else []
+                        )
                     else:
                         if agg == "sum" and (col not in cell.columns or d.granularity != target_granularity):
                             cell.value += float(val)
@@ -258,7 +294,14 @@ def build_model(datasets: list[DatasetInput], currency: str, target_granularity:
             for row in d.rows:
                 v = row.get(val_col) if val_col else None
                 if v is None:
-                    v = next((x for k, x in row.items() if k not in ("period", "dim") and isinstance(x, int | float)), None)
+                    v = next(
+                        (
+                            x
+                            for k, x in row.items()
+                            if k not in ("period", "dim") and isinstance(x, int | float)
+                        ),
+                        None,
+                    )
                 if v is None:
                     continue
                 dim = str(row.get("dim") if dim_col else row.get("dim"))
@@ -303,24 +346,39 @@ def _derive(model: CanonicalModel) -> None:
     for p in model.periods:
         rec, one = model.value("revenue.recurring", p), model.value("revenue.one_time", p)
         if model.value("revenue.total", p) is None and (rec is not None or one is not None):
-            put("revenue.total", p, (rec or 0) + (one or 0), "recurring + one-time revenue",
-                ["revenue.recurring", "revenue.one_time"])
+            put(
+                "revenue.total",
+                p,
+                (rec or 0) + (one or 0),
+                "recurring + one-time revenue",
+                ["revenue.recurring", "revenue.one_time"],
+            )
         rev, cogs = model.value("revenue.total", p), model.value("cogs", p)
         if model.value("gross_profit", p) is None and rev is not None and cogs is not None:
             put("gross_profit", p, rev - cogs, "revenue − cost of revenue", ["revenue.total", "cogs"])
         cats = [model.value(c, p) for c in OPEX_CATEGORIES]
         if model.value("opex.total", p) is None and any(v is not None for v in cats):
             dep = model.value("depreciation", p) or 0
-            put("opex.total", p, sum(v or 0 for v in cats) + dep, "sum of opex categories",
-                [*OPEX_CATEGORIES, "depreciation"])
+            put(
+                "opex.total",
+                p,
+                sum(v or 0 for v in cats) + dep,
+                "sum of opex categories",
+                [*OPEX_CATEGORIES, "depreciation"],
+            )
         gp, opex = model.value("gross_profit", p), model.value("opex.total", p)
         if model.value("operating_income", p) is None and gp is not None and opex is not None:
             put("operating_income", p, gp - opex, "gross profit − opex", ["gross_profit", "opex.total"])
         oi = model.value("operating_income", p)
         if model.value("net_income", p) is None and oi is not None:
             nd = model.value("non_dilutive_income", p) or 0
-            put("net_income", p, oi + nd, "operating income + non-dilutive income",
-                ["operating_income", "non_dilutive_income"])
+            put(
+                "net_income",
+                p,
+                oi + nd,
+                "operating income + non-dilutive income",
+                ["operating_income", "non_dilutive_income"],
+            )
 
 
 def model_summary(model: CanonicalModel) -> dict[str, Any]:

@@ -64,8 +64,15 @@ def _to_mapping(entries: list[dict], ds: ParsedDataset, currency: str) -> list[C
         unit = e.get("unit") or ""
         if unit in ("month", "quarter", "null", None):
             unit = ""
-        out.append(ColumnMapping(source_column=col, canonical_field=e.get("canonical_field"), unit=str(unit),
-                                 confidence=float(e.get("confidence", 0.95)), note=e.get("note") or ""))
+        out.append(
+            ColumnMapping(
+                source_column=col,
+                canonical_field=e.get("canonical_field"),
+                unit=str(unit),
+                confidence=float(e.get("confidence", 0.95)),
+                note=e.get("note") or "",
+            )
+        )
     return out
 
 
@@ -75,7 +82,11 @@ def load_sample(sample_id: str) -> Sample:
         raise KeyError(sample_id)
     profile = yaml.safe_load((d / "profile.yaml").read_text(encoding="utf-8")) or {}
     currency = norm_currency(profile.get("currency"))
-    mapping_raw = yaml.safe_load((d / "mapping.yaml").read_text(encoding="utf-8")) if (d / "mapping.yaml").exists() else None
+    mapping_raw = (
+        yaml.safe_load((d / "mapping.yaml").read_text(encoding="utf-8"))
+        if (d / "mapping.yaml").exists()
+        else None
+    )
     entries = _mapping_entries(mapping_raw)
     files: list[SampleFile] = []
     mappings: dict[str, list[ColumnMapping]] = {}
@@ -110,12 +121,19 @@ def load_pack_facts(d: Path) -> list[Fact]:
         src = f.get("source") or {}
         if isinstance(src, str):
             src = {"kind": "pack_summary", "ref": src}
-        out.append(Fact(
-            id=f"pack-{i + 1}", name=str(f["name"]), label=f.get("label", ""), value=value,
-            unit=str(f.get("unit") or "count").lower(), period=str(f["period"]) if f.get("period") else None,
-            kind=f.get("kind", "historical"),
-            source=Source(kind=src.get("kind", "pack_summary"), ref=str(src.get("ref", ""))),
-            status="confirmed", target_metric=bool(f.get("target_metric", False)), note=f.get("note"),
-        ))
+        out.append(
+            Fact(
+                id=f"pack-{i + 1}",
+                name=str(f["name"]),
+                label=f.get("label", ""),
+                value=value,
+                unit=str(f.get("unit") or "count").lower(),
+                period=str(f["period"]) if f.get("period") else None,
+                kind=f.get("kind", "historical"),
+                source=Source(kind=src.get("kind", "pack_summary"), ref=str(src.get("ref", ""))),
+                status="confirmed",
+                target_metric=bool(f.get("target_metric", False)),
+                note=f.get("note"),
+            )
+        )
     return out
-

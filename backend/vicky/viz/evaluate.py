@@ -51,6 +51,7 @@ _MONTHS = {"month": 1, "quarter": 3, "year": 12}
 
 # ---------------------------------------------------------------- result shapes
 
+
 class InputRef(BaseModel):
     field: str | None = None
     figure_id: str | None = None
@@ -141,6 +142,7 @@ class EvaluatedWidget(BaseModel):
 
 # ---------------------------------------------------------------- formatting
 
+
 def _fmt(v: float | None, unit: str | None = None) -> str:
     if v is None or not math.isfinite(v):
         return "n/a"
@@ -165,6 +167,7 @@ def _dedupe(items: list) -> list:
 
 # ---------------------------------------------------------------- internal values
 
+
 @dataclass
 class P:
     value: float | None
@@ -185,12 +188,14 @@ def _finite(v: float | None) -> bool:
 @dataclass
 class SV:
     """A series over the frame's periods."""
+
     pts: dict[str, P]
 
 
 @dataclass
 class CV:
     """One number (a constant, a figure or a reduction over the window)."""
+
     pt: P
 
 
@@ -214,6 +219,7 @@ def _merge(*pts: P) -> tuple[list[InputRef], list[str]]:
 
 # ---------------------------------------------------------------- the period frame
 
+
 class Frame:
     """The model's periods, optionally regrouped to a coarser granularity."""
 
@@ -224,7 +230,9 @@ class Frame:
         target = group_by or native
         self.notes: list[str] = []
         if _RANK[target] < _RANK[native]:
-            self.notes.append(f"The data is {native}ly, so it can't be shown by {target}; showing by {native}.")
+            self.notes.append(
+                f"The data is {native}ly, so it can't be shown by {target}; showing by {native}."
+            )
             target = native
         self.native, self.target = native, target
         self.groups: dict[str, list[str]] = {}
@@ -235,7 +243,9 @@ class Frame:
         self.complete = {g: len(ms) == expected for g, ms in self.groups.items()}
         if not all(self.complete.values()) and target != native:
             partial = [label_period(g) for g, ok in self.complete.items() if not ok]
-            self.notes.append(f"Partial {target}s are left empty rather than summed short: {', '.join(partial)}.")
+            self.notes.append(
+                f"Partial {target}s are left empty rather than summed short: {', '.join(partial)}."
+            )
         self._cache: dict[Any, dict[str, P]] = {}
         self._refs: dict[tuple[str, str], str] = {}
 
@@ -270,7 +280,9 @@ class Frame:
             members = self.groups[g]
             cells = [(p, self.model.cell(fid, p)) for p in members]
             if any(c is not None and not math.isfinite(c.value) for _, c in cells):
-                out[g] = P(None, f"{label} n/a", note=f"a {label} value for {label_period(g)} is out of range")
+                out[g] = P(
+                    None, f"{label} n/a", note=f"a {label} value for {label_period(g)} is out of range"
+                )
                 continue
             if not self.complete[g]:
                 out[g] = P(None, f"{label} n/a", note=f"{label_period(g)} is a partial {self.target}")
@@ -279,8 +291,12 @@ class Frame:
                 out[g] = P(None, f"{label} n/a", note=f"no {label} for {label_period(g)}")
                 continue
             present = [(p, c) for p, c in cells if c is not None]
-            inputs = [InputRef(field=fid, period=p, value=c.value, dataset_id=c.dataset_id, ref=self.cell_ref(fid, p))
-                      for p, c in present]
+            inputs = [
+                InputRef(
+                    field=fid, period=p, value=c.value, dataset_id=c.dataset_id, ref=self.cell_ref(fid, p)
+                )
+                for p, c in present
+            ]
             if f.agg == "last":
                 v = present[-1][1].value if present and present[-1][0] == members[-1] else None
                 defs = [f"{label} at the end of {label_period(members[-1])}"] if len(members) > 1 else []
@@ -293,7 +309,9 @@ class Frame:
             defs = []
             if len(members) > 1:
                 parts = " + ".join(_fmt(c.value if c else 0.0) for _, c in cells)
-                defs.append(f"{label} {label_period(g)} = {parts} ({label_period(members[0])}–{label_period(members[-1])})")
+                defs.append(
+                    f"{label} {label_period(g)} = {parts} ({label_period(members[0])}–{label_period(members[-1])})"
+                )
             out[g] = P(v, f"{label} {_fmt(v)}", inputs, defs)
         self._cache[key] = out
         return out
@@ -330,6 +348,7 @@ class Frame:
 
 # ---------------------------------------------------------------- evaluator
 
+
 class Evaluator:
     def __init__(self, ctx: TruthContext, frame: Frame, window: list[str]):
         self.ctx = ctx
@@ -354,7 +373,9 @@ class Evaluator:
         if isinstance(node, Raw):
             ds, col = self.ctx.model.raw_source.get(node.key, (None, ""))
             dsi = self.ctx.model.datasets.get(ds or "")
-            unit = next((m.get("unit") for m in (dsi.mapping if dsi else []) if m.get("source_column") == col), None)
+            unit = next(
+                (m.get("unit") for m in (dsi.mapping if dsi else []) if m.get("source_column") == col), None
+            )
             return "money" if unit in CURRENCY_UNITS else ("count" if unit == "count" else None)
         if isinstance(node, Neg):
             return self.unit(node.operand)
@@ -385,8 +406,10 @@ class Evaluator:
             return self.name(node.id)
         if isinstance(node, Neg):
             v = self.ev(node.operand)
-            return self.map1(v, lambda p: P(None if p.value is None else -p.value, f"−({p.text})", p.inputs, p.defs,
-                                            p.note))
+            return self.map1(
+                v,
+                lambda p: P(None if p.value is None else -p.value, f"−({p.text})", p.inputs, p.defs, p.note),
+            )
         if isinstance(node, Bin):
             if node.op == "*":
                 self._no_percent_scaling(node)
@@ -398,8 +421,10 @@ class Evaluator:
         for series, factor in ((node.left, node.right), (node.right, node.left)):
             if isinstance(factor, Num) and abs(factor.value) == 100 and self.unit(series) == "pct":
                 src = to_source(series)
-                raise DSLError(f"{src} is a percentage stored as a fraction (0.92 shows as 92%), so multiplying it by "
-                               f"100 would show it 100 times too large. Use {src} on its own.")
+                raise DSLError(
+                    f"{src} is a percentage stored as a fraction (0.92 shows as 92%), so multiplying it by "
+                    f"100 would show it 100 times too large. Use {src} on its own."
+                )
 
     def name(self, nid: str) -> Val:
         kind = name_kind(nid)
@@ -410,7 +435,9 @@ class Evaluator:
         f = self.ctx.figures.get(nid)
         if not isinstance(f, Figure):
             raise DSLError(f"'{nid}' is not available for this company")
-        inp = InputRef(figure_id=f.id, period=f.period, value=f.value, dataset_id=f.source.dataset_id, ref=f.source.ref)
+        inp = InputRef(
+            figure_id=f.id, period=f.period, value=f.value, dataset_id=f.source.dataset_id, ref=f.source.ref
+        )
         return CV(P(f.value, f"{_lower(f.label)} {f.display}", [inp], [f"{_lower(f.label)} = {f.formula}"]))
 
     def helper(self, hid: str) -> dict[str, P]:
@@ -438,7 +465,9 @@ class Evaluator:
                     defs.append(f"burn = −net income {_fmt(ni.value)}")
                 else:
                     v = -(ni.value - nd.value)
-                    defs.append(f"burn ex non-dilutive = −(net income {_fmt(ni.value)} − non-dilutive income {_fmt(nd.value)})")
+                    defs.append(
+                        f"burn ex non-dilutive = −(net income {_fmt(ni.value)} − non-dilutive income {_fmt(nd.value)})"
+                    )
                 if not math.isfinite(v):
                     out[g] = P(None, f"{lbl} n/a", inputs, note=OUT_OF_RANGE)
                     continue
@@ -478,7 +507,9 @@ class Evaluator:
             if not math.isfinite(v):
                 out[g] = P(None, f"{lbl} n/a", inputs, note=OUT_OF_RANGE)
                 continue
-            defs.append(f"{lbl} = (revenue {_fmt(rev)} − cost of revenue {_fmt(parts[1].value)}{cs}) ÷ revenue {_fmt(rev)}")
+            defs.append(
+                f"{lbl} = (revenue {_fmt(rev)} − cost of revenue {_fmt(parts[1].value)}{cs}) ÷ revenue {_fmt(rev)}"
+            )
             out[g] = P(v, f"{lbl} {_fmt(v, 'pct')}", inputs, defs)
         fr._cache[key] = out
         return out
@@ -492,7 +523,9 @@ class Evaluator:
     def zip(self, vals: list[Val], fn) -> Val:
         if all(isinstance(v, CV) for v in vals):
             return CV(fn([v.pt for v in vals]))
-        return SV({g: fn([v.pt if isinstance(v, CV) else v.pts[g] for v in vals]) for g in self.frame.periods})
+        return SV(
+            {g: fn([v.pt if isinstance(v, CV) else v.pts[g] for v in vals]) for g in self.frame.periods}
+        )
 
     def binary(self, op: str, a: Val, b: Val) -> Val:
         sym = {"+": "+", "-": "−", "*": "×", "/": "÷"}[op]
@@ -538,8 +571,12 @@ class Evaluator:
                 return self.reduce(fn, vals[0], src)
             return self.zip(vals, lambda ps: self.elementwise(fn, ps))
         if fn == "abs":
-            return self.map1(self.ev(args[0]), lambda p: P(None if p.value is None else abs(p.value), f"|{p.text}|",
-                                                           p.inputs, p.defs, p.note))
+            return self.map1(
+                self.ev(args[0]),
+                lambda p: P(
+                    None if p.value is None else abs(p.value), f"|{p.text}|", p.inputs, p.defs, p.note
+                ),
+            )
         if fn == "pct_of":
             return self.binary("/", self.ev(args[0]), self.ev(args[1]))
         unit = self.unit(args[0])
@@ -550,13 +587,17 @@ class Evaluator:
             k = 12 // self.frame.months
             return self.growth(x, k, f"year over year of {src}")
         if fn == "mom":
-            per = {"month": "month over month", "quarter": "quarter over quarter", "year": "year over year"}[self.frame.target]
+            per = {"month": "month over month", "quarter": "quarter over quarter", "year": "year over year"}[
+                self.frame.target
+            ]
             return self.growth(x, 1, f"{per} of {src}")
         if fn == "cmgr":
             months = self._int(args[1])
             if months % self.frame.months:
-                raise DSLError(f"cmgr({src}, {months}) needs a whole number of {self.frame.target}s: "
-                               f"use a multiple of {self.frame.months} months")
+                raise DSLError(
+                    f"cmgr({src}, {months}) needs a whole number of {self.frame.target}s: "
+                    f"use a multiple of {self.frame.months} months"
+                )
             return self.cmgr(x, months, src)
         if fn == "rolling":
             return self.rolling(x, self._int(args[1]), src, unit)
@@ -621,7 +662,9 @@ class Evaluator:
             if not math.isfinite(v):
                 out[g] = P(None, f"{what} n/a", inputs, defs, OUT_OF_RANGE)
                 continue
-            defs.append(f"{what}: {_fmt(cur.value)} ({label_period(g)}) ÷ {_fmt(prev.value)} ({label_period(q)}) − 1 = {_fmt(v, 'pct')}")
+            defs.append(
+                f"{what}: {_fmt(cur.value)} ({label_period(g)}) ÷ {_fmt(prev.value)} ({label_period(q)}) − 1 = {_fmt(v, 'pct')}"
+            )
             out[g] = P(v, f"growth {_fmt(v, 'pct')}", inputs, defs, boxed=True)
         return SV(out)
 
@@ -645,8 +688,10 @@ class Evaluator:
             if not math.isfinite(v):
                 out[g] = P(None, "cmgr n/a", inputs, defs, OUT_OF_RANGE)
                 continue
-            defs.append(f"compound monthly growth of {src} over {months} months: ({_fmt(end.value)} ({label_period(g)}) ÷ "
-                        f"{_fmt(start.value)} ({label_period(q)}))^(1/{months}) − 1 = {_fmt(v, 'pct')}")
+            defs.append(
+                f"compound monthly growth of {src} over {months} months: ({_fmt(end.value)} ({label_period(g)}) ÷ "
+                f"{_fmt(start.value)} ({label_period(q)}))^(1/{months}) − 1 = {_fmt(v, 'pct')}"
+            )
             out[g] = P(v, f"cmgr {_fmt(v, 'pct')}", inputs, defs, boxed=True)
         return SV(out)
 
@@ -656,7 +701,7 @@ class Evaluator:
             if i - n + 1 < 0:
                 out[g] = P(None, "rolling n/a", note="not enough history")
                 continue
-            span = self.frame.periods[i - n + 1:i + 1]
+            span = self.frame.periods[i - n + 1 : i + 1]
             ps = [x.pts[q] for q in span]
             inputs, defs = _merge(*ps)
             defs = []
@@ -668,7 +713,9 @@ class Evaluator:
                 out[g] = P(None, "rolling n/a", inputs, defs, OUT_OF_RANGE)
                 continue
             shown = ", ".join(_fmt(p.value, unit) for p in ps)
-            defs.append(f"{n}-period average of {src}, {label_period(span[0])}–{label_period(span[-1])}: ({shown}) ÷ {n} = {_fmt(v, unit)}")
+            defs.append(
+                f"{n}-period average of {src}, {label_period(span[0])}–{label_period(span[-1])}: ({shown}) ÷ {n} = {_fmt(v, unit)}"
+            )
             out[g] = P(v, f"rolling avg {_fmt(v, unit)}", inputs, defs, boxed=True)
         return SV(out)
 
@@ -677,7 +724,7 @@ class Evaluator:
         start = self.frame.index(self.window[0]) if self.window else 0
         for i, g in enumerate(self.frame.periods):
             j = start if i >= start else 0
-            span = self.frame.periods[j:i + 1]
+            span = self.frame.periods[j : i + 1]
             ps = [x.pts[q] for q in span]
             inputs, defs = _merge(*ps)
             defs = []
@@ -689,15 +736,22 @@ class Evaluator:
                 out[g] = P(None, "running total n/a", inputs, defs, OUT_OF_RANGE)
                 continue
             shown = " + ".join(_fmt(p.value, unit) for p in ps) if len(ps) <= 12 else f"{len(ps)} values"
-            defs.append(f"running total of {src}, {label_period(span[0])}–{label_period(g)}: {shown} = {_fmt(v, unit)}")
+            defs.append(
+                f"running total of {src}, {label_period(span[0])}–{label_period(g)}: {shown} = {_fmt(v, unit)}"
+            )
             out[g] = P(v, f"running total {_fmt(v, unit)}", inputs, defs, boxed=True)
         return SV(out)
 
 
 # ---------------------------------------------------------------- resolution and missing data
 
+
 def _field_hints(ctx: TruthContext) -> dict[str, str]:
-    credits = "SR&ED credits or grants" if str(ctx.profile.get("country", "")).upper() == "CA" else "tax credits or grants"
+    credits = (
+        "SR&ED credits or grants"
+        if str(ctx.profile.get("country", "")).upper() == "CA"
+        else "tax credits or grants"
+    )
     return {
         "non_dilutive_income": f"non-dilutive income ({credits})",
         "net_income": "net income (or revenue and costs)",
@@ -745,8 +799,12 @@ def _missing_for(node: Node, ctx: TruthContext, ref: str, label: str) -> Missing
             if isinstance(f, MissingFigure):
                 return f
             if f is None:
-                return MissingFigure(id=n.id, label=n.id, needs=[n.id],
-                                     reason=f"{n.id} isn't available for this company's data")
+                return MissingFigure(
+                    id=n.id,
+                    label=n.id,
+                    needs=[n.id],
+                    reason=f"{n.id} isn't available for this company's data",
+                )
     needs = _dedupe(needs)
     if not needs:
         return None
@@ -758,10 +816,13 @@ def metric_series_expr(metric_id: str, ctx: TruthContext, frame_months: int) -> 
     has_credits = ctx.model.has("non_dilutive_income")
     recent = 2 if frame_months == 1 else frame_months
     return {
-        "mrr": "mrr", "arr": "arr", "revenue": "revenue",
+        "mrr": "mrr",
+        "arr": "arr",
+        "revenue": "revenue",
         "burn": "burn_ex_non_dilutive" if has_credits else "burn",
         "burn_incl_credits": "burn",
-        "gross_margin": "gross_margin", "gross_margin_incl_cs": "gross_margin_incl_cs",
+        "gross_margin": "gross_margin",
+        "gross_margin_incl_cs": "gross_margin_incl_cs",
         "cash_balance": "cash_balance",
         "cmgr_12m": "cmgr(revenue.recurring, 12)",
         "cmgr_recent": f"cmgr(revenue.recurring, {recent})",
@@ -778,12 +839,17 @@ def _no_running_total_of_balances(node: Node) -> None:
     """cumsum() over a period-end balance (cash, customers, headcount) adds up snapshots: refuse it."""
     if isinstance(node, Call):
         if node.fn == "cumsum":
-            stocks = [n.id for n in names(node.args[0])
-                      if isinstance(n, Name) and n.id in FIELDS and FIELDS[n.id].agg == "last"]
+            stocks = [
+                n.id
+                for n in names(node.args[0])
+                if isinstance(n, Name) and n.id in FIELDS and FIELDS[n.id].agg == "last"
+            ]
             if stocks:
                 what = _lower(FIELDS[stocks[0]].label)
-                raise DSLError(f"cumsum() adds values up over time, but {what} is a balance at the end of each period, "
-                               f"so a running total of it has no meaning. Chart {stocks[0]} on its own instead.")
+                raise DSLError(
+                    f"cumsum() adds values up over time, but {what} is a balance at the end of each period, "
+                    f"so a running total of it has no meaning. Chart {stocks[0]} on its own instead."
+                )
         for a in node.args:
             _no_running_total_of_balances(a)
     elif isinstance(node, Bin):
@@ -811,8 +877,16 @@ def _resolve(s: SeriesSpec, ctx: TruthContext, frame: Frame, scalar: bool, title
             return _Resolved(ref, label, missing=f)
         if scalar:
             if f is None:
-                return _Resolved(ref, label, missing=MissingFigure(id=ref, label=label, needs=[ref],
-                                                                   reason=f"{label} isn't available for this company's data"))
+                return _Resolved(
+                    ref,
+                    label,
+                    missing=MissingFigure(
+                        id=ref,
+                        label=label,
+                        needs=[ref],
+                        reason=f"{label} isn't available for this company's data",
+                    ),
+                )
             return _Resolved(ref, label, figure=f)
         expr = metric_series_expr(ref, ctx, frame.months)
         if expr is None:
@@ -823,13 +897,21 @@ def _resolve(s: SeriesSpec, ctx: TruthContext, frame: Frame, scalar: bool, title
     else:
         node = parse(ref)
         _no_running_total_of_balances(node)
-        label = s.label or (HELPER_LABELS.get(ref, "").capitalize() if ref in HELPERS else
-                            FIELDS[ref].label if ref in FIELDS else ref if len(ref) <= 40 else title)
+        label = s.label or (
+            HELPER_LABELS.get(ref, "").capitalize()
+            if ref in HELPERS
+            else FIELDS[ref].label
+            if ref in FIELDS
+            else ref
+            if len(ref) <= 40
+            else title
+        )
     missing = _missing_for(node, ctx, ref, label)
     return _Resolved(ref, label, node=node, missing=missing)
 
 
 # ---------------------------------------------------------------- windows and provenance
+
 
 def period_bounds(p: str) -> tuple[tuple[int, int], tuple[int, int]]:
     if "-Q" in p:
@@ -852,7 +934,7 @@ def apply_window(periods: list[str], window: Window | None) -> list[str]:
         hi = period_bounds(window.to)[1]
         out = [p for p in out if period_bounds(p)[0] <= hi]
     if window.last_n:
-        out = out[-window.last_n:]
+        out = out[-window.last_n :]
     return out
 
 
@@ -874,7 +956,9 @@ def _source(ctx: TruthContext, inputs: list[InputRef]) -> PointSource | None:
     if raws:
         dsi = m.datasets.get(raws[0].dataset_id or "")
         kind = dsi.upload_kind if dsi and dsi.upload_kind in ("csv", "xlsx") else "csv"
-        return PointSource(kind=kind, ref="; ".join(_dedupe([i.ref or "" for i in raws])), dataset_id=raws[0].dataset_id)
+        return PointSource(
+            kind=kind, ref="; ".join(_dedupe([i.ref or "" for i in raws])), dataset_id=raws[0].dataset_id
+        )
     figs = [i for i in inputs if i.figure_id]
     if figs:
         f = ctx.figures.get(figs[0].figure_id or "")
@@ -893,8 +977,14 @@ def _point(ctx: TruthContext, g: str, p: P, unit: str | None, leaf: bool) -> Poi
     else:
         main = p.text if leaf or p.boxed else f"{p.text} = {_fmt(p.value, unit)}"
         formula = " · ".join([f"{label_period(g)}: {main}", *p.defs])
-    return Point(period=g, label=label_period(g), value=p.value, formula=formula, inputs=p.inputs,
-                 source=_source(ctx, p.inputs))
+    return Point(
+        period=g,
+        label=label_period(g),
+        value=p.value,
+        formula=formula,
+        inputs=p.inputs,
+        source=_source(ctx, p.inputs),
+    )
 
 
 def _public_unit(u: str | None, ctx: TruthContext) -> str | None:
@@ -903,19 +993,42 @@ def _public_unit(u: str | None, ctx: TruthContext) -> str | None:
 
 # ---------------------------------------------------------------- KPI and cohort paths
 
+
 def _kpi_item(s: SeriesSpec, ctx: TruthContext, frame: Frame, ev: Evaluator, title: str) -> KpiItem:
     r = _resolve(s, ctx, frame, scalar=True, title=title)
     if r.missing:
         return KpiItem(id=r.missing.id, label=r.label, missing=r.missing)
     if r.figure and not _finite(r.figure.value):
-        return KpiItem(id=r.figure.id, label=r.label, missing=MissingFigure(
-            id=r.figure.id, label=r.label, needs=[], reason=f"{r.label} is out of range, so it can't be shown"))
+        return KpiItem(
+            id=r.figure.id,
+            label=r.label,
+            missing=MissingFigure(
+                id=r.figure.id,
+                label=r.label,
+                needs=[],
+                reason=f"{r.label} is out of range, so it can't be shown",
+            ),
+        )
     if r.figure:
         f = r.figure
-        inputs = [InputRef(figure_id=i.figure_id, field=i.column, period=i.period, value=i.value, dataset_id=i.dataset_id)
-                  for i in f.inputs]
-        return KpiItem(id=f.id, label=r.label, value=f.value, unit=f.unit, display=f.display, formula=f.formula,
-                       inputs=inputs, source=_psource(f.source), kind=f.kind, period=f.period)
+        inputs = [
+            InputRef(
+                figure_id=i.figure_id, field=i.column, period=i.period, value=i.value, dataset_id=i.dataset_id
+            )
+            for i in f.inputs
+        ]
+        return KpiItem(
+            id=f.id,
+            label=r.label,
+            value=f.value,
+            unit=f.unit,
+            display=f.display,
+            formula=f.formula,
+            inputs=inputs,
+            source=_psource(f.source),
+            kind=f.kind,
+            period=f.period,
+        )
     assert r.node is not None
     v = ev.ev(r.node)
     unit = _public_unit(ev.unit(r.node), ctx)
@@ -924,29 +1037,59 @@ def _kpi_item(s: SeriesSpec, ctx: TruthContext, frame: Frame, ev: Evaluator, tit
     else:
         avail = [g for g in ev.window if v.pts[g].value is not None]
         if not avail:
-            return KpiItem(id=_slug(r.ref), label=r.label, missing=MissingFigure(
-                id=_slug(r.ref), label=r.label, needs=[], reason=f"{r.label} has no values in the selected window"))
+            return KpiItem(
+                id=_slug(r.ref),
+                label=r.label,
+                missing=MissingFigure(
+                    id=_slug(r.ref),
+                    label=r.label,
+                    needs=[],
+                    reason=f"{r.label} has no values in the selected window",
+                ),
+            )
         g = avail[-1]
         p = v.pts[g]
     if not _finite(p.value):
         # "sum(revenue)/0", or a window with no data, has nothing to show: missing, never "n/a" as a value
         why = f" ({p.note})" if p.note else ""
-        return KpiItem(id=_slug(r.ref), label=r.label, missing=MissingFigure(
-            id=_slug(r.ref), label=r.label, needs=[], reason=f"{r.label} has no value in the selected window{why}"))
+        return KpiItem(
+            id=_slug(r.ref),
+            label=r.label,
+            missing=MissingFigure(
+                id=_slug(r.ref),
+                label=r.label,
+                needs=[],
+                reason=f"{r.label} has no value in the selected window{why}",
+            ),
+        )
     pt = _point(ctx, g, p, unit, isinstance(r.node, Name | Raw))
     if isinstance(v, CV):
         main = p.text if p.boxed or isinstance(r.node, Name | Raw) else f"{p.text} = {_fmt(p.value, unit)}"
         pt.formula = " · ".join([main, *p.defs])
     display = fmt_value(p.value, unit) if unit else _fmt(p.value)
-    return KpiItem(id=_slug(r.ref), label=r.label, value=p.value, unit=unit, display=display, formula=pt.formula,
-                   inputs=pt.inputs, source=pt.source, period=g if isinstance(v, SV) else None)
+    return KpiItem(
+        id=_slug(r.ref),
+        label=r.label,
+        value=p.value,
+        unit=unit,
+        display=display,
+        formula=pt.formula,
+        inputs=pt.inputs,
+        source=pt.source,
+        period=g if isinstance(v, SV) else None,
+    )
 
 
 def _cohort_series(spec: WidgetSpec, ctx: TruthContext, ref: str, out: EvaluatedWidget) -> EvaluatedWidget:
     m = ctx.model
     if not m.cohort_mrr:
-        mf = MissingFigure(id=ref, label="Revenue retention by cohort", needs=["cohort_mrr"],
-                           reason=_missing_reason(ctx, "Retention by cohort", ["cohort_mrr"]), group="recurring")
+        mf = MissingFigure(
+            id=ref,
+            label="Revenue retention by cohort",
+            needs=["cohort_mrr"],
+            reason=_missing_reason(ctx, "Retention by cohort", ["cohort_mrr"]),
+            group="recurring",
+        )
         return out.model_copy(update={"status": "missing", "missing": mf})
     ds = m.table_sources.get("cohort_mrr")
     periods = sorted({p for by_p in m.cohort_mrr.values() for p in by_p}, key=period_sort_key)
@@ -964,26 +1107,52 @@ def _cohort_series(spec: WidgetSpec, ctx: TruthContext, ref: str, out: Evaluated
             v = by_p.get(p)
             src = PointSource(kind="csv", ref=f"cohort table · cohort {clabel}", dataset_id=ds)
             if v is None or (retention and base_p is None):
-                pts.append(Point(period=p, label=label_period(p), value=None,
-                                 formula=f"{label_period(p)}: no MRR for the {clabel} cohort", source=src))
+                pts.append(
+                    Point(
+                        period=p,
+                        label=label_period(p),
+                        value=None,
+                        formula=f"{label_period(p)}: no MRR for the {clabel} cohort",
+                        source=src,
+                    )
+                )
                 continue
             inputs = [InputRef(field="cohort_mrr", period=p, value=v, dataset_id=ds, ref=f"cohort {clabel}")]
             if retention:
                 base = by_p[base_p]
-                inputs.append(InputRef(field="cohort_mrr", period=base_p, value=base, dataset_id=ds, ref=f"cohort {clabel}"))
+                inputs.append(
+                    InputRef(
+                        field="cohort_mrr", period=base_p, value=base, dataset_id=ds, ref=f"cohort {clabel}"
+                    )
+                )
                 value = v / base
-                formula = (f"{label_period(p)}: {clabel} cohort MRR {_fmt(v)} ÷ its MRR in {label_period(base_p)} "
-                           f"{_fmt(base)} = {_fmt(value, 'pct')}")
+                formula = (
+                    f"{label_period(p)}: {clabel} cohort MRR {_fmt(v)} ÷ its MRR in {label_period(base_p)} "
+                    f"{_fmt(base)} = {_fmt(value, 'pct')}"
+                )
             else:
                 value = v
                 formula = f"{label_period(p)}: {clabel} cohort MRR {_fmt(v)}"
-            pts.append(Point(period=p, label=label_period(p), value=value, formula=formula, inputs=inputs, source=src))
-        series.append(EvaluatedSeries(label=clabel, ref=ref, unit="pct" if retention else ctx.currency, points=pts))
-    return out.model_copy(update={"periods": periods, "period_labels": [label_period(p) for p in periods],
-                                  "series": series, "granularity": "quarter" if periods and "-Q" in periods[0] else "month"})
+            pts.append(
+                Point(
+                    period=p, label=label_period(p), value=value, formula=formula, inputs=inputs, source=src
+                )
+            )
+        series.append(
+            EvaluatedSeries(label=clabel, ref=ref, unit="pct" if retention else ctx.currency, points=pts)
+        )
+    return out.model_copy(
+        update={
+            "periods": periods,
+            "period_labels": [label_period(p) for p in periods],
+            "series": series,
+            "granularity": "quarter" if periods and "-Q" in periods[0] else "month",
+        }
+    )
 
 
 # ---------------------------------------------------------------- waterfall
+
 
 def _waterfall(base: EvaluatedSeries) -> list[EvaluatedSeries]:
     """Each step is a bar from the running total before it to the running total after it.
@@ -1007,12 +1176,32 @@ def _waterfall(base: EvaluatedSeries) -> list[EvaluatedSeries]:
             continue
         before, cum = cum, after
         note = f" · running total {_fmt(before)} → {_fmt(after)}"
-        helper.append(pt.model_copy(update={"value": before, "inputs": [], "source": None,
-                                            "formula": f"{pt.label}: running total before this step {_fmt(before)}"}))
-        up.append(pt.model_copy(update={"value": max(v, 0.0), "formula": pt.formula + note if v > 0 else
-                                        f"{pt.label}: no increase this step" + note}))
-        down.append(pt.model_copy(update={"value": min(v, 0.0), "formula": pt.formula + note if v < 0 else
-                                          f"{pt.label}: no decrease this step" + note}))
+        helper.append(
+            pt.model_copy(
+                update={
+                    "value": before,
+                    "inputs": [],
+                    "source": None,
+                    "formula": f"{pt.label}: running total before this step {_fmt(before)}",
+                }
+            )
+        )
+        up.append(
+            pt.model_copy(
+                update={
+                    "value": max(v, 0.0),
+                    "formula": pt.formula + note if v > 0 else f"{pt.label}: no increase this step" + note,
+                }
+            )
+        )
+        down.append(
+            pt.model_copy(
+                update={
+                    "value": min(v, 0.0),
+                    "formula": pt.formula + note if v < 0 else f"{pt.label}: no decrease this step" + note,
+                }
+            )
+        )
     common = {"ref": base.ref, "unit": base.unit, "axis": base.axis}
     return [
         EvaluatedSeries(label=f"{base.label} (base)", role="waterfall_base", points=helper, **common),
@@ -1023,6 +1212,7 @@ def _waterfall(base: EvaluatedSeries) -> list[EvaluatedSeries]:
 
 # ---------------------------------------------------------------- entry point
 
+
 def evaluate_widget(spec: WidgetSpec | dict[str, Any], ctx: TruthContext) -> EvaluatedWidget:
     """Compute a widget's data, with provenance on every point. Never raises on bad specs."""
     try:
@@ -1030,10 +1220,19 @@ def evaluate_widget(spec: WidgetSpec | dict[str, Any], ctx: TruthContext) -> Eva
     except ValidationError as e:
         first = e.errors()[0]
         where = ".".join(str(x) for x in first.get("loc", ()))
-        return EvaluatedWidget(status="error", template=str(getattr(spec, "get", lambda *_: "")("template") or ""),
-                               title="", error=f"Invalid widget spec at {where or 'root'}: {first.get('msg')}")
-    base = EvaluatedWidget(status="ok", template=spec.template, title=spec.title, spec_hash=spec_hash(spec),
-                           currency=ctx.currency)
+        return EvaluatedWidget(
+            status="error",
+            template=str(getattr(spec, "get", lambda *_: "")("template") or ""),
+            title="",
+            error=f"Invalid widget spec at {where or 'root'}: {first.get('msg')}",
+        )
+    base = EvaluatedWidget(
+        status="ok",
+        template=spec.template,
+        title=spec.title,
+        spec_hash=spec_hash(spec),
+        currency=ctx.currency,
+    )
     try:
         return _evaluate(spec, ctx, base)
     except DSLError as e:
@@ -1055,10 +1254,19 @@ def _evaluate(spec: WidgetSpec, ctx: TruthContext, out: EvaluatedWidget) -> Eval
     if spec.template in SCALAR_TEMPLATES:
         items = [_kpi_item(s, ctx, frame, ev, spec.title) for s in spec.series]
         if items[0].missing:
-            return out.model_copy(update={"status": "missing", "missing": items[0].missing,
-                                          "kpi": Kpi(primary=items[0], secondary=items[1:])})
-        return out.model_copy(update={"kpi": Kpi(primary=items[0], secondary=items[1:]),
-                                      "mark_lines": _mark_lines(spec, ctx, ev, frame)})
+            return out.model_copy(
+                update={
+                    "status": "missing",
+                    "missing": items[0].missing,
+                    "kpi": Kpi(primary=items[0], secondary=items[1:]),
+                }
+            )
+        return out.model_copy(
+            update={
+                "kpi": Kpi(primary=items[0], secondary=items[1:]),
+                "mark_lines": _mark_lines(spec, ctx, ev, frame),
+            }
+        )
 
     if not window:
         return out.model_copy(update={"status": "error", "error": "No periods in the selected window"})
@@ -1086,24 +1294,47 @@ def _evaluate(spec: WidgetSpec, ctx: TruthContext, out: EvaluatedWidget) -> Eval
             built.append((s, r, ev.shift(val, k_compare), unit, "compare", f"{r.label} ({suffix})"))
 
     # trim leading/trailing periods where no value series has data
-    has = [g for g in window if any(v.pts[g].value is not None for _, _, v, _, role, _ in built if role == "value")]
+    has = [
+        g
+        for g in window
+        if any(v.pts[g].value is not None for _, _, v, _, role, _ in built if role == "value")
+    ]
     if not has:
-        mf = MissingFigure(id=_slug(refs[0]), label=spec.title, needs=[],
-                           reason=f"{spec.title} has no values in the selected window" +
-                                  (f" ({frame.notes[-1]})" if frame.notes else ""))
+        mf = MissingFigure(
+            id=_slug(refs[0]),
+            label=spec.title,
+            needs=[],
+            reason=f"{spec.title} has no values in the selected window"
+            + (f" ({frame.notes[-1]})" if frame.notes else ""),
+        )
         return out.model_copy(update={"status": "missing", "missing": mf})
-    periods = window[window.index(has[0]):window.index(has[-1]) + 1]
+    periods = window[window.index(has[0]) : window.index(has[-1]) + 1]
 
     series: list[EvaluatedSeries] = []
     for s, r, val, unit, role, label in built:
         leaf = isinstance(r.node, Name | Raw) and role == "value"
         pts = [_point(ctx, g, val.pts[g], unit, leaf) for g in periods]
-        series.append(EvaluatedSeries(label=label, ref=r.ref, unit=unit, axis=s.axis,
-                                      style="dashed" if role == "compare" else s.style, role=role, points=pts))
+        series.append(
+            EvaluatedSeries(
+                label=label,
+                ref=r.ref,
+                unit=unit,
+                axis=s.axis,
+                style="dashed" if role == "compare" else s.style,
+                role=role,
+                points=pts,
+            )
+        )
     if spec.template == "waterfall":
         series = _waterfall(series[0])
-    return out.model_copy(update={"periods": periods, "period_labels": [label_period(g) for g in periods],
-                                  "series": series, "mark_lines": _mark_lines(spec, ctx, ev, frame)})
+    return out.model_copy(
+        update={
+            "periods": periods,
+            "period_labels": [label_period(g) for g in periods],
+            "series": series,
+            "mark_lines": _mark_lines(spec, ctx, ev, frame),
+        }
+    )
 
 
 def _mark_lines(spec: WidgetSpec, ctx: TruthContext, ev: Evaluator, frame: Frame) -> list[MarkLineValue]:
@@ -1112,5 +1343,9 @@ def _mark_lines(spec: WidgetSpec, ctx: TruthContext, ev: Evaluator, frame: Frame
         item = _kpi_item(SeriesSpec(ref=ml.value_ref, label=ml.label), ctx, frame, ev, spec.title)
         if item.missing or item.value is None:
             continue
-        out.append(MarkLineValue(label=ml.label, value=item.value, unit=item.unit, formula=item.formula, source=item.source))
+        out.append(
+            MarkLineValue(
+                label=ml.label, value=item.value, unit=item.unit, formula=item.formula, source=item.source
+            )
+        )
     return out

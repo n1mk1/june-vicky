@@ -45,7 +45,9 @@ class TruthContext:
         return self.profile.get("name") or "the company"
 
 
-def convert_facts(facts: list[Fact], currency: str, fx: Rates | None, reporting: str | None = None) -> list[Fact]:
+def convert_facts(
+    facts: list[Fact], currency: str, fx: Rates | None, reporting: str | None = None
+) -> list[Fact]:
     """Facts in another currency, converted at the rate for their period (the latest rate when they
     have none). A fact with no published rate keeps its own currency (and stays out of the metrics).
     "money" and "$" mean the reporting currency, so they become that code first."""
@@ -59,10 +61,16 @@ def convert_facts(facts: list[Fact], currency: str, fx: Rates | None, reporting:
             period = f.period if f.period and period_range(f.period) else None
             r = fx.rate(src, currency, period, "avg")
             if r is not None:
-                f = f.model_copy(update={
-                    "value": f.value * r.value, "unit": currency,
-                    "note": "; ".join(x for x in (f.note, f"converted {r.note()}") if x),
-                    "source": f.source.model_copy(update={"ref": f"{f.source.ref} · converted {r.note()}".lstrip(" ·")})})
+                f = f.model_copy(
+                    update={
+                        "value": f.value * r.value,
+                        "unit": currency,
+                        "note": "; ".join(x for x in (f.note, f"converted {r.note()}") if x),
+                        "source": f.source.model_copy(
+                            update={"ref": f"{f.source.ref} · converted {r.note()}".lstrip(" ·")}
+                        ),
+                    }
+                )
         out.append(f)
     return out
 
@@ -79,9 +87,17 @@ def convert_profile(profile: dict[str, Any], currency: str, fx: Rates | None) ->
     return {**profile, "round_size": rs * r.value, "round_size_fx": r.note()}
 
 
-def build_context(datasets: list[DatasetInput], facts: list[Fact], profile: dict[str, Any], version: int = 1,
-                  truthpack_id: str | None = None, engagement_id: str | None = None,
-                  deck_checks: list | None = None, fx: Rates | None = None, currency: str | None = None) -> TruthContext:
+def build_context(
+    datasets: list[DatasetInput],
+    facts: list[Fact],
+    profile: dict[str, Any],
+    version: int = 1,
+    truthpack_id: str | None = None,
+    engagement_id: str | None = None,
+    deck_checks: list | None = None,
+    fx: Rates | None = None,
+    currency: str | None = None,
+) -> TruthContext:
     """`currency` is the one every money figure comes out in: the profile's (the reporting currency)
     unless a view asks for another. Anything in a different currency converts at `fx` rates."""
     target = norm_currency(currency or profile.get("currency"))
@@ -90,11 +106,21 @@ def build_context(datasets: list[DatasetInput], facts: list[Fact], profile: dict
     profile = {**convert_profile(profile, target, fx), "currency": target, "reporting_currency": reporting}
     model = build_model(datasets, target, profile.get("granularity"), fx=fx)
     figures = compute_metrics(model, facts, profile)
-    for f in fact_figures([x for x in facts if x.status == "confirmed"], exclude=set(figures), currency=target):
+    for f in fact_figures(
+        [x for x in facts if x.status == "confirmed"], exclude=set(figures), currency=target
+    ):
         figures.setdefault(f.id, f)
     attack = attack_list(figures, facts, profile, deck_checks)
-    return TruthContext(profile=profile, model=model, figures=figures, facts=facts, attack=attack, version=version,
-                        truthpack_id=truthpack_id, engagement_id=engagement_id)
+    return TruthContext(
+        profile=profile,
+        model=model,
+        figures=figures,
+        facts=facts,
+        attack=attack,
+        version=version,
+        truthpack_id=truthpack_id,
+        engagement_id=engagement_id,
+    )
 
 
 def sample_context(sample_id: str) -> TruthContext:
@@ -106,7 +132,15 @@ def sample_context(sample_id: str) -> TruthContext:
     for f in s.files:
         for ds in f.datasets:
             mapping = s.mappings[f"{f.filename}#{ds.name}"]
-            inputs.append(DatasetInput(id=f"{f.filename}#{ds.name}", name=ds.name, table_kind=ds.table_kind,
-                                       granularity=ds.granularity, transposed=ds.transposed, rows=ds.rows,
-                                       mapping=[m.model_dump() for m in mapping]))
+            inputs.append(
+                DatasetInput(
+                    id=f"{f.filename}#{ds.name}",
+                    name=ds.name,
+                    table_kind=ds.table_kind,
+                    granularity=ds.granularity,
+                    transposed=ds.transposed,
+                    rows=ds.rows,
+                    mapping=[m.model_dump() for m in mapping],
+                )
+            )
     return build_context(inputs, s.facts, s.profile)

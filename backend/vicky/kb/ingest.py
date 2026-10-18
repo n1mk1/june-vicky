@@ -43,16 +43,28 @@ async def _store_one(name: str, mime: str, blob: bytes, sha: str, status: str) -
             """select 1 from kb_files f where sha256 = $1 and (
                  exists (select 1 from kb_notes n where n.file_id = f.id)
                  or (f.status = 'stored' and f.created_at > now() - make_interval(secs => $2)))""",
-            sha, jobs.STALE_AFTER_S)
+            sha,
+            jobs.STALE_AFTER_S,
+        )
         if dup:
             return None
         # Earlier copies that never became notes (a failed conversion, an import whose job died) are replaced.
         await conn.execute(
             """delete from kb_files f where sha256 = $1 and status in ('failed', 'stored')
-                 and not exists (select 1 from kb_notes n where n.file_id = f.id)""", sha)
+                 and not exists (select 1 from kb_notes n where n.file_id = f.id)""",
+            sha,
+        )
         return await conn.fetchval(
             "insert into kb_files (filename, mime, bytes, size, sha256, kind, status) values ($1,$2,$3,$4,$5,$6,$7) "
-            "returning id::text", name[:400], mime, blob, len(blob), sha, convert.file_kind(name), status)
+            "returning id::text",
+            name[:400],
+            mime,
+            blob,
+            len(blob),
+            sha,
+            convert.file_kind(name),
+            status,
+        )
 
 
 async def store_files(uploads: list[tuple[str, bytes, str]]) -> dict:
@@ -80,14 +92,20 @@ async def store_files(uploads: list[tuple[str, bytes, str]]) -> dict:
                 continue
             seen.add(sha)
             original = exported and name.startswith(ORIGINALS)
-            fid = await _store_one(name[len(ORIGINALS):] if original else name,
-                                   (mime if len(entries) == 1 else "") or mimetypes.guess_type(name)[0]
-                                   or "application/octet-stream", blob, sha, "converted" if original else "stored")
+            fid = await _store_one(
+                name[len(ORIGINALS) :] if original else name,
+                (mime if len(entries) == 1 else "")
+                or mimetypes.guess_type(name)[0]
+                or "application/octet-stream",
+                blob,
+                sha,
+                "converted" if original else "stored",
+            )
             if fid is None:
                 report.append({"filename": name, "status": "duplicate"})
                 continue
             if original:
-                originals[name[len(ORIGINALS):]] = fid
+                originals[name[len(ORIGINALS) :]] = fid
             else:
                 stored.append(fid)
             report.append({"filename": name, "status": "stored", "id": fid})
@@ -99,8 +117,10 @@ async def import_files(uploads: list[tuple[str, bytes, str]]) -> dict:
     out = await store_files(uploads)
     job_id = None
     if out["file_ids"] or out["originals"]:
-        job_id = await jobs.enqueue("kb_ingest", {"file_ids": out["file_ids"], "vault_meta": out["vault_meta"],
-                                                  "originals": out["originals"]})
+        job_id = await jobs.enqueue(
+            "kb_ingest",
+            {"file_ids": out["file_ids"], "vault_meta": out["vault_meta"], "originals": out["originals"]},
+        )
     return {"job_id": job_id, "files": out["files"]}
 
 
@@ -128,8 +148,9 @@ async def _fail(fid: str, message: str) -> None:
     await db.execute("update kb_files set status = 'failed', error = $2 where id = $1", fid, message[:500])
 
 
-async def convert_files(file_ids: list[str], vault_meta: dict | None = None,
-                        originals: dict[str, str] | None = None) -> dict:
+async def convert_files(
+    file_ids: list[str], vault_meta: dict | None = None, originals: dict[str, str] | None = None
+) -> dict:
     vault_meta = vault_meta or {}
     originals = originals or {}
     notes = failed = 0
@@ -167,17 +188,23 @@ async def convert_files(file_ids: list[str], vault_meta: dict | None = None,
                     else:
                         # What the converter wrote, so Fill dashboard can tell a founder's edit from the original.
                         d.meta["converted_md5"] = hashlib.md5(d.content.encode("utf-8")).hexdigest()
-                    nid = await insert_draft(conn, d, path=path, file_id=source, author=author, links=links,
-                                             kind=kind)
+                    nid = await insert_draft(
+                        conn, d, path=path, file_id=source, author=author, links=links, kind=kind
+                    )
                     if organized:
                         await conn.execute("update kb_notes set organized_at = now() where id = $1", nid)
                     made += 1
-                await conn.execute("update kb_files set status = 'converted', error = null where id = $1", fid)
+                await conn.execute(
+                    "update kb_files set status = 'converted', error = null where id = $1", fid
+                )
                 # An exported note whose original came back with it points at that original: the export copy
                 # itself is then no one's source and is dropped.
                 if relinked:
-                    await conn.execute("delete from kb_files f where f.id = $1 and not exists "
-                                       "(select 1 from kb_notes n where n.file_id = f.id)", fid)
+                    await conn.execute(
+                        "delete from kb_files f where f.id = $1 and not exists "
+                        "(select 1 from kb_notes n where n.file_id = f.id)",
+                        fid,
+                    )
         except Exception as e:  # one file's notes failing to save must not lose the rest of the batch
             log.exception("kb import could not save the notes of %s", row["filename"])
             await _fail(fid, f"Could not save its notes: {e}")
@@ -186,15 +213,19 @@ async def convert_files(file_ids: list[str], vault_meta: dict | None = None,
             continue
         notes += made
     if originals:  # an original no restored note claimed has nothing to show for it
-        await db.execute("delete from kb_files f where f.id = any($1::uuid[]) and not exists "
-                         "(select 1 from kb_notes n where n.file_id = f.id)", list(originals.values()))
+        await db.execute(
+            "delete from kb_files f where f.id = any($1::uuid[]) and not exists "
+            "(select 1 from kb_notes n where n.file_id = f.id)",
+            list(originals.values()),
+        )
     return {"notes": notes, "failed": failed, "errors": errors[:20]}
 
 
 async def ingest_job(payload: dict) -> dict:
     from vicky.kb.organize import organize
 
-    out = await convert_files(payload.get("file_ids") or [], payload.get("vault_meta") or {},
-                              payload.get("originals") or {})
+    out = await convert_files(
+        payload.get("file_ids") or [], payload.get("vault_meta") or {}, payload.get("originals") or {}
+    )
     out["organize"] = await organize()
     return out

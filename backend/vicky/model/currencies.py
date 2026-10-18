@@ -52,9 +52,24 @@ def symbol(code: str) -> str:
 
 
 # Markers that name one currency without doubt. A bare "$" does not: it reads as the reporting currency.
-_PREFIXES = {"us$": "usd", "u$s": "usd", "c$": "cad", "ca$": "cad", "cad$": "cad", "a$": "aud", "au$": "aud",
-             "nz$": "nzd", "hk$": "hkd", "s$": "sgd", "sg$": "sgd", "nt$": "twd", "mx$": "mxn", "r$": "brl",
-             "cn¥": "cny", "rmb": "cny"}
+_PREFIXES = {
+    "us$": "usd",
+    "u$s": "usd",
+    "c$": "cad",
+    "ca$": "cad",
+    "cad$": "cad",
+    "a$": "aud",
+    "au$": "aud",
+    "nz$": "nzd",
+    "hk$": "hkd",
+    "s$": "sgd",
+    "sg$": "sgd",
+    "nt$": "twd",
+    "mx$": "mxn",
+    "r$": "brl",
+    "cn¥": "cny",
+    "rmb": "cny",
+}
 _SYMBOLS = {"£": "gbp", "€": "eur", "¥": "jpy", "₹": "inr", "₩": "krw", "฿": "thb", "₺": "try", "zł": "pln"}
 _WORDS = {"try", "pen"}  # also English words: only read as codes in capitals (TRY, PEN)
 _CODES = "|".join(sorted(CURRENCIES, key=len, reverse=True))
@@ -64,8 +79,11 @@ _SYMBOL_RX = "|".join(re.escape(s) for s in _SYMBOLS)
 MARKER_RE = re.compile(rf"(?<![a-z])({_PREFIX_RX})|({_SYMBOL_RX})|(?<![a-z])({_PLAIN_CODES})(?![a-z])", re.I)
 WORD_CODE_RE = re.compile(r"(?<![A-Za-z])(TRY|PEN)(?![A-Za-z])")
 # What a number cell may carry around it: a marker or a bare "$" (stripped before parsing).
-STRIP_RE = re.compile(rf"^\s*(?:(?:{_PREFIX_RX})|(?:{_SYMBOL_RX})|(?:{_CODES})(?![a-z])|\$)\s*|"
-                      rf"\s*(?:(?:{_SYMBOL_RX})|(?<![a-z])(?:{_CODES})|\$)\s*$", re.I)
+STRIP_RE = re.compile(
+    rf"^\s*(?:(?:{_PREFIX_RX})|(?:{_SYMBOL_RX})|(?:{_CODES})(?![a-z])|\$)\s*|"
+    rf"\s*(?:(?:{_SYMBOL_RX})|(?<![a-z])(?:{_CODES})|\$)\s*$",
+    re.I,
+)
 
 
 def currency_in(text: object) -> str | None:

@@ -91,5 +91,7 @@ async def api_client():
         except Exception as e:
             pytest.skip(f"Redis not reachable ({e})")
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test/api/v1", timeout=60) as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test/api/v1", timeout=60
+        ) as client:
             yield client

@@ -41,6 +41,7 @@ def make_pptx() -> bytes:
 
 # ---------------------------------------------------------------- converters
 
+
 def test_csv_and_tsv_normalize_to_comma_separated():
     (d,) = convert.convert("numbers.tsv", b"month\trevenue\n2025-01\t1000\n\n2025-02\t1200\n")
     assert d.format == "csv" and d.kind == "table"
@@ -118,6 +119,7 @@ def test_binary_without_text_is_unreadable():
 
 # ---------------------------------------------------------------- the number guard and heuristics
 
+
 def test_scrub_drops_sentences_with_numbers_not_in_the_sources():
     text = "Revenue grew 40% last year. Churn is 3% a month. See [[FY24 plan]] for detail.\n1. Plan for 2025"
     out, dropped = scrub_numbers(text, "Revenue grew 40% in 2025")
@@ -126,20 +128,38 @@ def test_scrub_drops_sentences_with_numbers_not_in_the_sources():
 
 
 def test_wikilinks_resolve_like_obsidian():
-    notes = [{"path": "financials/P&L 2025.csv", "title": "Income statement"}, {"path": "Home.md", "title": "Home"}]
+    notes = [
+        {"path": "financials/P&L 2025.csv", "title": "Income statement"},
+        {"path": "Home.md", "title": "Home"},
+    ]
     r = Resolver(notes)
-    assert wikilinks("see [[P&L 2025]] and [[Income statement|the P&L]] and [[home#top]]") == \
-        ["P&L 2025", "Income statement", "home"]
+    assert wikilinks("see [[P&L 2025]] and [[Income statement|the P&L]] and [[home#top]]") == [
+        "P&L 2025",
+        "Income statement",
+        "home",
+    ]
     assert r.resolve("P&L 2025") == r.resolve("Income statement") == "financials/P&L 2025.csv"
     assert r.resolve("financials/p&l 2025") == "financials/P&L 2025.csv" and r.resolve("nope") is None
     assert clean_path("a/../b:c/note", "md") == "a/b c/note.md"
 
 
 def test_heuristic_folder_and_hubs():
-    pl = {"path": "inbox/x.csv", "title": "Monthly revenue and burn", "format": "csv", "content": "month,revenue\n",
-          "kind": "table", "summary": ""}
-    nda = {"path": "inbox/y.md", "title": "Mutual NDA", "format": "md", "content": "This agreement ...",
-           "kind": "document", "summary": ""}
+    pl = {
+        "path": "inbox/x.csv",
+        "title": "Monthly revenue and burn",
+        "format": "csv",
+        "content": "month,revenue\n",
+        "kind": "table",
+        "summary": "",
+    }
+    nda = {
+        "path": "inbox/y.md",
+        "title": "Mutual NDA",
+        "format": "md",
+        "content": "This agreement ...",
+        "kind": "document",
+        "summary": "",
+    }
     assert guess_folder(pl) == "financials" and guess_folder(nda) == "legal"
     home, hubs = heuristic_hubs([{**pl, "path": "financials/x.csv"}, {**nda, "path": "legal/y.md"}])
     assert [h["title"] for h in hubs] == ["Financials", "Legal"] and "[[Financials]]" in home
@@ -147,37 +167,81 @@ def test_heuristic_folder_and_hubs():
 
 def test_profile_heuristic_and_evidence_check():
     notes = [
-        {"path": "a.md", "title": "Deck", "format": "md", "kind": "document",
-         "content": "Northwind Labs Inc. builds billing software. Our SaaS ARR is growing.\nWe are raising $2.5M seed round."},
-        {"path": "t.csv", "title": "P&L", "format": "csv", "kind": "table",
-         "content": "Month,Revenue\n2025-01,1000\n2025-02,1100\n2025-03,1200\n"},
+        {
+            "path": "a.md",
+            "title": "Deck",
+            "format": "md",
+            "kind": "document",
+            "content": "Northwind Labs Inc. builds billing software. Our SaaS ARR is growing.\nWe are raising $2.5M seed round.",
+        },
+        {
+            "path": "t.csv",
+            "title": "P&L",
+            "format": "csv",
+            "kind": "table",
+            "content": "Month,Revenue\n2025-01,1000\n2025-02,1100\n2025-03,1200\n",
+        },
     ]
     p = heuristic_profile(notes)
     assert p["name"][0] == "Northwind Labs Inc"
-    assert "currency" not in p and "country" not in p  # the reporting currency is CAD unless the founder changes it
+    assert (
+        "currency" not in p and "country" not in p
+    )  # the reporting currency is CAD unless the founder changes it
     assert p["stage"][0] == "seed" and p["business_model"][0] == "recurring"
     assert p["round_size"][0] == 2_500_000 and p["granularity"][0] == "month"
     by = {n["path"]: n for n in notes}
     ok = verify("round_size", Evidence(value="$2.5M", note="a.md", quote="raising $2.5M seed round"), by)
     assert ok and ok[0] == 2_500_000
     # A quote that isn't in the note, or a number the quote doesn't show, is rejected.
-    assert verify("round_size", Evidence(value="$3M", note="a.md", quote="raising $2.5M seed round"), by) is None
+    assert (
+        verify("round_size", Evidence(value="$3M", note="a.md", quote="raising $2.5M seed round"), by) is None
+    )
     assert verify("name", Evidence(value="Acme", note="a.md", quote="Acme Corp builds"), by) is None
     assert number_in(2_500_000, "raise 2.5 million") and not number_in(25, "raise 2.5 million")
 
 
 # ---------------------------------------------------------------- Claude path (recorded responses)
 
+
 async def test_claude_plan_keeps_known_paths_and_drops_invented_numbers(live_llm):
-    batch = [{"path": "inbox/a.csv", "title": "a", "kind": "table", "format": "csv",
-              "content": "month,revenue\n2025-01,1000\n", "meta": {}},
-             {"path": "inbox/b.md", "title": "b", "kind": "document", "format": "md", "content": "A board memo.", "meta": {}}]
-    reply = {"notes": [
-        {"path": "inbox/a.csv", "title": "Monthly revenue", "folder": "financials", "tags": ["revenue"],
-         "summary": "Monthly revenue by month. Revenue was 1000 in January. It grew 35% after that.",
-         "related": ["inbox/b.md", "nowhere/x.md", "inbox/a.csv"]},
-        {"path": "made/up.md", "title": "Ghost", "folder": "other", "tags": [], "summary": "", "related": []},
-    ]}
+    batch = [
+        {
+            "path": "inbox/a.csv",
+            "title": "a",
+            "kind": "table",
+            "format": "csv",
+            "content": "month,revenue\n2025-01,1000\n",
+            "meta": {},
+        },
+        {
+            "path": "inbox/b.md",
+            "title": "b",
+            "kind": "document",
+            "format": "md",
+            "content": "A board memo.",
+            "meta": {},
+        },
+    ]
+    reply = {
+        "notes": [
+            {
+                "path": "inbox/a.csv",
+                "title": "Monthly revenue",
+                "folder": "financials",
+                "tags": ["revenue"],
+                "summary": "Monthly revenue by month. Revenue was 1000 in January. It grew 35% after that.",
+                "related": ["inbox/b.md", "nowhere/x.md", "inbox/a.csv"],
+            },
+            {
+                "path": "made/up.md",
+                "title": "Ghost",
+                "folder": "other",
+                "tags": [],
+                "summary": "",
+                "related": [],
+            },
+        ]
+    }
     rec = live_llm.install(queue(json_reply(reply)))
     plans, dropped = await claude_plan(batch, batch)
     by = {p["path"]: p for p in plans}
@@ -190,30 +254,56 @@ async def test_claude_plan_keeps_known_paths_and_drops_invented_numbers(live_llm
 
 
 async def test_claude_profile_values_must_quote_their_note(live_llm):
-    notes = [{"path": "deck.md", "title": "Deck", "kind": "document", "format": "md",
-              "content": "Northwind Labs Inc. builds billing tools.\nWe are raising $2.5M on a SAFE.\nBased in Toronto."}]
+    notes = [
+        {
+            "path": "deck.md",
+            "title": "Deck",
+            "kind": "document",
+            "format": "md",
+            "content": "Northwind Labs Inc. builds billing tools.\nWe are raising $2.5M on a SAFE.\nBased in Toronto.",
+        }
+    ]
     ev = lambda v, q, note="deck.md": {"value": v, "note": note, "quote": q}  # noqa: E731
-    reply = {"name": ev("Northwind Labs Inc.", "Northwind Labs Inc. builds"), "one_liner": ev(
-        "Billing tools for 4000 shops.", "builds billing tools"), "country": ev("CA", "Based in Toronto"),
+    reply = {
+        "name": ev("Northwind Labs Inc.", "Northwind Labs Inc. builds"),
+        "one_liner": ev("Billing tools for 4000 shops.", "builds billing tools"),
+        "country": ev("CA", "Based in Toronto"),
         "city": ev("Toronto", "Based in Toronto"),
         "stage": ev("seed", "a seed round"),  # not in the note: rejected
-        "round_type": ev("SAFE", "on a SAFE"), "round_size": ev("$3M", "raising $2.5M"),  # wrong number: rejected
-        "business_model": None, "granularity": None, "fiscal_year_start_month": None}
+        "round_type": ev("SAFE", "on a SAFE"),
+        "round_size": ev("$3M", "raising $2.5M"),  # wrong number: rejected
+        "business_model": None,
+        "granularity": None,
+        "fiscal_year_start_month": None,
+    }
     live_llm.install(queue(json_reply(reply)))
     found, by = await propose_profile(notes)
     assert by == "claude"
     values = {k: v for k, (v, _) in found.items()}
-    assert values["name"] == "Northwind Labs Inc." and values["country"] == "CA" and values["city"] == "Toronto"
+    assert (
+        values["name"] == "Northwind Labs Inc." and values["country"] == "CA" and values["city"] == "Toronto"
+    )
     assert values["round_type"] == "safe" and "currency" not in values
-    assert values["round_size"] == 2_500_000  # the heuristic's verified value stands; Claude's $3M was rejected
+    assert (
+        values["round_size"] == 2_500_000
+    )  # the heuristic's verified value stands; Claude's $3M was rejected
     assert "stage" not in values and "one_liner" not in values  # unquoted, and an invented figure
     assert found["name"][1] == "From [[deck.md]]: “Northwind Labs Inc. builds”"
 
 
 def test_profile_batches_carry_every_note_in_full():
-    long_doc = {"path": "deck.md", "kind": "document", "format": "md", "content": "intro " * 100 + "Based in Toronto."}
-    table = {"path": "pl.csv", "kind": "table", "format": "csv",
-             "content": "month,revenue\n" + "".join(f"2025-{m:02d},{m}000\n" for m in range(1, 13))}
+    long_doc = {
+        "path": "deck.md",
+        "kind": "document",
+        "format": "md",
+        "content": "intro " * 100 + "Based in Toronto.",
+    }
+    table = {
+        "path": "pl.csv",
+        "kind": "table",
+        "format": "csv",
+        "content": "month,revenue\n" + "".join(f"2025-{m:02d},{m}000\n" for m in range(1, 13)),
+    }
     batches = autofill.note_batches([table, long_doc], budget=300)
     joined = "".join(batches)
     assert all(len(b) <= 300 for b in batches)
@@ -225,15 +315,25 @@ def test_profile_batches_carry_every_note_in_full():
 async def test_claude_profile_reads_every_batch_and_takes_the_majority(live_llm, monkeypatch):
     monkeypatch.setattr(autofill, "BATCH_CHARS", 12_000)
     pad = "Notes. " * 1500  # each note fills its own batch, well past the old 6,000-character cut
-    notes = [{"path": f"{k}.md", "title": k, "kind": "document", "format": "md", "content": pad + body}
-             for k, body in (("a", "Acme Labs Inc. builds tools."), ("b", "Acme Labs Inc. again."),
-                             ("c", "Zenith Corp is a partner. Our office is in Lyon."))]
+    notes = [
+        {"path": f"{k}.md", "title": k, "kind": "document", "format": "md", "content": pad + body}
+        for k, body in (
+            ("a", "Acme Labs Inc. builds tools."),
+            ("b", "Acme Labs Inc. again."),
+            ("c", "Zenith Corp is a partner. Our office is in Lyon."),
+        )
+    ]
     ev = lambda v, q, note: {"value": v, "note": note, "quote": q}  # noqa: E731
     empty = dict.fromkeys(autofill.FIELDS)
-    replies = {"a.md": {**empty, "name": ev("Acme Labs Inc.", "Acme Labs Inc. builds", "a.md")},
-               "b.md": {**empty, "name": ev("Acme Labs Inc.", "Acme Labs Inc. again", "b.md")},
-               "c.md": {**empty, "name": ev("Zenith Corp", "Zenith Corp is a partner", "c.md"),
-                        "city": ev("Lyon", "Our office is in Lyon", "c.md")}}
+    replies = {
+        "a.md": {**empty, "name": ev("Acme Labs Inc.", "Acme Labs Inc. builds", "a.md")},
+        "b.md": {**empty, "name": ev("Acme Labs Inc.", "Acme Labs Inc. again", "b.md")},
+        "c.md": {
+            **empty,
+            "name": ev("Zenith Corp", "Zenith Corp is a partner", "c.md"),
+            "city": ev("Lyon", "Our office is in Lyon", "c.md"),
+        },
+    }
 
     def respond(call):
         text = call["body"]["messages"][0]["content"]
@@ -270,7 +370,14 @@ async def test_kb_import_organize_graph_edit_export_autofill(api_client):
     csv_bytes = (SAMPLES_DIR / "harbor-labs" / "financials_quarterly.csv").read_bytes()
     files = [
         ("files", ("financials_quarterly.csv", csv_bytes, "text/csv")),
-        ("files", ("memo.pdf", make_pdf(["Investment memo", "We raise a seed round on SaaS revenue."]), "application/pdf")),
+        (
+            "files",
+            (
+                "memo.pdf",
+                make_pdf(["Investment memo", "We raise a seed round on SaaS revenue."]),
+                "application/pdf",
+            ),
+        ),
         ("files", ("deck.pptx", make_pptx(), "application/octet-stream")),
     ]
     r = await api_client.post("/kb/import", files=files)
@@ -297,14 +404,25 @@ async def test_kb_import_organize_graph_edit_export_autofill(api_client):
     assert r.json()["files"][0]["status"] == "duplicate" and r.json()["job_id"] is None
 
     # A founder note linking the table, then an edit with a stale version.
-    created = (await api_client.post("/kb/notes", json={"title": "Plan", "content": f"See [[{table['title']}]] and [[Ghost]]"})).json()
+    created = (
+        await api_client.post(
+            "/kb/notes", json={"title": "Plan", "content": f"See [[{table['title']}]] and [[Ghost]]"}
+        )
+    ).json()
     assert created["author"] == "founder" and created["outlinks"][0]["id"] == table["id"]
-    assert any(b["id"] == created["id"] for b in (await api_client.get(f"/kb/notes/{table['id']}")).json()["backlinks"])
+    assert any(
+        b["id"] == created["id"]
+        for b in (await api_client.get(f"/kb/notes/{table['id']}")).json()["backlinks"]
+    )
     g = (await api_client.get("/kb/graph")).json()
     assert any(n["kind"] == "missing" and n["title"] == "Ghost" for n in g["nodes"])
-    upd = await api_client.put(f"/kb/notes/{created['id']}", json={"content": "v2", "version": created["version"]})
+    upd = await api_client.put(
+        f"/kb/notes/{created['id']}", json={"content": "v2", "version": created["version"]}
+    )
     assert upd.status_code == 200 and upd.json()["version"] == created["version"] + 1
-    stale = await api_client.put(f"/kb/notes/{created['id']}", json={"content": "v3", "version": created["version"]})
+    stale = await api_client.put(
+        f"/kb/notes/{created['id']}", json={"content": "v3", "version": created["version"]}
+    )
     assert stale.status_code == 409
     moved = (await api_client.put(f"/kb/notes/{created['id']}", json={"path": "company/Plan"})).json()
     assert moved["path"] == "company/Plan.md"
@@ -327,8 +445,9 @@ async def test_kb_import_organize_graph_edit_export_autofill(api_client):
     await _wait(api_client, r.json()["job_id"])
     after = {n["path"]: n for n in (await api_client.get("/kb/notes")).json()}
     # Hubs are rewritten after an import (Plan now sits in company/, so a Company hub appears).
-    assert set(after) >= set(before) and {p for p in after if after[p]["kind"] != "hub"} == \
-        {p for p in before if before[p]["kind"] != "hub"}
+    assert set(after) >= set(before) and {p for p in after if after[p]["kind"] != "hub"} == {
+        p for p in before if before[p]["kind"] != "hub"
+    }
     assert after["company/Plan.md"]["author"] == "founder" and after[table["path"]]["title"] == table["title"]
 
     # Autofill: a draft engagement with the table mapped and the profile filled, each value cited.

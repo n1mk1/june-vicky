@@ -35,34 +35,167 @@ BATCH = 40
 EXCERPT_CHARS = 1400
 
 FOLDERS: dict[str, str] = {
-    "company": "Company", "financials": "Financials", "customers": "Customers", "product": "Product",
-    "market": "Market", "team": "Team", "fundraising": "Fundraising", "legal": "Legal",
-    "operations": "Operations", "other": "Other",
+    "company": "Company",
+    "financials": "Financials",
+    "customers": "Customers",
+    "product": "Product",
+    "market": "Market",
+    "team": "Team",
+    "fundraising": "Fundraising",
+    "legal": "Legal",
+    "operations": "Operations",
+    "other": "Other",
 }
-Folder = Literal["company", "financials", "customers", "product", "market", "team", "fundraising", "legal",
-                 "operations", "other"]
+Folder = Literal[
+    "company",
+    "financials",
+    "customers",
+    "product",
+    "market",
+    "team",
+    "fundraising",
+    "legal",
+    "operations",
+    "other",
+]
 
 KEYWORDS: dict[str, list[str]] = {
-    "financials": ["revenue", "mrr", "arr", "income", "p&l", "profit", "loss", "balance sheet", "cash", "burn", "runway",
-                   "budget", "forecast", "expense", "opex", "cogs", "gross margin", "ebitda", "financial", "accounts",
-                   "invoice", "bank", "payroll", "statement", "ledger"],
-    "customers": ["customer", "cohort", "churn", "retention", "nrr", "logo", "client", "pipeline", "crm", "deal",
-                  "acv", "subscriber", "user", "nps", "usage"],
-    "product": ["product", "roadmap", "feature", "release", "sprint", "spec", "architecture", "api", "engineering",
-                "prototype", "design", "platform"],
-    "market": ["market", "tam", "sam", "som", "competitor", "competition", "industry", "landscape", "trend", "segment"],
-    "team": ["team", "hire", "hiring", "headcount", "org chart", "employee", "founder", "resume", "bio", "advisor"],
-    "fundraising": ["deck", "pitch", "investor", "round", "raise", "raising", "fundrais", "seed", "series a",
-                    "term sheet", "safe", "valuation", "cap table", "dilution", "data room", "investment memo"],
-    "legal": ["agreement", "contract", "nda", "incorporation", "bylaws", "patent", "trademark", "license",
-              "compliance", "gdpr", "legal", "articles"],
-    "operations": ["operations", "process", "policy", "vendor", "supplier", "logistics", "okr", "kpi", "board",
-                   "meeting", "minutes", "hiring plan", "operating plan"],
+    "financials": [
+        "revenue",
+        "mrr",
+        "arr",
+        "income",
+        "p&l",
+        "profit",
+        "loss",
+        "balance sheet",
+        "cash",
+        "burn",
+        "runway",
+        "budget",
+        "forecast",
+        "expense",
+        "opex",
+        "cogs",
+        "gross margin",
+        "ebitda",
+        "financial",
+        "accounts",
+        "invoice",
+        "bank",
+        "payroll",
+        "statement",
+        "ledger",
+    ],
+    "customers": [
+        "customer",
+        "cohort",
+        "churn",
+        "retention",
+        "nrr",
+        "logo",
+        "client",
+        "pipeline",
+        "crm",
+        "deal",
+        "acv",
+        "subscriber",
+        "user",
+        "nps",
+        "usage",
+    ],
+    "product": [
+        "product",
+        "roadmap",
+        "feature",
+        "release",
+        "sprint",
+        "spec",
+        "architecture",
+        "api",
+        "engineering",
+        "prototype",
+        "design",
+        "platform",
+    ],
+    "market": [
+        "market",
+        "tam",
+        "sam",
+        "som",
+        "competitor",
+        "competition",
+        "industry",
+        "landscape",
+        "trend",
+        "segment",
+    ],
+    "team": [
+        "team",
+        "hire",
+        "hiring",
+        "headcount",
+        "org chart",
+        "employee",
+        "founder",
+        "resume",
+        "bio",
+        "advisor",
+    ],
+    "fundraising": [
+        "deck",
+        "pitch",
+        "investor",
+        "round",
+        "raise",
+        "raising",
+        "fundrais",
+        "seed",
+        "series a",
+        "term sheet",
+        "safe",
+        "valuation",
+        "cap table",
+        "dilution",
+        "data room",
+        "investment memo",
+    ],
+    "legal": [
+        "agreement",
+        "contract",
+        "nda",
+        "incorporation",
+        "bylaws",
+        "patent",
+        "trademark",
+        "license",
+        "compliance",
+        "gdpr",
+        "legal",
+        "articles",
+    ],
+    "operations": [
+        "operations",
+        "process",
+        "policy",
+        "vendor",
+        "supplier",
+        "logistics",
+        "okr",
+        "kpi",
+        "board",
+        "meeting",
+        "minutes",
+        "hiring plan",
+        "operating plan",
+    ],
     "company": ["about", "overview", "mission", "vision", "company", "one-pager", "one pager", "profile"],
 }
-STOP = set("""the and for with that this from have has are was were will would your our their there what when which
+STOP = set(
+    """the and for with that this from have has are was were will would your our their there what when which
 into about than then them they you not but all can more also each other such only some been being over under very
-page table source file note notes data column columns rows value values total""".split())
+page table source file note notes data column columns rows value values total""".split()
+)
 
 
 # ---------------------------------------------------------------- the number guard
@@ -102,7 +235,7 @@ def scrub_numbers(text: str, sources: str) -> tuple[str, int]:
     out_lines = []
     for line in (text or "").split("\n"):
         m = _LIST_MARK.match(line)
-        prefix, rest = (line[: m.end()], line[m.end():]) if m else ("", line)
+        prefix, rest = (line[: m.end()], line[m.end() :]) if m else ("", line)
         # Numbers inside [[wikilinks]] are note names, checked against the vault separately.
         kept = []
         for sent in _SENT.split(rest):
@@ -118,6 +251,7 @@ def scrub_numbers(text: str, sources: str) -> tuple[str, int]:
 
 
 # ---------------------------------------------------------------- excerpts
+
 
 def excerpt(n: dict, chars: int = EXCERPT_CHARS) -> str:
     content = n.get("content") or ""
@@ -136,6 +270,7 @@ def keywords(n: dict, k: int = 30) -> set[str]:
 
 
 # ---------------------------------------------------------------- heuristic organizer
+
 
 def _keyword(w: str) -> str:
     """Short words and acronyms match whole (arr is not arrange); longer ones as prefixes (customer → customers)."""
@@ -161,7 +296,9 @@ def first_sentence(content: str) -> str:
         s = ln.strip()
         if not s or s.startswith(("#", ">", "|", "```", "---", "_", "- [", "!")) or len(s) < 30:
             continue
-        if re.match(r"(Type|Number format|The chart stores no values):?", s):  # chart metadata from convert.py
+        if re.match(
+            r"(Type|Number format|The chart stores no values):?", s
+        ):  # chart metadata from convert.py
             continue
         s = re.sub(r"[*_`]", "", s)
         m = re.match(r"(.{30,220}?[.!?])(\s|$)", s)
@@ -172,7 +309,9 @@ def first_sentence(content: str) -> str:
 def heuristic_summary(n: dict) -> str:
     meta = n.get("meta") or {}
     if n["format"] == "csv":
-        cols = [str(c) for c in (meta.get("columns") or (n.get("content") or "").split("\n", 1)[0].split(","))][:8]
+        cols = [
+            str(c) for c in (meta.get("columns") or (n.get("content") or "").split("\n", 1)[0].split(","))
+        ][:8]
         rows = meta.get("rows")
         lead = f"Table with {rows} rows" if isinstance(rows, int) else "Table"
         return f"{lead}. Columns: {', '.join(c for c in cols if c)}."[:400]
@@ -187,8 +326,13 @@ def heuristic_summary(n: dict) -> str:
 
 def heuristic_related(notes: list[dict], k: int = 4, threshold: float = 0.14) -> dict[str, list[str]]:
     kw = {n["path"]: keywords(n) for n in notes}
-    heads = {n["path"]: {c.strip().lower() for c in (n.get("content") or "").split("\n", 1)[0].split(",") if c.strip()}
-             for n in notes if n["format"] == "csv"}
+    heads = {
+        n["path"]: {
+            c.strip().lower() for c in (n.get("content") or "").split("\n", 1)[0].split(",") if c.strip()
+        }
+        for n in notes
+        if n["format"] == "csv"
+    }
     out: dict[str, list[str]] = {}
     for a in notes:
         scored = []
@@ -216,8 +360,16 @@ def heuristic_plan(notes: list[dict], vault: list[dict]) -> list[dict]:
             tags.append("ocr")
         if meta.get("charts"):
             tags.append("charts")
-        plans.append({"path": n["path"], "title": n["title"], "folder": folder, "tags": tags,
-                      "summary": heuristic_summary(n), "related": related.get(n["path"], [])})
+        plans.append(
+            {
+                "path": n["path"],
+                "title": n["title"],
+                "folder": folder,
+                "tags": tags,
+                "summary": heuristic_summary(n),
+                "related": related.get(n["path"], []),
+            }
+        )
     return plans
 
 
@@ -232,23 +384,32 @@ def heuristic_hubs(vault: list[dict]) -> tuple[str, list[dict]]:
     for folder, items in sorted(by_folder.items()):
         label = FOLDERS.get(folder, folder.replace("-", " ").title())
         lines = [f"Everything filed under {label.lower()}."]
-        lines += [f"- [[{n['title']}]]" + (f": {n['summary']}" if n.get("summary") else "")
-                  for n in sorted(items, key=lambda x: x["title"].lower())]
+        lines += [
+            f"- [[{n['title']}]]" + (f": {n['summary']}" if n.get("summary") else "")
+            for n in sorted(items, key=lambda x: x["title"].lower())
+        ]
         hubs.append({"folder": folder, "title": label, "body": "\n".join(lines)})
-    home = "The company's knowledge base. Start from an area:\n" + "\n".join(f"- [[{h['title']}]]" for h in hubs)
+    home = "The company's knowledge base. Start from an area:\n" + "\n".join(
+        f"- [[{h['title']}]]" for h in hubs
+    )
     return home, hubs
 
 
 # ---------------------------------------------------------------- Claude organizer
+
 
 class KbNotePlan(BaseModel):
     path: str = Field(description="the note's path exactly as given")
     title: str = Field(description="a clear, specific title for the note")
     folder: Folder
     tags: list[str] = Field(description="2-6 lowercase kebab-case tags (topic, document type, period words)")
-    summary: str = Field(description="one or two sentences: what the note contains and what it is useful for. "
-                                     "Describe, don't quote figures.")
-    related: list[str] = Field(description="paths (exactly as listed) of up to 5 other notes on the same subject")
+    summary: str = Field(
+        description="one or two sentences: what the note contains and what it is useful for. "
+        "Describe, don't quote figures."
+    )
+    related: list[str] = Field(
+        description="paths (exactly as listed) of up to 5 other notes on the same subject"
+    )
 
 
 class KbNotePlans(BaseModel):
@@ -258,13 +419,17 @@ class KbNotePlans(BaseModel):
 class KbHub(BaseModel):
     folder: Folder
     title: str = Field(description="short hub title, e.g. 'Financials'")
-    body: str = Field(description="markdown: what this area covers and how its notes relate, linking every note in "
-                                  "the folder as [[exact note title]]. No figures.")
+    body: str = Field(
+        description="markdown: what this area covers and how its notes relate, linking every note in "
+        "the folder as [[exact note title]]. No figures."
+    )
 
 
 class KbHubs(BaseModel):
-    home: str = Field(description="markdown body of the Home note: a short orientation to the whole vault for an AI "
-                                  "or a person, linking each hub as [[hub title]]. No figures.")
+    home: str = Field(
+        description="markdown body of the Home note: a short orientation to the whole vault for an AI "
+        "or a person, linking each hub as [[hub title]]. No figures."
+    )
     hubs: list[KbHub]
 
 
@@ -292,17 +457,24 @@ def _index_block(vault: list[dict]) -> str:
 def _batch_block(notes: list[dict]) -> str:
     parts = []
     for n in notes:
-        parts.append(f"### {n['path']}\nkind: {n['kind']} · format: {n['format']} · title: {n['title']}\n"
-                     f"{excerpt(n)}")
+        parts.append(
+            f"### {n['path']}\nkind: {n['kind']} · format: {n['format']} · title: {n['title']}\n{excerpt(n)}"
+        )
     return "Notes to organize:\n\n" + "\n\n".join(parts)
 
 
 async def claude_plan(batch: list[dict], vault: list[dict]) -> tuple[list[dict], int]:
     from vicky.llm.client import get_llm, with_timeout
 
-    out = await with_timeout(get_llm().parse(
-        "kb_organize", KbNotePlans, system=ORGANIZE_TASK,
-        messages=[{"role": "user", "content": f"{_index_block(vault)}\n\n{_batch_block(batch)}"}]), 120)
+    out = await with_timeout(
+        get_llm().parse(
+            "kb_organize",
+            KbNotePlans,
+            system=ORGANIZE_TASK,
+            messages=[{"role": "user", "content": f"{_index_block(vault)}\n\n{_batch_block(batch)}"}],
+        ),
+        120,
+    )
     by_path = {n["path"]: n for n in batch}
     known = {n["path"] for n in vault}
     plans, dropped = [], 0
@@ -313,9 +485,16 @@ async def claude_plan(batch: list[dict], vault: list[dict]) -> tuple[list[dict],
         summary, d = scrub_numbers(p.summary.strip(), f"{n['title']}\n{n.get('content') or ''}")
         title, d2 = scrub_numbers(p.title.strip(), f"{n['title']}\n{n['path']}\n{n.get('content') or ''}")
         dropped += d + d2
-        plans.append({"path": n["path"], "title": (title or n["title"])[:200], "folder": p.folder,
-                      "tags": p.tags, "summary": summary[:600],
-                      "related": [r for r in p.related if r in known and r != n["path"]][:5]})
+        plans.append(
+            {
+                "path": n["path"],
+                "title": (title or n["title"])[:200],
+                "folder": p.folder,
+                "tags": p.tags,
+                "summary": summary[:600],
+                "related": [r for r in p.related if r in known and r != n["path"]][:5],
+            }
+        )
     missing = [n for n in batch if n["path"] not in {p["path"] for p in plans}]
     return plans + heuristic_plan(missing, vault), dropped
 
@@ -323,12 +502,23 @@ async def claude_plan(batch: list[dict], vault: list[dict]) -> tuple[list[dict],
 async def claude_hubs(vault: list[dict]) -> tuple[str, list[dict], int]:
     from vicky.llm.client import get_llm, with_timeout
 
-    lines = [f"{folder_of(n['path']).split('/', 1)[0] or 'other'} | {n['title']} | {n.get('summary') or ''}"
-             for n in vault if n["kind"] != "hub"][:600]
-    out = await with_timeout(get_llm().parse(
-        "kb_hubs", KbHubs, system=HUBS_TASK,
-        messages=[{"role": "user", "content": "Notes (folder | title | summary):\n" + "\n".join(lines)}]), 120)
-    sources = "\n".join(f"{n['title']}\n{n['path']}\n{n.get('summary') or ''}\n{n.get('content') or ''}" for n in vault)
+    lines = [
+        f"{folder_of(n['path']).split('/', 1)[0] or 'other'} | {n['title']} | {n.get('summary') or ''}"
+        for n in vault
+        if n["kind"] != "hub"
+    ][:600]
+    out = await with_timeout(
+        get_llm().parse(
+            "kb_hubs",
+            KbHubs,
+            system=HUBS_TASK,
+            messages=[{"role": "user", "content": "Notes (folder | title | summary):\n" + "\n".join(lines)}],
+        ),
+        120,
+    )
+    sources = "\n".join(
+        f"{n['title']}\n{n['path']}\n{n.get('summary') or ''}\n{n.get('content') or ''}" for n in vault
+    )
     dropped = 0
     hubs = []
     for h in out.hubs:
@@ -341,15 +531,20 @@ async def claude_hubs(vault: list[dict]) -> tuple[str, list[dict], int]:
 
 # ---------------------------------------------------------------- apply
 
+
 async def _vault() -> list[dict]:
-    return await db.fetch("select id::text, path, title, kind, format, content, tags, summary, links, meta, author, "
-                          "version, organized_at from kb_notes order by created_at")
+    return await db.fetch(
+        "select id::text, path, title, kind, format, content, tags, summary, links, meta, author, "
+        "version, organized_at from kb_notes order by created_at"
+    )
 
 
 def _fix_links(body: str, res: Resolver) -> str:
     """Unresolvable [[links]] in generated text become plain text, so hubs never point at nothing."""
+
     def sub(m: re.Match) -> str:
         return m.group(0) if res.resolve(m.group(1)) else m.group(1)
+
     return WIKILINK.sub(sub, body)
 
 
@@ -358,8 +553,8 @@ def _fix_links(body: str, res: Resolver) -> str:
 # Across processes a Postgres advisory lock is polled with `pg_try_advisory_lock`, so a waiter never holds
 # a pooled connection while the holder needs one.
 _lock = asyncio.Lock()
-_asked = 0          # requests registered
-_covered = 0        # requests a finished pass started after
+_asked = 0  # requests registered
+_covered = 0  # requests a finished pass started after
 _full_pending = False
 _last: dict = {}
 
@@ -401,7 +596,7 @@ async def _organize(full: bool) -> dict:
     dropped = 0
     plans: list[dict] = []
     if todo and llm.enabled():
-        batches = [todo[i:i + BATCH] for i in range(0, len(todo), BATCH)]
+        batches = [todo[i : i + BATCH] for i in range(0, len(todo), BATCH)]
         results = await asyncio.gather(*(claude_plan(b, vault) for b in batches), return_exceptions=True)
         for b, r in zip(batches, results, strict=True):
             if isinstance(r, BaseException):
@@ -423,22 +618,30 @@ async def _organize(full: bool) -> dict:
             n = rows[p["path"]]
             # The plan was made from the vault as it was read. A note the founder changed since (rename, retitle,
             # edit) or deleted is left alone: it stays unorganized and the next pass plans it afresh.
-            cur = await conn.fetchrow("select path, author, version from kb_notes where id = $1 for update", n["id"])
+            cur = await conn.fetchrow(
+                "select path, author, version from kb_notes where id = $1 for update", n["id"]
+            )
             if cur is None or cur["version"] != n["version"] or cur["path"] != n["path"]:
                 skipped += 1
                 continue
             founder = cur["author"] == "founder"
             new_path = n["path"]
             if folder_of(n["path"]).split("/", 1)[0] == INBOX and not founder:
-                new_path = await unique_path(conn, f"{p['folder']}/{n['path'].rsplit('/', 1)[-1]}", exclude_id=n["id"])
+                new_path = await unique_path(
+                    conn, f"{p['folder']}/{n['path'].rsplit('/', 1)[-1]}", exclude_id=n["id"]
+                )
             if new_path != n["path"]:
                 renames[n["path"]] = new_path
                 moved += 1
             await conn.execute(
                 """update kb_notes set path = $2, title = $3, tags = $4, summary = $5, organized_at = now()
                    where id = $1""",
-                n["id"], new_path, p["title"] if not founder else n["title"],
-                clean_tags([*(n["tags"] or []), *p["tags"]]), p["summary"] or n["summary"])
+                n["id"],
+                new_path,
+                p["title"] if not founder else n["title"],
+                clean_tags([*(n["tags"] or []), *p["tags"]]),
+                p["summary"] or n["summary"],
+            )
             applied.append((p, n))
         for old, new in renames.items():
             await move_links(conn, old, new)
@@ -449,8 +652,14 @@ async def _organize(full: bool) -> dict:
             await conn.execute("update kb_notes set links = $2 where id = $1", n["id"], merged)
 
     hubs_written = await write_hubs()
-    return {"organized": len(plans) - skipped, "moved": moved, "skipped": skipped, "hubs": hubs_written, "by": by,
-            "dropped_sentences": dropped}
+    return {
+        "organized": len(plans) - skipped,
+        "moved": moved,
+        "skipped": skipped,
+        "hubs": hubs_written,
+        "by": by,
+        "dropped_sentences": dropped,
+    }
 
 
 async def write_hubs() -> int:
@@ -469,27 +678,59 @@ async def write_hubs() -> int:
         res = Resolver(names)
         # Hubs are updated in place by path, not deleted and re-inserted: a note id an index build or an open
         # editor holds stays valid.
-        old = {r["path"].lower(): r["id"] for r in
-               await conn.fetch("select id::text, path from kb_notes where kind = 'hub' and author = 'ai'")}
+        old = {
+            r["path"].lower(): r["id"]
+            for r in await conn.fetch(
+                "select id::text, path from kb_notes where kind = 'hub' and author = 'ai'"
+            )
+        }
         kept: list[str] = []
         drafts = []
         for h in hubs:
             label = FOLDERS.get(h["folder"], h["title"])
             body = f"# {h['title']}\n\n{_fix_links(h['body'], res)}\n"
-            drafts.append((Draft(name="", title=h["title"], kind="hub", format="md", content=body,
-                                 tags=["hub", h["folder"]], summary=f"Hub for {label.lower()}."),
-                           f"{h['folder']}/{h['title']}"))
-        drafts.append((Draft(name="", title="Home", kind="hub", format="md",
-                             content=f"# Home\n\n{_fix_links(home, res)}\n", tags=["hub"],
-                             summary="Start here: the map of the knowledge base."), "Home"))
+            drafts.append(
+                (
+                    Draft(
+                        name="",
+                        title=h["title"],
+                        kind="hub",
+                        format="md",
+                        content=body,
+                        tags=["hub", h["folder"]],
+                        summary=f"Hub for {label.lower()}.",
+                    ),
+                    f"{h['folder']}/{h['title']}",
+                )
+            )
+        drafts.append(
+            (
+                Draft(
+                    name="",
+                    title="Home",
+                    kind="hub",
+                    format="md",
+                    content=f"# Home\n\n{_fix_links(home, res)}\n",
+                    tags=["hub"],
+                    summary="Start here: the map of the knowledge base.",
+                ),
+                "Home",
+            )
+        )
         new: list[tuple[Draft, str]] = []
         for d, path in drafts:
             hid = old.pop(clean_path(path, "md").lower(), None)
             if hid is None:
                 new.append((d, path))
                 continue
-            await conn.execute("update kb_notes set title = $2, content = $3, tags = $4, summary = $5 where id = $1",
-                               hid, d.title[:200], d.content, clean_tags(d.tags), d.summary[:1000])
+            await conn.execute(
+                "update kb_notes set title = $2, content = $3, tags = $4, summary = $5 where id = $1",
+                hid,
+                d.title[:200],
+                d.content,
+                clean_tags(d.tags),
+                d.summary[:1000],
+            )
             kept.append(hid)
         if old:  # hubs of folders that are gone; dropped before inserting so their paths are free again
             await conn.execute("delete from kb_notes where id = any($1::uuid[])", list(old.values()))
@@ -497,4 +738,3 @@ async def write_hubs() -> int:
             kept.append(await insert_draft(conn, d, path=path, file_id=None, author="ai"))
         await conn.execute("update kb_notes set organized_at = now() where id = any($1::uuid[])", kept)
     return len(hubs) + 1
-

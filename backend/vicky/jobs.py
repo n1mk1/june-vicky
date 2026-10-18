@@ -44,6 +44,7 @@ def job(kind: str) -> Callable[[Handler], Handler]:
     def deco(fn: Handler) -> Handler:
         HANDLERS[kind] = fn
         return fn
+
     return deco
 
 
@@ -55,11 +56,15 @@ def _register_handlers() -> None:
         log.error("could not load job handlers: %s", e)
 
 
-async def enqueue(kind: str, payload: dict[str, Any], engagement_id: str | None = None,
-                  session_id: str | None = None) -> str:
+async def enqueue(
+    kind: str, payload: dict[str, Any], engagement_id: str | None = None, session_id: str | None = None
+) -> str:
     job_id = await db.fetchval(
         "insert into jobs (kind, payload, engagement_id, session_id) values ($1, $2, $3, $4) returning id::text",
-        kind, payload, engagement_id, session_id,
+        kind,
+        payload,
+        engagement_id,
+        session_id,
     )
     if get_settings().jobs_mode == "worker":
         from arq import create_pool
@@ -81,36 +86,64 @@ def _start_inline(job_id: str) -> None:
 
 async def run_job(job_id: str) -> dict | None:
     _register_handlers()
-    row = await db.fetchrow("update jobs set status='running', started_at=now(), attempts=attempts+1 "
-                            "where id=$1 and status in ('queued','stale','failed') returning *", job_id)
+    row = await db.fetchrow(
+        "update jobs set status='running', started_at=now(), attempts=attempts+1 "
+        "where id=$1 and status in ('queued','stale','failed') returning *",
+        job_id,
+    )
     if row is None:
         return None
-    channel = (f"session:{row['session_id']}" if row["session_id"] else
-               f"engagement:{row['engagement_id']}" if row["engagement_id"] else "kb")
+    channel = (
+        f"session:{row['session_id']}"
+        if row["session_id"]
+        else f"engagement:{row['engagement_id']}"
+        if row["engagement_id"]
+        else "kb"
+    )
     await publish(channel, "job.status", {"job_id": job_id, "kind": row["kind"], "status": "running"})
     handler = HANDLERS.get(row["kind"])
     try:
         if handler is None:
             raise RuntimeError(f"no handler for job kind {row['kind']}")
-        result = await handler({**row["payload"], "_job_id": job_id, "_engagement_id": str(row["engagement_id"] or ""),
-                                "_session_id": str(row["session_id"] or "")})
-        await db.execute("update jobs set status='done', result=$2, finished_at=now() where id=$1", job_id, result or {})
+        result = await handler(
+            {
+                **row["payload"],
+                "_job_id": job_id,
+                "_engagement_id": str(row["engagement_id"] or ""),
+                "_session_id": str(row["session_id"] or ""),
+            }
+        )
+        await db.execute(
+            "update jobs set status='done', result=$2, finished_at=now() where id=$1", job_id, result or {}
+        )
         await publish(channel, "job.status", {"job_id": job_id, "kind": row["kind"], "status": "done"})
         return result
     except Exception as e:
         log.error("job %s failed: %s\n%s", job_id, e, traceback.format_exc())
-        await db.execute("update jobs set status='failed', error=$2, finished_at=now() where id=$1", job_id, str(e)[:2000])
-        await publish(channel, "job.status", {"job_id": job_id, "kind": row["kind"], "status": "failed", "error": str(e)[:300]})
+        await db.execute(
+            "update jobs set status='failed', error=$2, finished_at=now() where id=$1", job_id, str(e)[:2000]
+        )
+        await publish(
+            channel,
+            "job.status",
+            {"job_id": job_id, "kind": row["kind"], "status": "failed", "error": str(e)[:300]},
+        )
         return None
     except BaseException:
         # Cancelled (arq's job timeout, shutdown, a redeploy): record it so the row doesn't stay
         # `running` for good, then let the cancellation carry on.
         log.warning("job %s (%s) interrupted", job_id, row["kind"])
         with contextlib.suppress(Exception):
-            await db.execute("update jobs set status='failed', error=$2, finished_at=now() where id=$1 and status='running'",
-                             job_id, INTERRUPTED)
-            await publish(channel, "job.status", {"job_id": job_id, "kind": row["kind"], "status": "failed",
-                                                  "error": INTERRUPTED})
+            await db.execute(
+                "update jobs set status='failed', error=$2, finished_at=now() where id=$1 and status='running'",
+                job_id,
+                INTERRUPTED,
+            )
+            await publish(
+                channel,
+                "job.status",
+                {"job_id": job_id, "kind": row["kind"], "status": "failed", "error": INTERRUPTED},
+            )
         raise
 
 
@@ -132,7 +165,9 @@ async def sweep_stale() -> int:
                   error=case when status='running' then 'no longer running (the process stopped)' else error end
            where (status='queued' and enqueued_at < now() - make_interval(secs => $1))
               or (status='running' and coalesce(started_at, enqueued_at) < now() - make_interval(secs => $2))""",
-        STALE_AFTER_S, RUNNING_STALE_AFTER_S)
+        STALE_AFTER_S,
+        RUNNING_STALE_AFTER_S,
+    )
     return int(res.split()[-1]) if res else 0
 
 
@@ -145,7 +180,10 @@ async def retry(job_id: str) -> None:
         raise KeyError(job_id) from e
     row = await db.fetchrow(
         """update jobs set status='queued', error=null, enqueued_at=now(), started_at=null, finished_at=null
-           where id=$1 and status = any($2::job_status[]) returning id""", job_id, list(RETRYABLE))
+           where id=$1 and status = any($2::job_status[]) returning id""",
+        job_id,
+        list(RETRYABLE),
+    )
     if row is None:
         status = await db.fetchval("select status::text from jobs where id=$1", job_id)
         if status is None:
@@ -174,11 +212,18 @@ async def shutdown(timeout_s: float = 10.0) -> None:
 
 def _redis_settings(cls):
     u = urlparse(get_settings().redis_url)
-    return cls(host=u.hostname or "localhost", port=u.port or 6379, password=u.password, username=u.username,
-               ssl=u.scheme == "rediss", database=int((u.path or "/0").lstrip("/") or 0))
+    return cls(
+        host=u.hostname or "localhost",
+        port=u.port or 6379,
+        password=u.password,
+        username=u.username,
+        ssl=u.scheme == "rediss",
+        database=int((u.path or "/0").lstrip("/") or 0),
+    )
 
 
 # ---------------------------------------------------------------- arq worker
+
 
 async def run_job_arq(ctx: dict, job_id: str) -> dict | None:
     return await run_job(job_id)

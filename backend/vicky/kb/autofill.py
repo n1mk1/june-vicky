@@ -25,8 +25,18 @@ from vicky.services.engagements import Invalid
 log = logging.getLogger(__name__)
 # The reporting currency isn't read from the vault: it is CAD unless the founder changes it, and a
 # table in another currency converts at Bank of Canada rates (each table's currency is read from it).
-FIELDS = ("name", "one_liner", "country", "city", "stage", "round_type", "round_size", "business_model",
-          "granularity", "fiscal_year_start_month")
+FIELDS = (
+    "name",
+    "one_liner",
+    "country",
+    "city",
+    "stage",
+    "round_type",
+    "round_size",
+    "business_model",
+    "granularity",
+    "fiscal_year_start_month",
+)
 UPLOAD_CONCURRENCY = 3
 BATCH_CHARS = 120_000  # one profile call reads this much of the vault
 PROFILE_CONCURRENCY = 3
@@ -35,21 +45,35 @@ PROFILE_CONCURRENCY = 3
 class Evidence(BaseModel):
     value: str = Field(description="the value as it goes in the field")
     note: str = Field(description="path of the note it comes from, exactly as listed")
-    quote: str = Field(description="the exact words in that note that show it, copied verbatim, under 200 characters")
+    quote: str = Field(
+        description="the exact words in that note that show it, copied verbatim, under 200 characters"
+    )
 
 
 class ProfileDraft(BaseModel):
     name: Evidence | None = Field(description="the company's name")
-    one_liner: Evidence | None = Field(description="what the company does, one sentence in your words, no figures")
-    country: Evidence | None = Field(description="where the company is incorporated or based, ISO 3166 alpha-2 (US, GB, CA)")
+    one_liner: Evidence | None = Field(
+        description="what the company does, one sentence in your words, no figures"
+    )
+    country: Evidence | None = Field(
+        description="where the company is incorporated or based, ISO 3166 alpha-2 (US, GB, CA)"
+    )
     city: Evidence | None
     stage: Evidence | None = Field(description="one of: pre_seed, seed, series_a, series_b_plus, other")
-    round_type: Evidence | None = Field(description="how the round is structured: priced_equity, safe, convertible_note, "
-                                                    "none (not raising) or other")
-    round_size: Evidence | None = Field(description="the amount being raised, exactly as printed (e.g. $2.5M)")
+    round_type: Evidence | None = Field(
+        description="how the round is structured: priced_equity, safe, convertible_note, "
+        "none (not raising) or other"
+    )
+    round_size: Evidence | None = Field(
+        description="the amount being raised, exactly as printed (e.g. $2.5M)"
+    )
     business_model: Evidence | None = Field(description="recurring (subscriptions, SaaS, MRR/ARR) or other")
-    granularity: Evidence | None = Field(description="month or quarter: how often the financial tables report")
-    fiscal_year_start_month: Evidence | None = Field(description="1-12, only if a document states the fiscal year")
+    granularity: Evidence | None = Field(
+        description="month or quarter: how often the financial tables report"
+    )
+    fiscal_year_start_month: Evidence | None = Field(
+        description="1-12, only if a document states the fiscal year"
+    )
 
 
 PROFILE_TASK = """You fill in a startup's company profile from its knowledge base. For each field, give the value, \
@@ -70,8 +94,16 @@ def number_in(value: float, text: str) -> float | None:
         if not m:
             continue
         base = float(m.group(1).replace(",", "") or 0)
-        mult = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mm": 1e6, "million": 1e6, "b": 1e9, "bn": 1e9,
-                "billion": 1e9}.get(m.group(2).lower(), 1.0)
+        mult = {
+            "k": 1e3,
+            "thousand": 1e3,
+            "m": 1e6,
+            "mm": 1e6,
+            "million": 1e6,
+            "b": 1e9,
+            "bn": 1e9,
+            "billion": 1e9,
+        }.get(m.group(2).lower(), 1.0)
         if abs(base * mult - value) <= 1e-6 * max(abs(value), 1.0):
             return base * mult
     return None
@@ -81,8 +113,16 @@ def money_value(s: str) -> float | None:
     m = re.search(r"(\d[\d,]*(?:\.\d+)?)\s*(k|m|mm|bn|b|million|thousand|billion)?\b", s, flags=re.I)
     if not m:
         return parse_number(s)
-    mult = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mm": 1e6, "million": 1e6, "b": 1e9, "bn": 1e9,
-            "billion": 1e9}.get((m.group(2) or "").lower(), 1.0)
+    mult = {
+        "k": 1e3,
+        "thousand": 1e3,
+        "m": 1e6,
+        "mm": 1e6,
+        "million": 1e6,
+        "b": 1e9,
+        "bn": 1e9,
+        "billion": 1e9,
+    }.get((m.group(2) or "").lower(), 1.0)
     return float(m.group(1).replace(",", "")) * mult
 
 
@@ -142,6 +182,7 @@ def verify(field: str, ev: Evidence, notes: dict[str, dict]) -> tuple[object, st
 
 # ---------------------------------------------------------------- heuristic (offline)
 
+
 def _line_with(text: str, pattern: str) -> str | None:
     for ln in text.splitlines():
         if re.search(pattern, ln, flags=re.I):
@@ -167,13 +208,21 @@ def heuristic_profile(notes: list[dict]) -> dict[str, tuple[object, str]]:
             parsed = parse_upload(n["content"].encode("utf-8"), f"{stem_of(n['path'])}.csv")
         except Exception:
             continue
-        grans = [d.granularity for d in parsed if d.table_kind == "series" and d.granularity in ("month", "quarter")]
+        grans = [
+            d.granularity
+            for d in parsed
+            if d.table_kind == "series" and d.granularity in ("month", "quarter")
+        ]
         if grans:
             out["granularity"] = (grans[0], f"From [[{n['path']}]]: its period column reads as {grans[0]}ly")
             break
 
-    for stage, pat in (("pre_seed", r"\bpre[- ]?seed\b"), ("series_b_plus", r"\bseries [b-e]\b"),
-                       ("series_a", r"\bseries a\b"), ("seed", r"\bseed (round|stage|funding|raise)\b|\braising .{0,30}\bseed\b")):
+    for stage, pat in (
+        ("pre_seed", r"\bpre[- ]?seed\b"),
+        ("series_b_plus", r"\bseries [b-e]\b"),
+        ("series_a", r"\bseries a\b"),
+        ("seed", r"\bseed (round|stage|funding|raise)\b|\braising .{0,30}\bseed\b"),
+    ):
         hit = find(pat)
         if hit:
             out["stage"] = (stage, f"From [[{hit[0]['path']}]]: “{hit[1]}”")
@@ -182,22 +231,30 @@ def heuristic_profile(notes: list[dict]) -> dict[str, tuple[object, str]]:
     hit = find(r"\b(SAFE|convertible note)\b")
     if hit:
         kind = re.search(r"SAFE|convertible note", hit[1], flags=re.I)
-        out["round_type"] = (round_type(kind.group(0) if kind else ""), f"From [[{hit[0]['path']}]]: “{hit[1]}”")
+        out["round_type"] = (
+            round_type(kind.group(0) if kind else ""),
+            f"From [[{hit[0]['path']}]]: “{hit[1]}”",
+        )
 
     hit = find(r"\b(MRR|ARR|subscription|SaaS|recurring revenue)\b")
     if hit:
         out["business_model"] = ("recurring", f"From [[{hit[0]['path']}]]: “{hit[1]}”")
 
     for n in docs:
-        m = re.search(r"\b([A-Z][\w&'-]+(?: [A-Z][\w&'-]+){0,2}),? (?:Inc|Ltd|LLC|Labs|Technologies|GmbH|Corp)\b\.?",
-                      n["content"])
+        m = re.search(
+            r"\b([A-Z][\w&'-]+(?: [A-Z][\w&'-]+){0,2}),? (?:Inc|Ltd|LLC|Labs|Technologies|GmbH|Corp)\b\.?",
+            n["content"],
+        )
         if m:
             out["name"] = (m.group(0).rstrip(".,"), f"From [[{n['path']}]]: “{m.group(0)}”")
             break
 
     for n in docs:
-        m = re.search(r"rais(?:e|ing)\s+(?:a\s+)?(?:[\w-]+\s+){0,3}?([$£€]\s?\d[\d,.]*\s?(?:k|m|mm|million|bn)?)\b",
-                      n["content"], flags=re.I)
+        m = re.search(
+            r"rais(?:e|ing)\s+(?:a\s+)?(?:[\w-]+\s+){0,3}?([$£€]\s?\d[\d,.]*\s?(?:k|m|mm|million|bn)?)\b",
+            n["content"],
+            flags=re.I,
+        )
         if m:
             amount = money_value(m.group(1))
             if amount:
@@ -208,6 +265,7 @@ def heuristic_profile(notes: list[dict]) -> dict[str, tuple[object, str]]:
 
 # ---------------------------------------------------------------- Claude
 
+
 def note_batches(notes: list[dict], budget: int | None = None) -> list[str]:
     """Every note in full, packed into blocks of at most `budget` characters. Documents come first,
     then tables; a note longer than one block is split into numbered parts."""
@@ -216,7 +274,7 @@ def note_batches(notes: list[dict], budget: int | None = None) -> list[str]:
     for n in sorted(notes, key=lambda x: (x["format"] == "csv", x["path"])):
         body = n["content"]
         room = budget - len(n["path"]) - 64
-        parts = [body[i:i + room] for i in range(0, len(body), room)] or [""]
+        parts = [body[i : i + room] for i in range(0, len(body), room)] or [""]
         for i, part in enumerate(parts, 1):
             label = n["kind"] if len(parts) == 1 else f"{n['kind']}, part {i} of {len(parts)}"
             chunks.append(f"### {n['path']} ({label})\n{part}")
@@ -246,12 +304,22 @@ async def propose_profile(notes: list[dict]) -> tuple[dict[str, tuple[object, st
     sem = asyncio.Semaphore(PROFILE_CONCURRENCY)
 
     async def read(i: int, block: str) -> ProfileDraft | None:
-        part = f" (part {i + 1} of {len(batches)}; a field not shown in this part stays null)" if len(batches) > 1 else ""
+        part = (
+            f" (part {i + 1} of {len(batches)}; a field not shown in this part stays null)"
+            if len(batches) > 1
+            else ""
+        )
         async with sem:
             try:
-                return await with_timeout(get_llm().parse(
-                    "kb_profile", ProfileDraft, system=PROFILE_TASK,
-                    messages=[{"role": "user", "content": f"Knowledge base notes{part}:\n\n{block}"}]), 90)
+                return await with_timeout(
+                    get_llm().parse(
+                        "kb_profile",
+                        ProfileDraft,
+                        system=PROFILE_TASK,
+                        messages=[{"role": "user", "content": f"Knowledge base notes{part}:\n\n{block}"}],
+                    ),
+                    90,
+                )
             except Exception as e:
                 log.warning("profile autofill: batch %d of %d failed: %s", i + 1, len(batches), e)
                 return None
@@ -272,7 +340,9 @@ async def propose_profile(notes: list[dict]) -> tuple[dict[str, tuple[object, st
                 first.setdefault(ok[0], ok)
         if votes:
             top = max(votes.values())
-            found[f] = next(first[v] for v in first if votes[v] == top)  # a verified Claude value beats the heuristic
+            found[f] = next(
+                first[v] for v in first if votes[v] == top
+            )  # a verified Claude value beats the heuristic
     return found, "claude"
 
 
@@ -286,7 +356,7 @@ def round_currency(amount: float, quote: str, reporting: str) -> str:
     the one currency the quote names, else the reporting currency (a bare $ reads as it)."""
     for m in _AMOUNT.finditer(quote):
         if number_in(amount, m.group(0)) is not None:
-            near = currency_in(quote[max(0, m.start() - 6):m.end() + 6])
+            near = currency_in(quote[max(0, m.start() - 6) : m.end() + 6])
             if near:
                 return near
     return currency_in(quote) or reporting
@@ -312,11 +382,14 @@ async def round_in_reporting_currency(found: dict[str, tuple[object, str]], repo
     if rate is None:
         del found["round_size"]
         return
-    found["round_size"] = (round(float(amount) * rate.value),
-                           f"{why} Converted from {cur.upper()} {float(amount):,.0f}: {rate.note()}.")
+    found["round_size"] = (
+        round(float(amount) * rate.value),
+        f"{why} Converted from {cur.upper()} {float(amount):,.0f}: {rate.note()}.",
+    )
 
 
 # ---------------------------------------------------------------- build the engagement
+
 
 async def _upload_for(n: dict) -> tuple[str, bytes, str] | None:
     """(filename, bytes, mime) the intake pipeline should get for a note, or None to skip it."""
@@ -330,10 +403,18 @@ async def _upload_for(n: dict) -> tuple[str, bytes, str] | None:
     # correction, a removed paragraph) must reach the intake, so an edited note goes as its markdown.
     # Notes imported before the digest was kept count as unedited until the founder saves them.
     made = meta.get("converted_md5")
-    unedited = (made == hashlib.md5(n["content"].encode("utf-8")).hexdigest() if made
-                else (n.get("version") or 1) == 1)
-    if (n["file_id"] and unedited and not meta.get("ocr_pages") and not meta.get("unread_pages")
-            and not meta.get("images_ocr")):
+    unedited = (
+        made == hashlib.md5(n["content"].encode("utf-8")).hexdigest()
+        if made
+        else (n.get("version") or 1) == 1
+    )
+    if (
+        n["file_id"]
+        and unedited
+        and not meta.get("ocr_pages")
+        and not meta.get("unread_pages")
+        and not meta.get("images_ocr")
+    ):
         f = await db.fetchrow("select filename, kind, bytes, mime from kb_files where id = $1", n["file_id"])
         if f and f["kind"] in ("pdf", "docx"):
             # The original keeps page numbers for the fact citations.
@@ -347,7 +428,9 @@ async def _granularity_from_tables(eid: str, found: dict[str, tuple[object, str]
     rows = await db.fetch(
         """select d.name, d.granularity::text as g, jsonb_array_length(d.rows) as n, u.filename from datasets d
            join uploads u on u.id = d.upload_id
-           where d.engagement_id = $1 and d.table_kind = 'series' and d.granularity::text in ('month', 'quarter')""", eid)
+           where d.engagement_id = $1 and d.table_kind = 'series' and d.granularity::text in ('month', 'quarter')""",
+        eid,
+    )
     if not rows:
         return
     best = max(rows, key=lambda r: r["n"])
@@ -355,14 +438,21 @@ async def _granularity_from_tables(eid: str, found: dict[str, tuple[object, str]
     src = f"From [[{note}]]" if note else f"From the table {best['name']}"
     why = f"{src}: its {best['n']} periods are {best['g']}s"
     found["granularity"] = (best["g"], why)
-    await db.execute("update company_profiles set granularity = $2::period_granularity, "
-                     "inferred = coalesce(inferred, '{}'::jsonb) || jsonb_build_object('granularity', $3::text) "
-                     "where engagement_id = $1", eid, best["g"], why)
+    await db.execute(
+        "update company_profiles set granularity = $2::period_granularity, "
+        "inferred = coalesce(inferred, '{}'::jsonb) || jsonb_build_object('granularity', $3::text) "
+        "where engagement_id = $1",
+        eid,
+        best["g"],
+        why,
+    )
 
 
 async def autofill() -> dict:
-    notes = await db.fetch("select id::text, path, title, kind, format, content, meta, file_id::text, author, "
-                           "version from kb_notes where kind <> 'hub' order by path")
+    notes = await db.fetch(
+        "select id::text, path, title, kind, format, content, meta, file_id::text, author, "
+        "version from kb_notes where kind <> 'hub' order by path"
+    )
     if not notes:
         raise Invalid("The knowledge base is empty. Import some files first.")
     # Fill means the founder is done adding knowledge: rebuild the search index from the vault as it is now,
@@ -372,11 +462,17 @@ async def autofill() -> dict:
     build = await index.start_build()
     found, by = await propose_profile(notes)
     await round_in_reporting_currency(found, "cad")
-    found["currency"] = ("CAD", "The default reporting currency; tables in another currency convert at Bank of Canada rates")
+    found["currency"] = (
+        "CAD",
+        "The default reporting currency; tables in another currency convert at Bank of Canada rates",
+    )
     profile = {f: v for f, (v, _) in found.items()}
     eid = await engagements.create_engagement(profile)
-    await db.execute("update company_profiles set inferred = $2 where engagement_id = $1", eid,
-                     {f: why for f, (_, why) in found.items()})
+    await db.execute(
+        "update company_profiles set inferred = $2 where engagement_id = $1",
+        eid,
+        {f: why for f, (_, why) in found.items()},
+    )
 
     added, skipped = [], []
     sem = asyncio.Semaphore(UPLOAD_CONCURRENCY)
@@ -399,7 +495,14 @@ async def autofill() -> dict:
     await asyncio.gather(*(send(n) for n in notes if n["format"] == "csv"))
     await asyncio.gather(*(send(n) for n in notes if n["format"] != "csv"))
     await _granularity_from_tables(eid, found, added)
-    await db.execute("update kb_index_builds set engagement_id = $2 where id = $1::uuid", build["build_id"], eid)
-    return {"engagement": await engagements.detail(eid), "by": by, "index": build,
-            "profile": [{"field": f, "value": v, "evidence": why} for f, (v, why) in found.items()],
-            "added": added, "skipped": skipped}
+    await db.execute(
+        "update kb_index_builds set engagement_id = $2 where id = $1::uuid", build["build_id"], eid
+    )
+    return {
+        "engagement": await engagements.detail(eid),
+        "by": by,
+        "index": build,
+        "profile": [{"field": f, "value": v, "evidence": why} for f, (v, why) in found.items()],
+        "added": added,
+        "skipped": skipped,
+    }

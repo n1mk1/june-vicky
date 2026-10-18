@@ -15,10 +15,12 @@ from functools import lru_cache
 K1 = 1.2
 B = 0.75
 
-STOPWORDS = frozenset("""a an and are as at be but by can could did do does for from had has have how i if in
+STOPWORDS = frozenset(
+    """a an and are as at be but by can could did do does for from had has have how i if in
 into is it its me my of on or our so than that the their them then there these they this to us was we were
 what when where which who why will with would you your about any all also just more most much no not only
-other over per some such very re ll ve don isn aren won didn doesn wasn weren hasn haven""".split())
+other over per some such very re ll ve don isn aren won didn doesn wasn weren hasn haven""".split()
+)
 
 _WORD = re.compile(r"[^\W_]+", re.UNICODE)
 
@@ -35,18 +37,39 @@ def stem(w: str) -> str:
 def _strip(w: str) -> str:
     if len(w) <= 3 or w.isdigit():
         return w
-    for suf, rep in (("ational", "ate"), ("ization", "ize"), ("ations", "ate"), ("ation", "ate"), ("nesses", ""),
-                     ("ness", ""), ("ments", ""), ("ment", ""), ("ingly", ""), ("edly", ""), ("ings", ""),
-                     ("ing", ""), ("ies", "y"), ("ied", "y"), ("ers", "er"), ("ly", ""), ("ed", ""), ("es", ""),
-                     ("s", "")):
+    for suf, rep in (
+        ("ational", "ate"),
+        ("ization", "ize"),
+        ("ations", "ate"),
+        ("ation", "ate"),
+        ("nesses", ""),
+        ("ness", ""),
+        ("ments", ""),
+        ("ment", ""),
+        ("ingly", ""),
+        ("edly", ""),
+        ("ings", ""),
+        ("ing", ""),
+        ("ies", "y"),
+        ("ied", "y"),
+        ("ers", "er"),
+        ("ly", ""),
+        ("ed", ""),
+        ("es", ""),
+        ("s", ""),
+    ):
         if w.endswith(suf) and len(w) - len(suf) >= 3:
             if suf == "s" and w.endswith(("ss", "us", "is")):
                 return w
             if suf == "es" and not w.endswith(("ches", "shes", "sses", "xes", "zes")):
                 return w[:-1]  # "rates" → "rate", but "taxes" → "tax"
             base = w[: len(w) - len(suf)] + rep
-            if suf in ("ing", "ed", "edly", "ingly", "ings") and len(base) > 3 and base[-1] == base[-2] \
-                    and base[-1] not in "lsz":
+            if (
+                suf in ("ing", "ed", "edly", "ingly", "ings")
+                and len(base) > 3
+                and base[-1] == base[-2]
+                and base[-1] not in "lsz"
+            ):
                 base = base[:-1]  # "planned" → "plan"
             return base
     return w
@@ -76,9 +99,13 @@ class BM25:
         self.n = len(self.lengths)
         self.avg = (sum(self.lengths) / self.n) if self.n else 0.0
         self.postings = {t: (docs_[t], tfs[t]) for t in docs_}
-        self.idf = {t: math.log(1 + (self.n - len(p[0]) + 0.5) / (len(p[0]) + 0.5)) for t, p in self.postings.items()}
+        self.idf = {
+            t: math.log(1 + (self.n - len(p[0]) + 0.5) / (len(p[0]) + 0.5)) for t, p in self.postings.items()
+        }
 
-    def search(self, query: dict[str, float], top: int = 50, only: set[int] | None = None) -> list[tuple[int, float]]:
+    def search(
+        self, query: dict[str, float], top: int = 50, only: set[int] | None = None
+    ) -> list[tuple[int, float]]:
         """`query` maps a token to its weight. Returns (doc index, score), best first."""
         scores: dict[int, float] = defaultdict(float)
         avg = self.avg or 1

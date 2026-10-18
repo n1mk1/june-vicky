@@ -82,7 +82,9 @@ class Rates:
             if how == "end":
                 d, v = inside[-1]
                 return v, f"rate on {d}"
-            return sum(v for _, v in inside) / len(inside), f"{period_label(period)} average of {len(inside)} daily rates"
+            return sum(v for _, v in inside) / len(
+                inside
+            ), f"{period_label(period)} average of {len(inside)} daily rates"
         if lo > latest:
             return obs[latest], f"latest rate, {latest}"
         return None

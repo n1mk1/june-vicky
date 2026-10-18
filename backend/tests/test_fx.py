@@ -25,24 +25,40 @@ def rates() -> Rates:
 
 
 def series(rows: list[dict], mapping: list[dict], name: str = "pl") -> DatasetInput:
-    return DatasetInput(id=name, name=name, table_kind="series", granularity="month", transposed=False, rows=rows,
-                        mapping=mapping)
+    return DatasetInput(
+        id=name,
+        name=name,
+        table_kind="series",
+        granularity="month",
+        transposed=False,
+        rows=rows,
+        mapping=mapping,
+    )
 
 
 # ---------------------------------------------------------------- rates
+
 
 def test_default_currency_is_cad_and_every_bank_of_canada_currency_is_known():
     assert norm_currency(None) == "cad" and norm_currency("") == "cad" and norm_currency("XYZ") == "cad"
     assert norm_currency("USD") == "usd"
     assert len(CURRENCIES) == 25 and len(FOREIGN) == 24 and "cad" not in FOREIGN
     assert series_id("usd") == "FXUSDCAD"
-    assert fmt_money(1_500_000) == "$1.50M" and fmt_money(1_500_000, "usd") == "US$1.50M" and fmt_money(900, "gbp") == "£900"
+    assert (
+        fmt_money(1_500_000) == "$1.50M"
+        and fmt_money(1_500_000, "usd") == "US$1.50M"
+        and fmt_money(900, "gbp") == "£900"
+    )
 
 
 def test_period_rates_average_for_flows_end_for_stocks_and_cross_through_cad():
     r = rates()
     avg = r.rate("usd", "cad", "2025-01", "avg")
-    assert avg and avg.value == pytest.approx((1.40 + 1.44 + 1.45) / 3) and "Jan 2025 average of 3 daily rates" in avg.basis
+    assert (
+        avg
+        and avg.value == pytest.approx((1.40 + 1.44 + 1.45) / 3)
+        and "Jan 2025 average of 3 daily rates" in avg.basis
+    )
     end = r.rate("usd", "cad", "2025-01", "end")
     assert end and end.value == 1.45 and end.basis == "rate on 2025-01-31"
     inv = r.rate("cad", "usd", "2025-02", "end")
@@ -66,13 +82,30 @@ def test_a_period_after_the_last_rate_uses_the_latest_and_one_before_any_rate_is
 
 # ---------------------------------------------------------------- detection
 
+
 def test_column_currency_is_read_from_headers_and_cells():
-    assert currency_in("Revenue (USD)") == "usd" and currency_in("revenue_eur") == "eur" and currency_in("MRR CA$") == "cad"
-    assert currency_in("Total revenue") is None and currency_in("audit fees") is None and currency_in("Pen testing") is None
-    assert currency_in("Revenue TRY") == "try" and currency_in("USD and EUR") is None  # two currencies: not one
-    assert parse_number("US$1,200") == 1200 and parse_number("(USD 1.2M)") == -1_200_000 and parse_number("1 200 €") == 1200
+    assert (
+        currency_in("Revenue (USD)") == "usd"
+        and currency_in("revenue_eur") == "eur"
+        and currency_in("MRR CA$") == "cad"
+    )
+    assert (
+        currency_in("Total revenue") is None
+        and currency_in("audit fees") is None
+        and currency_in("Pen testing") is None
+    )
+    assert (
+        currency_in("Revenue TRY") == "try" and currency_in("USD and EUR") is None
+    )  # two currencies: not one
+    assert (
+        parse_number("US$1,200") == 1200
+        and parse_number("(USD 1.2M)") == -1_200_000
+        and parse_number("1 200 €") == 1200
+    )
     assert parse_number("£900") == 900 and parse_number("$5k") == 5000 and parse_number("CHF 10") == 10
-    csv = b"Month,Revenue (USD),Cash,Customers\n2025-01,\"US$1,000\",\"$5,000\",3\n2025-02,\"US$1,100\",\"$5,500\",4\n"
+    csv = (
+        b'Month,Revenue (USD),Cash,Customers\n2025-01,"US$1,000","$5,000",3\n2025-02,"US$1,100","$5,500",4\n'
+    )
     ds = parse_upload(csv, "pl.csv")[0]
     cols = {c.name: c.currency for c in ds.columns}
     assert cols["Revenue (USD)"] == "usd" and cols["Cash"] is None and cols["Customers"] is None
@@ -82,15 +115,24 @@ def test_column_currency_is_read_from_headers_and_cells():
 
 # ---------------------------------------------------------------- conversion
 
+
 def test_foreign_columns_convert_into_the_reporting_currency_with_the_rate_cited():
-    ds = series([{"period": "2025-01", "rev": 1000.0, "cash": 10_000.0, "fees": 50.0},
-                 {"period": "2025-02", "rev": 2000.0, "cash": 12_000.0, "fees": 60.0}],
-                [{"source_column": "period", "canonical_field": "period"},
-                 {"source_column": "rev", "canonical_field": "revenue.total", "unit": "usd"},
-                 {"source_column": "cash", "canonical_field": "cash_balance", "unit": "usd"},
-                 {"source_column": "fees", "canonical_field": None, "unit": "gbp"}])
+    ds = series(
+        [
+            {"period": "2025-01", "rev": 1000.0, "cash": 10_000.0, "fees": 50.0},
+            {"period": "2025-02", "rev": 2000.0, "cash": 12_000.0, "fees": 60.0},
+        ],
+        [
+            {"source_column": "period", "canonical_field": "period"},
+            {"source_column": "rev", "canonical_field": "revenue.total", "unit": "usd"},
+            {"source_column": "cash", "canonical_field": "cash_balance", "unit": "usd"},
+            {"source_column": "fees", "canonical_field": None, "unit": "gbp"},
+        ],
+    )
     m = build_model([ds], "cad", fx=rates())
-    assert m.value("revenue.total", "2025-01") == pytest.approx(1000 * (1.40 + 1.44 + 1.45) / 3)  # Jan average
+    assert m.value("revenue.total", "2025-01") == pytest.approx(
+        1000 * (1.40 + 1.44 + 1.45) / 3
+    )  # Jan average
     assert m.value("cash_balance", "2025-01") == pytest.approx(10_000 * 1.45)  # a stock: the Jan 31 rate
     assert m.raw["pl:fees"]["2025-02"] == pytest.approx(60 * 1.75)  # raw columns in a currency convert too
     _, ref, _ = m.source_ref("cash_balance", ["2025-01"])
@@ -100,35 +142,62 @@ def test_foreign_columns_convert_into_the_reporting_currency_with_the_rate_cited
 
 
 def test_without_a_rate_a_foreign_column_is_left_out_not_shown_in_the_wrong_currency():
-    ds = series([{"period": "2025-01", "rev": 1000.0}],
-                [{"source_column": "rev", "canonical_field": "revenue.total", "unit": "usd"}])
+    ds = series(
+        [{"period": "2025-01", "rev": 1000.0}],
+        [{"source_column": "rev", "canonical_field": "revenue.total", "unit": "usd"}],
+    )
     m = build_model([ds], "cad", fx=None)
     assert m.value("revenue.total", "2025-01") is None and "pl:rev" not in m.raw
     assert m.fx_skipped == ["pl:rev 2025-01"]
-    same = build_model([series([{"period": "2025-01", "rev": 1000.0}],
-                               [{"source_column": "rev", "canonical_field": "revenue.total", "unit": "cad"}])], "cad")
+    same = build_model(
+        [
+            series(
+                [{"period": "2025-01", "rev": 1000.0}],
+                [{"source_column": "rev", "canonical_field": "revenue.total", "unit": "cad"}],
+            )
+        ],
+        "cad",
+    )
     assert same.value("revenue.total", "2025-01") == 1000.0  # already CAD: no rate needed
 
 
 def test_the_view_currency_converts_tables_facts_and_the_round_size():
-    ds = series([{"period": "2025-01", "rev": 1450.0}, {"period": "2025-02", "rev": 1380.0}],
-                [{"source_column": "rev", "canonical_field": "revenue.total", "unit": "cad"}])
-    fact = Fact(id="f1", name="bookings_q1", label="Q1 bookings", value=100.0, unit="gbp", period="2025-02",
-                status="confirmed", source=Source(kind="pdf", ref="deck.pdf p.2"))
+    ds = series(
+        [{"period": "2025-01", "rev": 1450.0}, {"period": "2025-02", "rev": 1380.0}],
+        [{"source_column": "rev", "canonical_field": "revenue.total", "unit": "cad"}],
+    )
+    fact = Fact(
+        id="f1",
+        name="bookings_q1",
+        label="Q1 bookings",
+        value=100.0,
+        unit="gbp",
+        period="2025-02",
+        status="confirmed",
+        source=Source(kind="pdf", ref="deck.pdf p.2"),
+    )
     profile = {"currency": "cad", "round_size": 1_420_000, "granularity": "month"}
     ctx = build_context([ds], [fact], profile, fx=rates(), currency="usd")
     assert ctx.currency == "usd" and ctx.profile["reporting_currency"] == "cad"
     jan = (1.40 + 1.44 + 1.45) / 3
     assert ctx.model.value("revenue.total", "2025-01") == pytest.approx(1450 / jan)
     f = ctx.facts[0]
-    assert f.unit == "usd" and f.value == pytest.approx(100 * 1.75 / ((1.42 + 1.38) / 2)) and "GBP→USD" in f.source.ref
-    assert ctx.profile["round_size"] == pytest.approx(1_420_000 / 1.38) and "CAD→USD" in ctx.profile["round_size_fx"]
+    assert (
+        f.unit == "usd"
+        and f.value == pytest.approx(100 * 1.75 / ((1.42 + 1.38) / 2))
+        and "GBP→USD" in f.source.ref
+    )
+    assert (
+        ctx.profile["round_size"] == pytest.approx(1_420_000 / 1.38)
+        and "CAD→USD" in ctx.profile["round_size_fx"]
+    )
     base = build_context([ds], [fact], profile, fx=rates())
     assert base.currency == "cad" and base.model.value("revenue.total", "2025-01") == 1450.0
     assert base.facts[0].unit == "cad" and base.facts[0].value == pytest.approx(100 * 1.75)
 
 
 # ---------------------------------------------------------------- Bank of Canada client
+
 
 @pytest.fixture
 def cache(monkeypatch) -> dict:
@@ -149,8 +218,10 @@ def cache(monkeypatch) -> dict:
 def _valet(request: httpx.Request) -> httpx.Response:
     series_ids = request.url.path.split("/")[-2].split(",")
     year = request.url.params["start_date"][:4]
-    obs = [{"d": f"{year}-01-02", **{s: {"v": "1.5"} for s in series_ids}},
-           {"d": f"{year}-01-03", **{s: {"v": "1.6"} for s in series_ids}}]
+    obs = [
+        {"d": f"{year}-01-02", **{s: {"v": "1.5"} for s in series_ids}},
+        {"d": f"{year}-01-03", **{s: {"v": "1.6"} for s in series_ids}},
+    ]
     return httpx.Response(200, json={"observations": obs})
 
 
@@ -161,10 +232,17 @@ async def test_valet_rates_are_parsed_per_year_cached_and_reused(cache):
         seen.append(str(request.url))
         return _valet(request)
 
-    r = await fx_service.load({"usd", "eur", "cad", "nope"}, date(date.today().year - 1, 5, 1),
-                              transport=httpx.MockTransport(handler))
+    r = await fx_service.load(
+        {"usd", "eur", "cad", "nope"},
+        date(date.today().year - 1, 5, 1),
+        transport=httpx.MockTransport(handler),
+    )
     y = date.today().year
-    assert set(r.daily) == {"usd", "eur"} and r.daily["usd"][f"{y - 1}-01-02"] == 1.5 and f"{y}-01-03" in r.daily["eur"]
+    assert (
+        set(r.daily) == {"usd", "eur"}
+        and r.daily["usd"][f"{y - 1}-01-02"] == 1.5
+        and f"{y}-01-03" in r.daily["eur"]
+    )
     assert len(seen) == 2 and all("FXEURCAD,FXUSDCAD" in u for u in seen)  # one call per year, both series
     assert ("usd", y - 1) in cache
     again = await fx_service.load({"usd"}, date(y - 1, 5, 1), transport=httpx.MockTransport(handler))
@@ -178,7 +256,10 @@ async def test_an_unreachable_api_falls_back_to_the_cache_or_no_rates(cache):
     r = await fx_service.load({"usd"}, transport=httpx.MockTransport(down))
     assert r.daily == {} and r.rate("usd", "cad", "2025-01") is None
     y = date.today().year
-    cache[("usd", y)] = {"fetched": "2000-01-01T00:00:00+00:00", "obs": {f"{y}-01-02": 1.33}}  # stale, but all there is
+    cache[("usd", y)] = {
+        "fetched": "2000-01-01T00:00:00+00:00",
+        "obs": {f"{y}-01-02": 1.33},
+    }  # stale, but all there is
     r = await fx_service.load({"usd"}, transport=httpx.MockTransport(down))
     assert r.daily["usd"] == {f"{y}-01-02": 1.33}
     assert (await fx_service.load(set())).daily == {}
@@ -197,6 +278,7 @@ def test_a_cached_year_counts_as_stale_until_it_is_over():
 
 
 # ---------------------------------------------------------------- dashboard display currency (API)
+
 
 @pytest.mark.db
 async def test_dashboard_shows_any_currency_at_cited_rates(api_client, monkeypatch):
@@ -234,4 +316,6 @@ async def test_dashboard_shows_any_currency_at_cited_rates(api_client, monkeypat
         assert b[key]["display"].startswith(("US$", "-US$"))
     eur = await api_client.get("/dashboards/active", params={"currency": "EUR"})
     assert eur.json()["currency"] == "eur"
-    assert (await api_client.get("/dashboards/active", params={"currency": "xyz"})).json()["currency"] == "cad"
+    assert (await api_client.get("/dashboards/active", params={"currency": "xyz"})).json()[
+        "currency"
+    ] == "cad"

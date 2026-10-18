@@ -12,7 +12,9 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def test_highest_bid_speaks():
-    ranked = referee.rank([Bid("a", 0.4, "new_topic", "a.h1"), Bid("b", 0.9, "new_topic", "b.h1")], answer_weak=False)
+    ranked = referee.rank(
+        [Bid("a", 0.4, "new_topic", "a.h1"), Bid("b", 0.9, "new_topic", "b.h1")], answer_weak=False
+    )
     assert ranked[0].vc_id == "b"
 
 
@@ -29,8 +31,13 @@ def test_weak_answer_gets_a_follow_up_bonus():
 
 
 def test_jump_in_needs_a_margin():
-    ranked = referee.rank([Bid("a", 0.62, "jump_in", "a.h1", turns_since_spoke=5),
-                           Bid("b", 0.6, "new_topic", "b.h1", turns_since_spoke=5)], answer_weak=False)
+    ranked = referee.rank(
+        [
+            Bid("a", 0.62, "jump_in", "a.h1", turns_since_spoke=5),
+            Bid("b", 0.6, "new_topic", "b.h1", turns_since_spoke=5),
+        ],
+        answer_weak=False,
+    )
     assert ranked[0].vc_id == "b"
 
 
@@ -69,17 +76,27 @@ def test_no_concession_without_a_matching_figure():
     minds.update_and_bid(p, state, [], weak=True, current_vc="aristotle", current_hyp=h["id"], turns_since=0)
     assert h["confidence"] >= before  # evasive answer: doubt can't drop
     match = [{"status": "matches", "figure_id": "cmgr_12m"}]
-    minds.update_and_bid(p, state, match, weak=False, current_vc="aristotle", current_hyp=h["id"], turns_since=0)
+    minds.update_and_bid(
+        p, state, match, weak=False, current_vc="aristotle", current_hyp=h["id"], turns_since=0
+    )
     assert h["confidence"] < before
 
 
 def test_fr4_no_sample_company_names_in_code():
     names = re.compile(r"tidewell|northern comfort", re.I)
-    roots = [REPO / "backend" / "vicky", REPO / "frontend" / "app", REPO / "frontend" / "components", REPO / "frontend" / "lib"]
+    roots = [
+        REPO / "backend" / "vicky",
+        REPO / "frontend" / "app",
+        REPO / "frontend" / "components",
+        REPO / "frontend" / "lib",
+    ]
     hits = []
     for root in roots:
         for path in root.rglob("*"):
-            if path.is_file() and path.suffix in (".py", ".ts", ".tsx", ".yaml", ".md", ".css") and names.search(
-                    path.read_text(encoding="utf-8", errors="ignore")):
+            if (
+                path.is_file()
+                and path.suffix in (".py", ".ts", ".tsx", ".yaml", ".md", ".css")
+                and names.search(path.read_text(encoding="utf-8", errors="ignore"))
+            ):
                 hits.append(str(path.relative_to(REPO)))
     assert not hits, hits

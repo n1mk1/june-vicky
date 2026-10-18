@@ -43,9 +43,12 @@ async def status() -> dict:
         """select count(*) filter (where kind <> 'hub') as notes, count(*) filter (where kind = 'hub') as hubs,
                   count(*) filter (where kind = 'table') as tables, count(*) filter (where kind = 'document') as documents,
                   count(*) filter (where organized_at is null) as unorganized, max(organized_at) as organized_at
-           from kb_notes""")
-    files = await db.fetchrow("select count(*) as files, count(*) filter (where status = 'failed') as failed, "
-                              "coalesce(sum(size), 0)::bigint as bytes from kb_files")
+           from kb_notes"""
+    )
+    files = await db.fetchrow(
+        "select count(*) as files, count(*) filter (where status = 'failed') as failed, "
+        "coalesce(sum(size), 0)::bigint as bytes from kb_files"
+    )
     # A job counts as running only while it is live: one left "running" or "queued" by a process that died is
     # never coming back (the same rule the index build uses to wait for the vault).
     recent = await db.fetch(
@@ -53,10 +56,13 @@ async def status() -> dict:
                   status in ('queued', 'running')
                     and coalesce(started_at, enqueued_at) > now() - make_interval(secs => $1) as live
            from jobs where kind in ('kb_ingest', 'kb_organize') order by enqueued_at desc limit 8""",
-        jobs.STALE_AFTER_S)
+        jobs.STALE_AFTER_S,
+    )
     running = any(j.pop("live") for j in recent)
-    failures = await db.fetch("select id::text, filename, error from kb_files where status = 'failed' "
-                              "order by created_at desc limit 20")
+    failures = await db.fetch(
+        "select id::text, filename, error from kb_files where status = 'failed' "
+        "order by created_at desc limit 20"
+    )
     from vicky.kb import index
 
     try:
@@ -70,11 +76,27 @@ async def status() -> dict:
         stats = {k: int(v) for k, v in raw.items()}
     except Exception:
         stats = {}
-    asked = sum(stats.get(k, 0) for k in ("path_chunks", "path_recover", "path_figures", "path_offline", "offer"))
-    rag_out = {**stats, "offer_rate": round(stats.get("offer", 0) / asked, 3) if asked else None,
-               "accept_rate": round(stats.get("offer_accepted", 0) / stats["offer"], 3) if stats.get("offer") else None}
-    return {**counts, **files, "jobs": recent, "running": running,
-            "failures": failures, "ocr": ocr.available(), "llm": llm.enabled(), "index": idx, "rag": rag_out}
+    asked = sum(
+        stats.get(k, 0) for k in ("path_chunks", "path_recover", "path_figures", "path_offline", "offer")
+    )
+    rag_out = {
+        **stats,
+        "offer_rate": round(stats.get("offer", 0) / asked, 3) if asked else None,
+        "accept_rate": round(stats.get("offer_accepted", 0) / stats["offer"], 3)
+        if stats.get("offer")
+        else None,
+    }
+    return {
+        **counts,
+        **files,
+        "jobs": recent,
+        "running": running,
+        "failures": failures,
+        "ocr": ocr.available(),
+        "llm": llm.enabled(),
+        "index": idx,
+        "rag": rag_out,
+    }
 
 
 @router.post("/index")
@@ -148,13 +170,21 @@ async def import_files(files: list[UploadFile] = File(...)) -> dict:
             raise HTTPException(413, f"{f.filename} is over {limit // (1024 * 1024)} MB")
         total += len(data)
         if total > total_cap:
-            raise HTTPException(413, f"One import can bring in at most {total_cap // (1024 * 1024)} MB. "
-                                     "Import the files in smaller batches.")
+            raise HTTPException(
+                413,
+                f"One import can bring in at most {total_cap // (1024 * 1024)} MB. "
+                "Import the files in smaller batches.",
+            )
         uploads.append((f.filename or "upload", data, f.content_type or ""))
     out = await ingest.import_files(uploads)
-    out["files"] += [{"filename": f.filename or "upload", "status": "skipped",
-                      "error": f"Only {MAX_IMPORT_FILES} files are read per import; import the rest separately."}
-                     for f in files[MAX_IMPORT_FILES:]]
+    out["files"] += [
+        {
+            "filename": f.filename or "upload",
+            "status": "skipped",
+            "error": f"Only {MAX_IMPORT_FILES} files are read per import; import the rest separately.",
+        }
+        for f in files[MAX_IMPORT_FILES:]
+    ]
     return out
 
 
@@ -182,8 +212,11 @@ async def original(fid: str) -> Response:
         row = None
     if row is None:
         raise HTTPException(404, "That file isn't in the knowledge base.")
-    return Response(bytes(row["bytes"]), media_type=row["mime"] or "application/octet-stream",
-                    headers=attachment_headers(row["filename"].rsplit("/", 1)[-1]))
+    return Response(
+        bytes(row["bytes"]),
+        media_type=row["mime"] or "application/octet-stream",
+        headers=attachment_headers(row["filename"].rsplit("/", 1)[-1]),
+    )
 
 
 def attachment_headers(name: str) -> dict[str, str]:
@@ -191,9 +224,13 @@ def attachment_headers(name: str) -> dict[str, str]:
     RFC 5987 `filename*` with the real one; control characters (CR, LF) never reach the header, and the
     browser may not sniff the bytes into something it would render."""
     name = re.sub(r"[\x00-\x1f\x7f]+", "", name) or "download"
-    fallback = name.encode("ascii", "replace").decode("ascii").replace('"', "").replace("\\", "") or "download"
-    return {"content-disposition": f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}",
-            "x-content-type-options": "nosniff"}
+    fallback = (
+        name.encode("ascii", "replace").decode("ascii").replace('"', "").replace("\\", "") or "download"
+    )
+    return {
+        "content-disposition": f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}",
+        "x-content-type-options": "nosniff",
+    }
 
 
 @router.post("/autofill")

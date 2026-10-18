@@ -69,18 +69,24 @@ ROUTES: dict[str, Route] = {
     "update_bid": Route("fast", "low", 4000, timeout_s=12),
     "speak": Route("fast", "medium", 4000, timeout_s=12),
     "chair": Route("fast", "low", 1024, thinking_off=True),
-    "judge": Route("deep", "high", 8000, timeout_s=20),       # Vicky scores the answer
-    "review": Route("tiny", "low", 2000, timeout_s=12),       # Vicky reviews an investor's draft line before it is spoken
-    "probes": Route("fast", "medium", 6000, timeout_s=30),    # knowledge questions from the founder's notes, at start
+    "judge": Route("deep", "high", 8000, timeout_s=20),  # Vicky scores the answer
+    "review": Route(
+        "tiny", "low", 2000, timeout_s=12
+    ),  # Vicky reviews an investor's draft line before it is spoken
+    "probes": Route(
+        "fast", "medium", 6000, timeout_s=30
+    ),  # knowledge questions from the founder's notes, at start
     "ask_knowledge": Route("fast", "low", 2000, timeout_s=12),
-    "verify": Route("tiny", "low", 2000, timeout_s=12),       # Vicky checks a knowledge answer against the notes
+    "verify": Route("tiny", "low", 2000, timeout_s=12),  # Vicky checks a knowledge answer against the notes
     "claims": Route("tiny", "low", 4000, timeout_s=12),
     "mapper": Route("fast", "medium", 8000),
     "doc_facts": Route("deep", "medium", 16000),
     "doc_parse": Route("deep", "medium", 16000),
     "qa": Route("fast", "medium", 3000),
-    "qa_rag": Route("tiny", "low", 3000),     # Ask Vicky from retrieved chunks (docs/08-RAG.md)
-    "qa_full": Route("tiny", "medium", 4000),  # the catch-all over the whole vault, only after the user accepts
+    "qa_rag": Route("tiny", "low", 3000),  # Ask Vicky from retrieved chunks (docs/08-RAG.md)
+    "qa_full": Route(
+        "tiny", "medium", 4000
+    ),  # the catch-all over the whole vault, only after the user accepts
     "persona": Route("fast", "medium", 8000),
     "kb_organize": Route("fast", "medium", 16000),
     "kb_hubs": Route("fast", "medium", 12000),
@@ -159,8 +165,13 @@ class LLM:
     def params(self, route_name: str, system: str | list[str], messages: list[dict]) -> dict[str, Any]:
         route = ROUTES[route_name]
         model = model_for(route)
-        p: dict[str, Any] = {"model": model, "max_tokens": route.max_tokens, "system": system_blocks(system),
-                             "messages": messages, "output_config": {"effort": route.effort}}
+        p: dict[str, Any] = {
+            "model": model,
+            "max_tokens": route.max_tokens,
+            "system": system_blocks(system),
+            "messages": messages,
+            "output_config": {"effort": route.effort},
+        }
         if route.thinking_off and model.startswith("claude-sonnet-5-5"):
             p["thinking"] = {"type": "between_tools"}
         if get_settings().llm_server_fallbacks and supports_fallbacks(model):
@@ -220,8 +231,15 @@ class LLM:
 
     # ------------------------------------------------------------ calls
 
-    async def parse(self, route: str, schema: type[T], *, system: str | list[str], messages: list[dict],
-                    request_timeout_s: float | None = None) -> T:
+    async def parse(
+        self,
+        route: str,
+        schema: type[T],
+        *,
+        system: str | list[str],
+        messages: list[dict],
+        request_timeout_s: float | None = None,
+    ) -> T:
         """One structured-output call; returns the validated `schema` instance."""
         p = self.params(route, system, messages)
         timeout = self._timeout(route, request_timeout_s)
@@ -236,13 +254,25 @@ class LLM:
 
         return await self._guard(call, timeout)
 
-    async def text(self, route: str, *, system: str | list[str], messages: list[dict],
-                   request_timeout_s: float | None = None) -> str:
+    async def text(
+        self,
+        route: str,
+        *,
+        system: str | list[str],
+        messages: list[dict],
+        request_timeout_s: float | None = None,
+    ) -> str:
         msg = await self.message(route, system=system, messages=messages, request_timeout_s=request_timeout_s)
         return "".join(b.text for b in msg.content if b.type == "text").strip()
 
-    async def message(self, route: str, *, system: str | list[str], messages: list[dict],
-                      request_timeout_s: float | None = None) -> Any:
+    async def message(
+        self,
+        route: str,
+        *,
+        system: str | list[str],
+        messages: list[dict],
+        request_timeout_s: float | None = None,
+    ) -> Any:
         """A plain call that returns the whole message (used for citations, which can't be combined
         with structured outputs)."""
         p = self.params(route, system, messages)
@@ -253,16 +283,25 @@ class LLM:
 
         return await self._guard(call, timeout)
 
-    async def run_tools(self, route: str, schema: type[T], *, system: str | list[str], messages: list[dict],
-                        tools: Iterable[Any], max_iterations: int = 6) -> T:
+    async def run_tools(
+        self,
+        route: str,
+        schema: type[T],
+        *,
+        system: str | list[str],
+        messages: list[dict],
+        tools: Iterable[Any],
+        max_iterations: int = 6,
+    ) -> T:
         """Tool runner over read-only tools, ending in a structured `schema` answer. The route's timeout
         bounds the whole loop, and the budget is checked again before each further call."""
         p = self.params(route, system, messages)
         timeout = self._timeout(route, None)
 
         async def call() -> T:
-            runner = self._client(timeout).beta.messages.tool_runner(tools=list(tools), output_format=schema,
-                                                                     max_iterations=max_iterations, **p)
+            runner = self._client(timeout).beta.messages.tool_runner(
+                tools=list(tools), output_format=schema, max_iterations=max_iterations, **p
+            )
             last = None
             async for msg in runner:
                 last = msg
@@ -270,7 +309,9 @@ class LLM:
                 if msg.stop_reason == "refusal":
                     d = getattr(msg, "stop_details", None)
                     raise LLMRefusal(getattr(d, "category", None), getattr(d, "explanation", None))
-                if msg.stop_reason == "tool_use" and await over_budget():  # the runner would call the model again
+                if (
+                    msg.stop_reason == "tool_use" and await over_budget()
+                ):  # the runner would call the model again
                     raise BudgetExceeded("daily LLM budget reached during a tool loop")
             if last is None:
                 raise LLMError("tool runner returned nothing")

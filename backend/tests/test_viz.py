@@ -47,14 +47,23 @@ def _csv_rows(sample: str, filename: str) -> list[dict]:
 
 
 def _spec(template="line", refs=("mrr",), **kw) -> WidgetSpec:
-    return WidgetSpec.model_validate({"template": template, "title": kw.pop("title", "Test widget"),
-                                      "series": [{"ref": r} if isinstance(r, str) else r for r in refs], **kw})
+    return WidgetSpec.model_validate(
+        {
+            "template": template,
+            "title": kw.pop("title", "Test widget"),
+            "series": [{"ref": r} if isinstance(r, str) else r for r in refs],
+            **kw,
+        }
+    )
 
 
 # ---------------------------------------------------------------- DSL
 
+
 def test_pct_of_burn_ex_credits_by_quarter_matches_csv(tidewell):
-    ev = evaluate_widget(_spec("bar", ["pct_of(burn_ex_non_dilutive, revenue)"], group_by="quarter"), tidewell)
+    ev = evaluate_widget(
+        _spec("bar", ["pct_of(burn_ex_non_dilutive, revenue)"], group_by="quarter"), tidewell
+    )
     assert ev.status == "ok", ev.error
     assert ev.series[0].unit == "pct"
 
@@ -65,8 +74,11 @@ def test_pct_of_burn_ex_credits_by_quarter_matches_csv(tidewell):
         counts[q] += 1
         for col in ("net_income", "other_income_srred_credit", "total_revenue"):
             sums[q][col] += parse_number(row[col])
-    expected = {q: -(s["net_income"] - s["other_income_srred_credit"]) / s["total_revenue"]
-                for q, s in sums.items() if counts[q] == 3}
+    expected = {
+        q: -(s["net_income"] - s["other_income_srred_credit"]) / s["total_revenue"]
+        for q, s in sums.items()
+        if counts[q] == 3
+    }
 
     assert ev.periods == sorted(expected)
     got = {p.period: p.value for p in ev.series[0].points}
@@ -93,8 +105,15 @@ def test_cmgr_matches_engine_figure(tidewell, harbor):
 def test_mrr_and_burn_match_sample_csv(tidewell):
     # QA-1: this used to read a frontend copy of the sample that no longer exists (and always skipped);
     # the source of truth is the sample's own CSV.
-    rows = [(r["month"], parse_number(r["subscription_revenue"]), parse_number(r["other_income_srred_credit"]),
-             parse_number(r["net_income"])) for r in _csv_rows("tidewell", "income_statement_monthly.csv")]
+    rows = [
+        (
+            r["month"],
+            parse_number(r["subscription_revenue"]),
+            parse_number(r["other_income_srred_credit"]),
+            parse_number(r["net_income"]),
+        )
+        for r in _csv_rows("tidewell", "income_statement_monthly.csv")
+    ]
     assert len(rows) == 24
     mrr = {m: sub for m, sub, _, _ in rows}
     burn = {m: -(net - srred) for m, _, srred, net in rows}
@@ -115,31 +134,34 @@ def test_mrr_and_burn_match_sample_csv(tidewell):
     assert ev2.series[0].points[-1].value == burn["2026-09"]
 
 
-@pytest.mark.parametrize("expr", [
-    '__import__("os")',
-    "a.b.c",
-    "foo(1)",
-    "x[0]",
-    "lambda: 1",
-    "lambda x: x",
-    "revenue.total.__class__",
-    "revenue.recurring.real",
-    "(revenue).total",
-    'eval("1")',
-    'open("x")',
-    "net_income if 1 else 0",
-    '"text"',
-    "unknown_metric + 1",
-    "revenue ** 2",
-    "rolling(revenue, n)",
-    "lag(revenue, 1.5)",
-    "pct_of(revenue)",
-    "revenue revenue",
-    "",
-    "1 +",
-    "a; b",
-    "x = 1",
-])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        '__import__("os")',
+        "a.b.c",
+        "foo(1)",
+        "x[0]",
+        "lambda: 1",
+        "lambda x: x",
+        "revenue.total.__class__",
+        "revenue.recurring.real",
+        "(revenue).total",
+        'eval("1")',
+        'open("x")',
+        "net_income if 1 else 0",
+        '"text"',
+        "unknown_metric + 1",
+        "revenue ** 2",
+        "rolling(revenue, n)",
+        "lag(revenue, 1.5)",
+        "pct_of(revenue)",
+        "revenue revenue",
+        "",
+        "1 +",
+        "a; b",
+        "x = 1",
+    ],
+)
 def test_dsl_rejects_unsafe_and_unknown(expr, tidewell):
     with pytest.raises(DSLError) as exc:
         parse(expr)
@@ -184,9 +206,21 @@ def test_dsl_grammar_and_unicode_operators(tidewell):
 def test_dsl_functions(tidewell):
     m = tidewell.model
     rec = [m.value("revenue.recurring", p) for p in m.periods]
-    ev = evaluate_widget(_spec("line", ["lag(revenue.recurring, 1)", "rolling(revenue.recurring, 3)",
-                                        "mom(revenue.recurring)", "yoy(revenue.recurring)", "cumsum(revenue.recurring)",
-                                        "abs(net_income)", "max(cogs, opex.customer_success)"]), tidewell)
+    ev = evaluate_widget(
+        _spec(
+            "line",
+            [
+                "lag(revenue.recurring, 1)",
+                "rolling(revenue.recurring, 3)",
+                "mom(revenue.recurring)",
+                "yoy(revenue.recurring)",
+                "cumsum(revenue.recurring)",
+                "abs(net_income)",
+                "max(cogs, opex.customer_success)",
+            ],
+        ),
+        tidewell,
+    )
     assert ev.status == "ok", ev.error
     s = {i: [p.value for p in x.points] for i, x in enumerate(ev.series)}
     assert ev.periods == m.periods
@@ -204,6 +238,7 @@ def test_dsl_functions(tidewell):
 
 # ---------------------------------------------------------------- evaluator
 
+
 def test_windows(tidewell):
     ev = evaluate_widget(_spec("line", ["mrr"], window={"from": "2025-01", "to": "2025-06"}), tidewell)
     assert ev.periods == ["2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06"]
@@ -219,8 +254,11 @@ def test_year_grouping_skips_partial_years(tidewell):
     ev = evaluate_widget(_spec("bar", ["revenue"], group_by="year"), tidewell)
     assert ev.status == "ok"
     assert ev.periods == ["2025"]
-    total = sum(parse_number(r["total_revenue"]) for r in _csv_rows("tidewell", "income_statement_monthly.csv")
-                if r["month"].startswith("2025"))
+    total = sum(
+        parse_number(r["total_revenue"])
+        for r in _csv_rows("tidewell", "income_statement_monthly.csv")
+        if r["month"].startswith("2025")
+    )
     assert ev.series[0].points[0].value == total
     assert any("Partial" in n for n in ev.notes)
 
@@ -241,8 +279,14 @@ def test_missing_data_returns_missing(services, harbor):
     assert evaluate_widget(_spec("line", ["nrr"]), services).status == "missing"
     ev = evaluate_widget(_spec("line", ["mrr"]), services)
     assert ev.status == "missing" and "revenue.recurring" in ev.missing.needs
-    ev = evaluate_widget(_spec("bar", [{"ref": "pct_of(burn_ex_non_dilutive, revenue)", "label": "Burn excluding credits"}],
-                               group_by="quarter"), harbor)
+    ev = evaluate_widget(
+        _spec(
+            "bar",
+            [{"ref": "pct_of(burn_ex_non_dilutive, revenue)", "label": "Burn excluding credits"}],
+            group_by="quarter",
+        ),
+        harbor,
+    )
     assert ev.status == "missing"
     assert ev.missing.needs == ["non_dilutive_income"]
     assert ev.missing.reason.startswith("Burn excluding credits needs non-dilutive income")
@@ -273,10 +317,14 @@ def test_kpi_uses_engine_figures(tidewell):
     assert ev.status == "ok"
     assert ev.kpi.primary.value == tidewell.figures["arr"].value
     assert ev.kpi.primary.source.kind == "csv"
-    assert [k.value for k in ev.kpi.secondary] == [tidewell.figures["cmgr_12m"].value, tidewell.figures["burn"].value]
+    assert [k.value for k in ev.kpi.secondary] == [
+        tidewell.figures["cmgr_12m"].value,
+        tidewell.figures["burn"].value,
+    ]
 
 
 # ---------------------------------------------------------------- ECharts
+
 
 def _walk_numbers(obj) -> list[float]:
     if isinstance(obj, bool) or obj is None:
@@ -301,14 +349,27 @@ def _walk_strings(obj) -> list[str]:
 
 
 def test_echarts_option_numbers_come_only_from_evaluator(tidewell):
-    spec = WidgetSpec.model_validate({
-        "template": "combo_bar_line", "title": "Burn ex-credits as % of revenue (spec title)",
-        "series": [{"ref": "burn_ex_non_dilutive", "label": "Spec label burn"},
-                   {"ref": "pct_of(burn_ex_non_dilutive, revenue.total)", "label": "Spec label pct", "axis": "right"}],
-        "window": {"from": "2024-Q4", "to": "2026-Q3"}, "group_by": "quarter",
-        "presentation": {"labels": True, "unit": None,
-                         "mark_lines": [{"label": "Spec mark line", "value_ref": "avg(burn_ex_non_dilutive)"}]},
-    })
+    spec = WidgetSpec.model_validate(
+        {
+            "template": "combo_bar_line",
+            "title": "Burn ex-credits as % of revenue (spec title)",
+            "series": [
+                {"ref": "burn_ex_non_dilutive", "label": "Spec label burn"},
+                {
+                    "ref": "pct_of(burn_ex_non_dilutive, revenue.total)",
+                    "label": "Spec label pct",
+                    "axis": "right",
+                },
+            ],
+            "window": {"from": "2024-Q4", "to": "2026-Q3"},
+            "group_by": "quarter",
+            "presentation": {
+                "labels": True,
+                "unit": None,
+                "mark_lines": [{"label": "Spec mark line", "value_ref": "avg(burn_ex_non_dilutive)"}],
+            },
+        }
+    )
     ev = evaluate_widget(spec, tidewell)
     assert ev.status == "ok"
     opt = build_option(spec, ev, "vicky-dark")
@@ -320,8 +381,13 @@ def test_echarts_option_numbers_come_only_from_evaluator(tidewell):
     assert len(source) == len(ev.periods) + 1
     data_strings = set(_walk_strings(source))
     assert data_strings <= set(ev.period_labels) | {"period", "s0", "s1"}
-    spec_strings = {spec.title, *(s.ref for s in spec.series), *(s.label for s in spec.series),
-                    *(m.label for m in spec.presentation.mark_lines), *(m.value_ref for m in spec.presentation.mark_lines)}
+    spec_strings = {
+        spec.title,
+        *(s.ref for s in spec.series),
+        *(s.label for s in spec.series),
+        *(m.label for m in spec.presentation.mark_lines),
+        *(m.value_ref for m in spec.presentation.mark_lines),
+    }
     assert not data_strings & spec_strings
     assert opt["title"]["text"] == spec.title
     for s in opt["series"]:
@@ -354,17 +420,22 @@ def test_echarts_line_dashed_and_dual_axis(tidewell):
     assert opt["dataset"]["source"][-1][0] == "Sep 26"
 
 
-@pytest.mark.parametrize("template,refs", [
-    ("waterfall", ["net_income"]),
-    ("stacked_bar", ["opex.r_and_d", "opex.s_and_m"]),
-    ("area", ["revenue.recurring", "revenue.one_time"]),
-    ("scatter", ["opex.s_and_m", "revenue.recurring"]),
-    ("table", ["revenue", "gross_margin"]),
-    ("gauge_ring", ["gross_margin", "gross_margin_incl_cs"]),
-    ("kpi", ["arr"]),
-])
+@pytest.mark.parametrize(
+    "template,refs",
+    [
+        ("waterfall", ["net_income"]),
+        ("stacked_bar", ["opex.r_and_d", "opex.s_and_m"]),
+        ("area", ["revenue.recurring", "revenue.one_time"]),
+        ("scatter", ["opex.s_and_m", "revenue.recurring"]),
+        ("table", ["revenue", "gross_margin"]),
+        ("gauge_ring", ["gross_margin", "gross_margin_incl_cs"]),
+        ("kpi", ["arr"]),
+    ],
+)
 def test_echarts_templates_build(template, refs, tidewell):
-    spec = _spec(template, refs, group_by="quarter", compare="previous_period" if template == "area" else None)
+    spec = _spec(
+        template, refs, group_by="quarter", compare="previous_period" if template == "area" else None
+    )
     ev = evaluate_widget(spec, tidewell)
     assert ev.status == "ok", ev.error
     opt = build_option(spec, ev)
@@ -388,11 +459,23 @@ def test_echarts_missing_widget(services):
 
 # ---------------------------------------------------------------- spec + defaults
 
+
 def test_spec_hash_stable():
-    a = {"template": "line", "title": "T", "series": [{"ref": "mrr", "label": "MRR", "axis": "left"}],
-         "window": {"from": "2025-01", "last_n": 6}, "group_by": None, "presentation": {"smooth": True, "labels": False}}
-    b = {"presentation": {"labels": False, "smooth": True}, "window": {"last_n": 6, "from": "2025-01"},
-         "series": [{"axis": "left", "label": "MRR", "ref": "mrr"}], "title": "T", "template": "line"}
+    a = {
+        "template": "line",
+        "title": "T",
+        "series": [{"ref": "mrr", "label": "MRR", "axis": "left"}],
+        "window": {"from": "2025-01", "last_n": 6},
+        "group_by": None,
+        "presentation": {"smooth": True, "labels": False},
+    }
+    b = {
+        "presentation": {"labels": False, "smooth": True},
+        "window": {"last_n": 6, "from": "2025-01"},
+        "series": [{"axis": "left", "label": "MRR", "ref": "mrr"}],
+        "title": "T",
+        "template": "line",
+    }
     assert spec_hash(a) == spec_hash(b) == spec_hash(WidgetSpec.model_validate(b))
     assert len(spec_hash(a)) == 64
     assert spec_hash({**a, "title": "U"}) != spec_hash(a)
@@ -409,11 +492,13 @@ def test_default_dashboard(sample):
     assert len(d.widgets) == len(d.layout) == len(d.roles)
     assert d.roles[:3] == ["margin_ring", "headline_kpi", "trend"]
     assert d.widgets[0].template == "gauge_ring" and d.widgets[1].template == "kpi"
-    boxes = [(li.x, li.y, li.w, li.h) for li in d.layout] + [(r["x"], r["y"], r["w"], r["h"]) for r in d.reserved]
+    boxes = [(li.x, li.y, li.w, li.h) for li in d.layout] + [
+        (r["x"], r["y"], r["w"], r["h"]) for r in d.reserved
+    ]
     for x, _y, w, h in boxes:
         assert 0 <= x and x + w <= 12 and w > 0 and h > 0
     for i, a in enumerate(boxes):
-        for b in boxes[i + 1:]:
+        for b in boxes[i + 1 :]:
             overlap = a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
             assert not overlap, (a, b)
     for w in d.widgets:
@@ -440,6 +525,8 @@ def test_missing_tiles_for_key_metrics(tidewell):
 
 
 def test_no_eval_in_engine():
-    src = "".join((REPO / "backend" / "vicky" / "viz" / f).read_text(encoding="utf-8")
-                  for f in ("dsl.py", "evaluate.py", "echarts.py"))
+    src = "".join(
+        (REPO / "backend" / "vicky" / "viz" / f).read_text(encoding="utf-8")
+        for f in ("dsl.py", "evaluate.py", "echarts.py")
+    )
     assert not re.search(r"(?<![.\w])(eval|exec|compile)\s*\(", src)

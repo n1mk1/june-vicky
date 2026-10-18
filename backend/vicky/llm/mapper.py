@@ -45,17 +45,27 @@ def _columns_block(ds: ParsedDataset, heuristic: list[ColumnMapping]) -> str:
         samples = ", ".join(str(v)[:30] for v in (d.get("sample_values") or [])[:4])
         h = by_col.get(c.name)
         guess = f"{h.canonical_field} ({h.confidence:.2f})" if h else "-"
-        kind = c.dtype + (f", {c.unit_hint}" if c.unit_hint and c.unit_hint != "text" else "") + \
-            (f", in {c.currency.upper()}" if c.currency else "") + (f", values ×{c.scale:,.0f}" if c.scale != 1 else "")
+        kind = (
+            c.dtype
+            + (f", {c.unit_hint}" if c.unit_hint and c.unit_hint != "text" else "")
+            + (f", in {c.currency.upper()}" if c.currency else "")
+            + (f", values ×{c.scale:,.0f}" if c.scale != 1 else "")
+        )
         lines.append(f"{c.name[:120]} | {kind} | samples: {samples} | rule-based guess: {guess}")
-    return (f"Table '{ds.name[:80]}' ({ds.granularity}, {len(ds.rows)} rows)\n"
-            "Columns (name | type | sample values | rule-based guess):\n" + "\n".join(lines))
+    return (
+        f"Table '{ds.name[:80]}' ({ds.granularity}, {len(ds.rows)} rows)\n"
+        "Columns (name | type | sample values | rule-based guess):\n" + "\n".join(lines)
+    )
 
 
 def mapping_from_llm(out: ColumnMappingList, ds: ParsedDataset, currency: str) -> list[ColumnMapping]:
     """Validated proposals: known columns only, known targets only, units set by code."""
     cols = {c.name: c for c in ds.columns}
-    valid = set(ALL_TARGETS) - {"dim.customer", "dim.cohort", "value.mrr"}  # structure targets are table-kind specific
+    valid = set(ALL_TARGETS) - {
+        "dim.customer",
+        "dim.cohort",
+        "value.mrr",
+    }  # structure targets are table-kind specific
     res = []
     for m in out.columns:
         if m.source_column not in cols:
@@ -68,15 +78,25 @@ def mapping_from_llm(out: ColumnMappingList, ds: ParsedDataset, currency: str) -
         if axis != (target == "period") or (target is not None and col.unit_hint == "pct"):
             continue  # the date axis is code's call, and a percentage is never money: the heuristic stands
         conf = max(0.0, min(0.95, float(m.confidence)))
-        res.append(ColumnMapping(source_column=m.source_column, canonical_field=target, unit=unit_for(target, currency, col),
-                                 confidence=round(conf, 2), note=f"Claude: {m.note.strip()[:160]}" if m.note else "Claude"))
+        res.append(
+            ColumnMapping(
+                source_column=m.source_column,
+                canonical_field=target,
+                unit=unit_for(target, currency, col),
+                confidence=round(conf, 2),
+                note=f"Claude: {m.note.strip()[:160]}" if m.note else "Claude",
+            )
+        )
     return res
 
 
 def merge(heuristic: list[ColumnMapping], proposed: list[ColumnMapping]) -> list[ColumnMapping]:
     merged = merge_mappings(heuristic, proposed)
-    totals = {h.canonical_field: h.source_column for h in heuristic
-              if h.canonical_field and h.canonical_field != "period" and h.confidence >= TOTAL_CONFIDENCE}
+    totals = {
+        h.canonical_field: h.source_column
+        for h in heuristic
+        if h.canonical_field and h.canonical_field != "period" and h.confidence >= TOTAL_CONFIDENCE
+    }
     by_col = {h.source_column: h for h in heuristic}
     out = []
     for m in merged:
@@ -91,15 +111,25 @@ async def propose(ds: ParsedDataset, currency: str) -> tuple[list[ColumnMapping]
     if not llm.enabled() or ds.table_kind != "series" or not ds.columns:
         return heuristic, "heuristic"
     try:
-        out = await with_timeout(get_llm().parse(
-            "mapper", ColumnMappingList, system=MAPPER_TASK,
-            messages=[{"role": "user", "content": f"{_targets_block()}\n\n{_columns_block(ds, heuristic)}"}]), TIMEOUT_S)
+        out = await with_timeout(
+            get_llm().parse(
+                "mapper",
+                ColumnMappingList,
+                system=MAPPER_TASK,
+                messages=[
+                    {"role": "user", "content": f"{_targets_block()}\n\n{_columns_block(ds, heuristic)}"}
+                ],
+            ),
+            TIMEOUT_S,
+        )
         return merge(heuristic, mapping_from_llm(out, ds, currency)), "claude"
     except Exception as e:
         log.warning("column mapper fell back to the heuristic for %s: %s", ds.name, e)
         return heuristic, "heuristic"
 
 
-async def propose_all(datasets: list[ParsedDataset], currency: str) -> dict[str, tuple[list[ColumnMapping], str]]:
+async def propose_all(
+    datasets: list[ParsedDataset], currency: str
+) -> dict[str, tuple[list[ColumnMapping], str]]:
     results = await asyncio.gather(*(propose(ds, currency) for ds in datasets))
     return {ds.name: r for ds, r in zip(datasets, results, strict=True)}

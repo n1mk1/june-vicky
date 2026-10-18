@@ -7,6 +7,15 @@ from vicky.viz.evaluate import EvaluatedWidget, evaluate_widget
 from vicky.viz.spec import WidgetSpec, spec_hash
 
 __all__ = [
-    "DSLError", "DefaultDashboard", "EvaluatedWidget", "WidgetSpec", "build_option", "default_dashboard",
-    "default_layout", "default_widgets", "evaluate_widget", "parse", "spec_hash",
+    "DSLError",
+    "DefaultDashboard",
+    "EvaluatedWidget",
+    "WidgetSpec",
+    "build_option",
+    "default_dashboard",
+    "default_layout",
+    "default_widgets",
+    "evaluate_widget",
+    "parse",
+    "spec_hash",
 ]

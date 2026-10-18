@@ -18,10 +18,17 @@ def sample_model(sample_id: str):
     for f in s.files:
         for ds in f.datasets:
             mapping = s.mappings[f"{f.filename}#{ds.name}"]
-            inputs.append(DatasetInput(
-                id=f"{f.filename}#{ds.name}", name=ds.name, table_kind=ds.table_kind, granularity=ds.granularity,
-                transposed=ds.transposed, rows=ds.rows, mapping=[m.model_dump() for m in mapping],
-            ))
+            inputs.append(
+                DatasetInput(
+                    id=f"{f.filename}#{ds.name}",
+                    name=ds.name,
+                    table_kind=ds.table_kind,
+                    granularity=ds.granularity,
+                    transposed=ds.transposed,
+                    rows=ds.rows,
+                    mapping=[m.model_dump() for m in mapping],
+                )
+            )
     model = build_model(inputs, s.profile.get("currency", "usd"), s.profile.get("granularity"))
     return s, model
 
@@ -46,13 +53,30 @@ async def load_sample_engagement(sample_id: str) -> str:
             uid = await conn.fetchval(
                 """insert into uploads (engagement_id, filename, mime, bytes, size, sha256, kind, status)
                    values ($1,$2,'text/csv',$3,$4,$5,$6::upload_kind,'parsed') returning id::text""",
-                eid, f.filename, f.data, len(f.data), hashlib.sha256(f.data).hexdigest(), kind)
-            await engagements._store_datasets(conn, eid, uid, kind, f.datasets,
-                                              str(s.profile.get("currency", "usd")).lower(),
-                                              preset=s.mappings, filename=f.filename)
+                eid,
+                f.filename,
+                f.data,
+                len(f.data),
+                hashlib.sha256(f.data).hexdigest(),
+                kind,
+            )
+            await engagements._store_datasets(
+                conn,
+                eid,
+                uid,
+                kind,
+                f.datasets,
+                str(s.profile.get("currency", "usd")).lower(),
+                preset=s.mappings,
+                filename=f.filename,
+            )
         facts = [f.model_copy(update={"status": "pending"}) for f in s.facts]
-        await conn.execute("update truthpacks set facts = $2, deck_claims = $3 where engagement_id = $1",
-                           eid, [f.model_dump(mode="json") for f in facts], deck)
+        await conn.execute(
+            "update truthpacks set facts = $2, deck_claims = $3 where engagement_id = $1",
+            eid,
+            [f.model_dump(mode="json") for f in facts],
+            deck,
+        )
     return eid
 
 

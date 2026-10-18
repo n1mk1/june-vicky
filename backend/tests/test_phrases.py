@@ -32,7 +32,10 @@ def test_fr12_burn_excluding_credits_as_share_of_revenue_by_quarter(tidewell):
     ev = evaluate_widget(s, tidewell)
     assert ev.status == "ok" and ev.series[0].unit == "pct"
     # same spec whichever way the credits are named
-    for phrase in ("burn excluding credits as % of revenue by quarter", "burn ex-credits as a percentage of revenue quarterly"):
+    for phrase in (
+        "burn excluding credits as % of revenue by quarter",
+        "burn ex-credits as a percentage of revenue quarterly",
+    ):
         assert interpret(phrase, tidewell).spec == s
 
 
@@ -43,10 +46,17 @@ def test_numbers_in_the_text_never_become_values(tidewell):
     assert 250000 not in evaluate_widget(s, tidewell).numbers()
 
 
-@pytest.mark.parametrize("phrase,months", [
-    ("zoom to the last 6 months", 6), ("Zoom to the last six months", 6), ("focus on the past 2 quarters", 6),
-    ("last 12 months", 12), ("zoom to the last year", 12), ("just show the trailing 3 years", 36),
-])
+@pytest.mark.parametrize(
+    "phrase,months",
+    [
+        ("zoom to the last 6 months", 6),
+        ("Zoom to the last six months", 6),
+        ("focus on the past 2 quarters", 6),
+        ("last 12 months", 12),
+        ("zoom to the last year", 12),
+        ("just show the trailing 3 years", 36),
+    ],
+)
 def test_zoom_phrases_set_a_time_range(tidewell, phrase, months):
     i = interpret(phrase, tidewell)
     assert i.kind == "time_range" and i.last_months == months and i.spec is None
@@ -58,7 +68,9 @@ def test_reset_phrases_clear_the_time_range(tidewell, phrase):
     assert i.kind == "time_range" and i.last_months is None
 
 
-@pytest.mark.parametrize("phrase", ["why is burn falling?", "how fast are we growing", "What valuation should we raise at?"])
+@pytest.mark.parametrize(
+    "phrase", ["why is burn falling?", "how fast are we growing", "What valuation should we raise at?"]
+)
 def test_questions_go_to_the_panel(tidewell, phrase):
     assert interpret(phrase, tidewell).kind == "question"
 
@@ -104,11 +116,18 @@ def test_breakdowns_transforms_and_templates(tidewell):
     assert mix.template == "stacked_bar" and mix.presentation.stack and len(mix.series) >= 3
     assert all(x.ref.startswith("opex.") for x in mix.series)
     assert interpret("cumulative revenue", tidewell).spec.series[0].ref == "cumsum(revenue)"
-    assert interpret("rolling 3 month average of revenue", tidewell).spec.series[0].ref == "rolling(revenue, 3)"
+    assert (
+        interpret("rolling 3 month average of revenue", tidewell).spec.series[0].ref == "rolling(revenue, 3)"
+    )
     assert interpret("MRR growth year over year", tidewell).spec.series[0].ref == "yoy(mrr)"
     assert interpret("revenue as a table", tidewell).spec.template == "table"
     assert interpret("revenue by quarter vs last year", tidewell).spec.compare == "yoy"
-    for p in ("opex breakdown by quarter", "cumulative revenue", "rolling 3 month average of revenue", "MRR growth year over year"):
+    for p in (
+        "opex breakdown by quarter",
+        "cumulative revenue",
+        "rolling 3 month average of revenue",
+        "MRR growth year over year",
+    ):
         assert evaluate_widget(interpret(p, tidewell).spec, tidewell).status == "ok", p
 
 

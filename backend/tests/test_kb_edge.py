@@ -29,8 +29,11 @@ def test_csv_encodings_and_delimiters():
 
 
 def test_html_drops_scripts_and_keeps_tables():
-    (d,) = convert.convert("p.html", b"<title>T</title><script>alert(1)</script><style>x{}</style>"
-                                      b"<p>Body text</p><table><tr><td>a|b</td><td>2</td></tr></table>")
+    (d,) = convert.convert(
+        "p.html",
+        b"<title>T</title><script>alert(1)</script><style>x{}</style>"
+        b"<p>Body text</p><table><tr><td>a|b</td><td>2</td></tr></table>",
+    )
     assert "alert" not in d.content and "x{}" not in d.content
     assert "Body text" in d.content and "| a\\|b | 2 |" in d.content
 
@@ -68,7 +71,10 @@ def test_xlsx_chart_without_cached_values_names_its_cells():
     wb.save(b)
     names = {d.name: d for d in convert.convert("book.xlsx", b.getvalue())}
     assert set(names) == {"book.csv", "book - charts.md"}
-    assert "### Chart: Revenue" in names["book - charts.md"].content and "$B$2:$B$3" in names["book - charts.md"].content
+    assert (
+        "### Chart: Revenue" in names["book - charts.md"].content
+        and "$B$2:$B$3" in names["book - charts.md"].content
+    )
 
 
 def test_pdf_page_without_text_is_marked_when_ocr_is_missing(monkeypatch):
@@ -110,7 +116,9 @@ def test_image_ocr_prefers_the_fuller_reading(monkeypatch):
     b = io.BytesIO()
     Image.new("RGB", (300, 200), "white").save(b, "PNG")
     monkeypatch.setattr(ocr, "available", lambda: True)
-    monkeypatch.setattr(ocr, "bytes_text", lambda data, sparse=False: "$42,000\nJan\nFeb" if sparse else "Jan")
+    monkeypatch.setattr(
+        ocr, "bytes_text", lambda data, sparse=False: "$42,000\nJan\nFeb" if sparse else "Jan"
+    )
     (d,) = convert.convert("chart.png", b.getvalue())
     assert "$42,000" in d.content and d.meta["ocr"] is True
 
@@ -132,14 +140,17 @@ def test_zip_bomb_and_traversal_guards(monkeypatch):
 # ---------------------------------------------------------------- guard, links, tags
 
 
-@pytest.mark.parametrize(("text", "sources", "kept"), [
-    ("Revenue is $1,200 a month.", "revenue,1200", True),        # thousands separator vs plain
-    ("Margin was 72.5%.", "gross margin 72.5%", True),
-    ("Margin was 72.50%.", "gross margin 72.5%", True),          # trailing zero
-    ("Margin was 73%.", "gross margin 72.5%", False),
-    ("See [[FY2024 plan]] next.", "", True),                      # numbers in a link are note names
-    ("Up 3x since launch.", "", False),
-])
+@pytest.mark.parametrize(
+    ("text", "sources", "kept"),
+    [
+        ("Revenue is $1,200 a month.", "revenue,1200", True),  # thousands separator vs plain
+        ("Margin was 72.5%.", "gross margin 72.5%", True),
+        ("Margin was 72.50%.", "gross margin 72.5%", True),  # trailing zero
+        ("Margin was 73%.", "gross margin 72.5%", False),
+        ("See [[FY2024 plan]] next.", "", True),  # numbers in a link are note names
+        ("Up 3x since launch.", "", False),
+    ],
+)
 def test_scrub_numbers_corners(text, sources, kept):
     out, dropped = scrub_numbers(text, sources)
     assert (out == text) is kept and (dropped == 0) is kept
@@ -148,14 +159,36 @@ def test_scrub_numbers_corners(text, sources, kept):
 def test_resolver_prefers_exact_paths_and_tags_are_cleaned():
     r = Resolver([{"path": "a/Plan.md", "title": "Plan"}, {"path": "b/Plan.md", "title": "Other plan"}])
     assert r.resolve("b/Plan") == "b/Plan.md" and r.resolve("Plan") == "a/Plan.md"
-    assert clean_tags(["#Q3 Plan", "q3-plan", "", "Ünïcode!", "財務/計画", "a b!!c"]) == \
-        ["q3-plan", "ünïcode", "財務/計画", "a-b-c"]
+    assert clean_tags(["#Q3 Plan", "q3-plan", "", "Ünïcode!", "財務/計画", "a b!!c"]) == [
+        "q3-plan",
+        "ünïcode",
+        "財務/計画",
+        "a-b-c",
+    ]
 
 
 def test_related_links_tables_with_shared_columns_and_excerpts_skip_figures():
-    a = {"path": "a.csv", "title": "a", "format": "csv", "content": "month,revenue,cogs\n1,2,3\n", "kind": "table"}
-    b = {"path": "b.csv", "title": "b", "format": "csv", "content": "month,revenue,opex\n1,2,3\n", "kind": "table"}
-    c = {"path": "c.md", "title": "c", "format": "md", "content": "Unrelated legal agreement text.", "kind": "note"}
+    a = {
+        "path": "a.csv",
+        "title": "a",
+        "format": "csv",
+        "content": "month,revenue,cogs\n1,2,3\n",
+        "kind": "table",
+    }
+    b = {
+        "path": "b.csv",
+        "title": "b",
+        "format": "csv",
+        "content": "month,revenue,opex\n1,2,3\n",
+        "kind": "table",
+    }
+    c = {
+        "path": "c.md",
+        "title": "c",
+        "format": "md",
+        "content": "Unrelated legal agreement text.",
+        "kind": "note",
+    }
     rel = heuristic_related([a, b, c])
     assert rel["a.csv"] == ["b.csv"] and "c.md" not in rel["b.csv"]
     assert "[figure text]" in excerpt({"format": "md", "content": "x\n```text\nOCR junk\n```\ny"})
@@ -197,12 +230,19 @@ async def test_kb_api_limits_errors_and_failures(api_client, monkeypatch):
     assert (await api_client.get("/kb/search", params={"q": "  "})).json() == []
 
     monkeypatch.setattr(get_settings(), "kb_upload_max_bytes", 50)
-    r = await api_client.post("/kb/import", files=[("files", ("big.csv", b"a,b\n" + b"1,2\n" * 50, "text/csv"))])
+    r = await api_client.post(
+        "/kb/import", files=[("files", ("big.csv", b"a,b\n" + b"1,2\n" * 50, "text/csv"))]
+    )
     assert r.status_code == 413
     monkeypatch.undo()
 
-    out = await _import(api_client, [("files", ("blob.bin", bytes(range(256)) * 4, "application/octet-stream")),
-                                     ("files", ("ok.csv", b"a,b\n1,2\n", "text/csv"))])
+    out = await _import(
+        api_client,
+        [
+            ("files", ("blob.bin", bytes(range(256)) * 4, "application/octet-stream")),
+            ("files", ("ok.csv", b"a,b\n1,2\n", "text/csv")),
+        ],
+    )
     assert [f["status"] for f in out["files"]] == ["stored", "stored"]
     status = (await api_client.get("/kb/status")).json()
     assert [f["filename"] for f in status["failures"]] == ["blob.bin"]
@@ -216,7 +256,9 @@ async def test_kb_notes_crud_paths_and_deletes(api_client):
     a = (await api_client.post("/kb/notes", json={"title": "Plan", "path": "company/Plan"})).json()
     b = (await api_client.post("/kb/notes", json={"title": "Plan", "path": "company/Plan"})).json()
     assert a["path"] == "company/Plan.md" and b["path"] == "company/Plan 2.md"  # unique paths
-    t = (await api_client.post("/kb/notes", json={"title": "Grid", "format": "csv", "content": "x,y\n1,2\n"})).json()
+    t = (
+        await api_client.post("/kb/notes", json={"title": "Grid", "format": "csv", "content": "x,y\n1,2\n"})
+    ).json()
     assert t["kind"] == "table" and t["path"] == "Grid.csv"
 
     # related links follow a move, and vanish when the target is deleted
@@ -228,7 +270,9 @@ async def test_kb_notes_crud_paths_and_deletes(api_client):
     assert (await api_client.get(f"/kb/notes/{a['id']}")).json()["links"] == []
     assert (await api_client.delete(f"/kb/notes/{t['id']}")).status_code == 404
 
-    tags = (await api_client.put(f"/kb/notes/{a['id']}", json={"tags": ["#Board", "board", "Q3 Plan"]})).json()["tags"]
+    tags = (
+        await api_client.put(f"/kb/notes/{a['id']}", json={"tags": ["#Board", "board", "Q3 Plan"]})
+    ).json()["tags"]
     assert tags == ["board", "q3-plan"]
 
     # An original stays while any note made from it is left.
@@ -269,7 +313,10 @@ async def test_kb_zip_folders_concurrency_and_export_with_originals(api_client):
     # Two imports at once: the organizer lock keeps hubs single.
     r1, r2 = await asyncio.gather(
         api_client.post("/kb/import", files=[("files", ("dump.zip", b.getvalue(), "application/zip"))]),
-        api_client.post("/kb/import", files=[("files", ("solo.md", b"# Solo\nA founder note.", "text/markdown"))]))
+        api_client.post(
+            "/kb/import", files=[("files", ("solo.md", b"# Solo\nA founder note.", "text/markdown"))]
+        ),
+    )
     from vicky import jobs
 
     await jobs.wait_for([r1.json()["job_id"], r2.json()["job_id"]], timeout_s=60)

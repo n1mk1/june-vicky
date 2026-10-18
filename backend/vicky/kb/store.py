@@ -43,6 +43,7 @@ class NoteConflict(Exception):
 
 # ---------------------------------------------------------------- paths
 
+
 def clean_path(path: str, fmt: str) -> str:
     """`a/b/name` → `a/b/name.md` with every segment made safe; the extension follows the format."""
     parts = [clean_segment(p) for p in path.replace("\\", "/").split("/")]
@@ -50,7 +51,11 @@ def clean_path(path: str, fmt: str) -> str:
     if not parts:
         raise NoteInvalid("A note needs a name")
     name = parts[-1]
-    stem = name[: -len(PurePosixPath(name).suffix)] if PurePosixPath(name).suffix.lower() in (".md", ".csv") else name
+    stem = (
+        name[: -len(PurePosixPath(name).suffix)]
+        if PurePosixPath(name).suffix.lower() in (".md", ".csv")
+        else name
+    )
     parts[-1] = f"{stem or 'untitled'}.{fmt}"
     return "/".join(parts)[:400]
 
@@ -67,8 +72,11 @@ def stem_of(path: str) -> str:
 async def unique_path(conn, path: str, exclude_id: str | None = None) -> str:
     base, _, ext = path.rpartition(".")
     candidate, n = path, 1
-    while await conn.fetchval("select 1 from kb_notes where lower(path) = lower($1) and ($2::uuid is null or id <> $2)",
-                              candidate, exclude_id):
+    while await conn.fetchval(
+        "select 1 from kb_notes where lower(path) = lower($1) and ($2::uuid is null or id <> $2)",
+        candidate,
+        exclude_id,
+    ):
         n += 1
         candidate = f"{base} {n}.{ext}"
     return candidate
@@ -82,6 +90,7 @@ def _uuid(nid: str) -> str:
 
 
 # ---------------------------------------------------------------- links
+
 
 def wikilinks(content: str) -> list[str]:
     return [m.group(1).strip() for m in WIKILINK.finditer(content or "")]
@@ -105,11 +114,16 @@ class Resolver:
 
     def resolve(self, target: str) -> str | None:
         t = target.strip().replace("\\", "/").lower()
-        return (self.by_path.get(t) or self.by_stem.get(t) or self.by_name.get(t.rsplit("/", 1)[-1])
-                or self.by_title.get(t))
+        return (
+            self.by_path.get(t)
+            or self.by_stem.get(t)
+            or self.by_name.get(t.rsplit("/", 1)[-1])
+            or self.by_title.get(t)
+        )
 
 
 # ---------------------------------------------------------------- reads
+
 
 def _row(r: dict) -> dict:
     out = dict(r)
@@ -136,9 +150,12 @@ async def get_note(nid: str) -> dict:
     candidates = await db.fetch(
         "select id::text, path, title, links, case when format = 'md' then content else '' end as content "
         "from kb_notes where path <> $1 and ($1 = any(links) or (format = 'md' and content ilike any($2::text[])))",
-        me, names)
+        me,
+        names,
+    )
     out["backlinks"] = [
-        {"id": n["id"], "path": n["path"], "title": n["title"]} for n in candidates
+        {"id": n["id"], "path": n["path"], "title": n["title"]}
+        for n in candidates
         if me in (n["links"] or []) or any(res.resolve(t) == me for t in wikilinks(n["content"]))
     ]
     by_path = {n["path"]: n for n in everything}
@@ -151,18 +168,23 @@ async def get_note(nid: str) -> dict:
             continue
         seen.add(key)
         hit = by_path.get(p) if p else None
-        out["outlinks"].append({"id": hit["id"] if hit else None, "path": p, "title": hit["title"] if hit else t})
+        out["outlinks"].append(
+            {"id": hit["id"] if hit else None, "path": p, "title": hit["title"] if hit else t}
+        )
     if out["file_id"]:
-        f = await db.fetchrow("select id::text, filename, kind, size, status from kb_files where id = $1",
-                              out["file_id"])
+        f = await db.fetchrow(
+            "select id::text, filename, kind, size, status from kb_files where id = $1", out["file_id"]
+        )
         out["file"] = f
     return out
 
 
 async def graph() -> dict:
     """Nodes and edges for the graph view. Unresolved wikilinks become ghost nodes (Obsidian-style)."""
-    notes = await db.fetch("select id::text, path, title, kind, format, tags, links, author, "
-                           "case when format = 'md' then content else '' end as content from kb_notes")
+    notes = await db.fetch(
+        "select id::text, path, title, kind, format, tags, links, author, "
+        "case when format = 'md' then content else '' end as content from kb_notes"
+    )
     res = Resolver(notes)
     by_path = {n["path"]: n for n in notes}
     edges: dict[tuple[str, str], str] = {}
@@ -172,8 +194,18 @@ async def graph() -> dict:
             p = res.resolve(t)
             if p is None:
                 gid = f"missing:{t.lower()}"
-                ghosts.setdefault(gid, {"id": gid, "title": t, "path": None, "kind": "missing", "folder": "",
-                                        "tags": [], "author": None})
+                ghosts.setdefault(
+                    gid,
+                    {
+                        "id": gid,
+                        "title": t,
+                        "path": None,
+                        "kind": "missing",
+                        "folder": "",
+                        "tags": [],
+                        "author": None,
+                    },
+                )
                 edges.setdefault((n["id"], gid), "link")
             elif p != n["path"]:
                 edges[(n["id"], by_path[p]["id"])] = "link"
@@ -186,8 +218,19 @@ async def graph() -> dict:
     for a, b in edges:
         degree[a] = degree.get(a, 0) + 1
         degree[b] = degree.get(b, 0) + 1
-    nodes = [{"id": n["id"], "title": n["title"], "path": n["path"], "kind": n["kind"], "folder": folder_of(n["path"]),
-              "tags": n["tags"], "author": n["author"], "degree": degree.get(n["id"], 0)} for n in notes]
+    nodes = [
+        {
+            "id": n["id"],
+            "title": n["title"],
+            "path": n["path"],
+            "kind": n["kind"],
+            "folder": folder_of(n["path"]),
+            "tags": n["tags"],
+            "author": n["author"],
+            "degree": degree.get(n["id"], 0),
+        }
+        for n in notes
+    ]
     nodes += [{**g, "degree": degree.get(g["id"], 0)} for g in ghosts.values()]
     return {"nodes": nodes, "links": [{"source": a, "target": b, "type": t} for (a, b), t in edges.items()]}
 
@@ -233,14 +276,20 @@ async def keyword_search(terms: list[str], limit: int = 20) -> list[dict]:
                    ts_rank({FTS_DOC}, to_tsquery('simple', $1)) as rank
             from kb_notes
             where {FTS_DOC} @@ to_tsquery('simple', $1)
-            order by rank desc, updated_at desc limit $2""", tsq, limit)
+            order by rank desc, updated_at desc limit $2""",
+        tsq,
+        limit,
+    )
     return [_row(r) for r in rows]
 
 
 async def contents(ids: list[str]) -> dict[str, dict]:
     """id → {id, path, title, kind, format, summary, content} for the given notes."""
-    rows = await db.fetch("select id::text, path, title, kind, format, summary, content from kb_notes "
-                          "where id = any($1::uuid[])", [_uuid(i) for i in ids])
+    rows = await db.fetch(
+        "select id::text, path, title, kind, format, summary, content from kb_notes "
+        "where id = any($1::uuid[])",
+        [_uuid(i) for i in ids],
+    )
     return {r["id"]: r for r in rows}
 
 
@@ -255,19 +304,41 @@ async def find_note(ref: str) -> dict | None:
         "select id::text, path, title, kind, format, summary, content from kb_notes "
         "where ($1::uuid is not null and id = $1) or lower(path) = lower($2) "
         "or lower(regexp_replace(path, '\\.(md|csv)$', '')) = lower($2) "
-        "order by (lower(path) = lower($2)) desc limit 1", nid, ref)
+        "order by (lower(path) = lower($2)) desc limit 1",
+        nid,
+        ref,
+    )
 
 
 # ---------------------------------------------------------------- writes
 
-async def insert_draft(conn, d: Draft, *, path: str, file_id: str | None, author: str = "import",
-                       links: list[str] | None = None, kind: str | None = None) -> str:
+
+async def insert_draft(
+    conn,
+    d: Draft,
+    *,
+    path: str,
+    file_id: str | None,
+    author: str = "import",
+    links: list[str] | None = None,
+    kind: str | None = None,
+) -> str:
     path = await unique_path(conn, clean_path(path, d.format))
     return await conn.fetchval(
         """insert into kb_notes (path, title, kind, format, content, file_id, tags, summary, links, meta, author)
            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id::text""",
-        path, (d.title or stem_of(path))[:200], kind or d.kind, d.format, d.content, file_id,
-        clean_tags(d.tags), d.summary[:1000], links or [], d.meta, author)
+        path,
+        (d.title or stem_of(path))[:200],
+        kind or d.kind,
+        d.format,
+        d.content,
+        file_id,
+        clean_tags(d.tags),
+        d.summary[:1000],
+        links or [],
+        d.meta,
+        author,
+    )
 
 
 def clean_tags(tags: list[Any]) -> list[str]:
@@ -286,12 +357,19 @@ async def create_note(body: dict, author: str = "founder") -> dict:
     title = str(body.get("title") or "").strip()[:200]
     path = str(body.get("path") or "").strip() or title or "Untitled"
     kind = body.get("kind") if body.get("kind") in KINDS else ("table" if fmt == "csv" else "note")
-    d = Draft(name="", title=title or stem_of(clean_path(path, fmt)), kind=kind, format=fmt,
-              content=str(body.get("content") or ""), tags=list(body.get("tags") or []),
-              summary=str(body.get("summary") or ""))
+    d = Draft(
+        name="",
+        title=title or stem_of(clean_path(path, fmt)),
+        kind=kind,
+        format=fmt,
+        content=str(body.get("content") or ""),
+        tags=list(body.get("tags") or []),
+        summary=str(body.get("summary") or ""),
+    )
     async with db.acquire() as conn, conn.transaction():
-        nid = await insert_draft(conn, d, path=path, file_id=None, author=author,
-                                 links=[str(x) for x in body.get("links") or []])
+        nid = await insert_draft(
+            conn, d, path=path, file_id=None, author=author, links=[str(x) for x in body.get("links") or []]
+        )
     return await get_note(nid)
 
 
@@ -325,14 +403,19 @@ async def update_note(nid: str, body: dict, author: str = "founder") -> dict:
         cols = list(sets)
         await conn.execute(
             f"update kb_notes set {', '.join(f'{c} = ${i + 2}' for i, c in enumerate(cols))}, version = version + 1 "
-            "where id = $1", nid, *[sets[c] for c in cols])
+            "where id = $1",
+            nid,
+            *[sets[c] for c in cols],
+        )
         if "path" in sets:
             await move_links(conn, row["path"], sets["path"])
     return await get_note(nid)
 
 
 async def move_links(conn, old: str, new: str) -> None:
-    await conn.execute("update kb_notes set links = array_replace(links, $1, $2) where $1 = any(links)", old, new)
+    await conn.execute(
+        "update kb_notes set links = array_replace(links, $1, $2) where $1 = any(links)", old, new
+    )
 
 
 async def delete_note(nid: str) -> None:
@@ -350,15 +433,21 @@ async def delete_note(nid: str) -> None:
             lines = hub["content"].split("\n")
             kept = [ln for ln in lines if not any(res.resolve(t) == path for t in wikilinks(ln))]
             if len(kept) != len(lines):
-                await conn.execute("update kb_notes set content = $2 where id = $1", hub["id"], "\n".join(kept))
+                await conn.execute(
+                    "update kb_notes set content = $2 where id = $1", hub["id"], "\n".join(kept)
+                )
         # Its original goes too once no note is made from it (its text lives nowhere else). Other files, such as
         # failed imports the status page lists, are not this note's to drop.
         if gone["file_id"] is not None:
-            await conn.execute("delete from kb_files f where f.id = $1 and f.status <> 'stored' and not exists "
-                               "(select 1 from kb_notes n where n.file_id = f.id)", gone["file_id"])
+            await conn.execute(
+                "delete from kb_files f where f.id = $1 and f.status <> 'stored' and not exists "
+                "(select 1 from kb_notes n where n.file_id = f.id)",
+                gone["file_id"],
+            )
 
 
 # ---------------------------------------------------------------- export
+
 
 def frontmatter(n: dict) -> str:
     data: dict[str, Any] = {"title": n["title"]}
@@ -375,15 +464,24 @@ def frontmatter(n: dict) -> str:
 
 
 async def export_zip(originals: bool = False) -> bytes:
-    notes = await db.fetch("select path, title, kind, format, content, tags, summary, links, meta, author from kb_notes "
-                           "order by path")
+    notes = await db.fetch(
+        "select path, title, kind, format, content, tags, summary, links, meta, author from kb_notes "
+        "order by path"
+    )
     buf = io.BytesIO()
-    meta: dict[str, Any] = {"format": "vicky-kb", "version": 1, "exported_at": datetime.now(UTC).isoformat(), "notes": {}}
+    meta: dict[str, Any] = {
+        "format": "vicky-kb",
+        "version": 1,
+        "exported_at": datetime.now(UTC).isoformat(),
+        "notes": {},
+    }
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for n in notes:
             body = frontmatter(n) + n["content"] if n["format"] == "md" else n["content"]
             z.writestr(n["path"], body)
-            meta["notes"][n["path"]] = {k: n[k] for k in ("title", "kind", "tags", "summary", "links", "author", "meta")}
+            meta["notes"][n["path"]] = {
+                k: n[k] for k in ("title", "kind", "tags", "summary", "links", "author", "meta")
+            }
         if originals:
             used: set[str] = set()
             for f in await db.fetch("select filename, bytes from kb_files order by created_at"):

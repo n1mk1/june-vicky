@@ -31,14 +31,20 @@ async def extract_job(payload: dict) -> dict:
     from vicky.llm import docs
 
     uid = payload["upload_id"]
-    row = await db.fetchrow("select id::text, engagement_id::text as eid, filename, kind::text, bytes from uploads "
-                            "where id::text = $1", uid)
+    row = await db.fetchrow(
+        "select id::text, engagement_id::text as eid, filename, kind::text, bytes from uploads "
+        "where id::text = $1",
+        uid,
+    )
     if row is None:
         raise ValueError(f"no upload {uid}")
-    currency = await db.fetchval("select currency from company_profiles where engagement_id::text = $1", row["eid"])
+    currency = await db.fetchval(
+        "select currency from company_profiles where engagement_id::text = $1", row["eid"]
+    )
     try:
-        out = await docs.extract_facts(bytes(row["bytes"]), row["filename"], row["kind"], upload_id=uid,
-                                       currency=norm_currency(currency))
+        out = await docs.extract_facts(
+            bytes(row["bytes"]), row["filename"], row["kind"], upload_id=uid, currency=norm_currency(currency)
+        )
     except Exception:
         await db.execute("update uploads set status = 'failed' where id::text = $1", uid)
         raise

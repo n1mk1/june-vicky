@@ -45,7 +45,7 @@ Skip a line whose number isn't in its cited text. Never add a fact that isn't in
 class CitedSpan:
     cited_text: str
     page_start: int | None = None  # 1-based, inclusive
-    page_end: int | None = None    # 1-based, exclusive (as the API reports it)
+    page_end: int | None = None  # 1-based, exclusive (as the API reports it)
     char_start: int | None = None
     char_end: int | None = None
 
@@ -57,6 +57,7 @@ class CitedLine:
 
 
 # ---------------------------------------------------------------- document text
+
 
 def document_text(data: bytes, kind: str) -> str:
     if kind == "docx":
@@ -73,7 +74,9 @@ def document_text(data: bytes, kind: str) -> str:
     else:
         text = data.decode("utf-8", errors="replace")
     if len(text) > MAX_TEXT_CHARS:
-        log.warning("document text is %d chars; facts are read from the first %d only", len(text), MAX_TEXT_CHARS)
+        log.warning(
+            "document text is %d chars; facts are read from the first %d only", len(text), MAX_TEXT_CHARS
+        )
     return text[:MAX_TEXT_CHARS]
 
 
@@ -111,6 +114,7 @@ def _squash(s: str) -> str:
 
 # ---------------------------------------------------------------- pass 1
 
+
 def cited_lines(message: Any) -> list[CitedLine]:
     """Group the response's text blocks into lines, keeping each line's citations."""
     lines: list[CitedLine] = []
@@ -143,11 +147,12 @@ def render_lines(lines: list[CitedLine]) -> str:
         out.append(f"{n}. {ln.text.strip()}")
         for c in ln.citations:
             where = f"p.{c.page_start}" if c.page_start else "text"
-            out.append(f"   [{where}] \"{c.cited_text.strip()}\"")
+            out.append(f'   [{where}] "{c.cited_text.strip()}"')
     return "\n".join(out)
 
 
 # ---------------------------------------------------------------- verification
+
 
 def _value(f: DocFact) -> float:
     return f.value / 100 if f.unit == "pct" else f.value
@@ -167,8 +172,9 @@ def match_citation(f: DocFact, lines: list[CitedLine]) -> CitedSpan | None:
     if not want:
         return None
     spans = [c for ln in lines for c in ln.citations]
-    return (next((c for c in spans if _squash(c.cited_text) == want), None)
-            or next((c for c in spans if want in _squash(c.cited_text) or _squash(c.cited_text) in want), None))
+    return next((c for c in spans if _squash(c.cited_text) == want), None) or next(
+        (c for c in spans if want in _squash(c.cited_text) or _squash(c.cited_text) in want), None
+    )
 
 
 def verify_span(span: CitedSpan, pages: list[str] | None, text: str | None) -> tuple[bool, str]:
@@ -177,11 +183,15 @@ def verify_span(span: CitedSpan, pages: list[str] | None, text: str | None) -> t
         if not span.page_start or not pages:
             return False, "no page text to check against"
         last = max(span.page_start, (span.page_end or span.page_start + 1) - 1)
-        hay = _squash(" ".join(pages[span.page_start - 1:last]))
+        hay = _squash(" ".join(pages[span.page_start - 1 : last]))
         where = f"page {span.page_start}" if last == span.page_start else f"pages {span.page_start}-{last}"
         return (want in hay, "" if want in hay else f"cited text not found on {where}")
     if text is not None:
-        if span.char_start is not None and span.char_end is not None and _squash(text[span.char_start:span.char_end]) == want:
+        if (
+            span.char_start is not None
+            and span.char_end is not None
+            and _squash(text[span.char_start : span.char_end]) == want
+        ):
             return True, ""
         ok = want in _squash(text)
         return ok, "" if ok else "cited text not found in the document"
@@ -193,10 +203,21 @@ def _slug(name: str) -> str:
     return s[:60] or "fact"
 
 
-def to_fact(f: DocFact, span: CitedSpan, verified: bool, why: str, *, upload_id: str, filename: str, kind: str,
-            currency: str) -> Fact:
+def to_fact(
+    f: DocFact,
+    span: CitedSpan,
+    verified: bool,
+    why: str,
+    *,
+    upload_id: str,
+    filename: str,
+    kind: str,
+    currency: str,
+) -> Fact:
     if f.unit == "money":
-        unit = norm_currency(f.currency, norm_currency(currency))  # the document's own currency, else the company's
+        unit = norm_currency(
+            f.currency, norm_currency(currency)
+        )  # the document's own currency, else the company's
     else:
         unit = {"pct": "pct", "months": "months", "count": "count", "x": "x", "ratio": "ratio"}[f.unit]
     name = _slug(f.name)
@@ -207,14 +228,33 @@ def to_fact(f: DocFact, span: CitedSpan, verified: bool, why: str, *, upload_id:
     ref = f"{filename}, p. {page}" if page else filename
     fid = "doc-" + hashlib.sha1(f"{upload_id}|{name}|{value}|{f.period}".encode()).hexdigest()[:10]
     note = None if verified else f"Check this: {why}."
-    return Fact(id=fid, name=name, label=f.label.strip()[:120] or name, value=value, unit=unit, period=f.period,
-                kind=f.kind, source=Source(kind=kind, ref=ref, page=page, cited_text=span.cited_text.strip()[:500],
-                                           verified=verified),
-                status="pending", note=note)
+    return Fact(
+        id=fid,
+        name=name,
+        label=f.label.strip()[:120] or name,
+        value=value,
+        unit=unit,
+        period=f.period,
+        kind=f.kind,
+        source=Source(
+            kind=kind, ref=ref, page=page, cited_text=span.cited_text.strip()[:500], verified=verified
+        ),
+        status="pending",
+        note=note,
+    )
 
 
-def build_facts(parsed: DocFactList, lines: list[CitedLine], *, pages: list[str] | None, text: str | None,
-                upload_id: str, filename: str, kind: str, currency: str) -> tuple[list[Fact], int]:
+def build_facts(
+    parsed: DocFactList,
+    lines: list[CitedLine],
+    *,
+    pages: list[str] | None,
+    text: str | None,
+    upload_id: str,
+    filename: str,
+    kind: str,
+    currency: str,
+) -> tuple[list[Fact], int]:
     """(facts, dropped). Dropped = no matching citation, or the number isn't in the cited text."""
     facts: dict[str, Fact] = {}
     dropped = 0
@@ -231,7 +271,10 @@ def build_facts(parsed: DocFactList, lines: list[CitedLine], *, pages: list[str]
 
 # ---------------------------------------------------------------- the job
 
-async def extract_facts(data: bytes, filename: str, kind: str, *, upload_id: str, currency: str) -> dict[str, Any]:
+
+async def extract_facts(
+    data: bytes, filename: str, kind: str, *, upload_id: str, currency: str
+) -> dict[str, Any]:
     """Run both passes; returns {facts: [Fact], dropped, lines}. Raises LLMError on failure."""
     llm_ = get_llm()
     file_id = None
@@ -245,18 +288,33 @@ async def extract_facts(data: bytes, filename: str, kind: str, *, upload_id: str
         source = {"type": "text", "media_type": "text/plain", "data": text}
     doc = {"type": "document", "source": source, "title": filename[:200], "citations": {"enabled": True}}
     try:
-        msg = await llm_.message("doc_facts", system="You extract facts from founders' documents, with citations.",
-                                 messages=[{"role": "user", "content": [doc, {"type": "text", "text": EXTRACT_TASK}]}])
+        msg = await llm_.message(
+            "doc_facts",
+            system="You extract facts from founders' documents, with citations.",
+            messages=[{"role": "user", "content": [doc, {"type": "text", "text": EXTRACT_TASK}]}],
+        )
     finally:
         if file_id:
             await llm_.delete_file(file_id)
     lines = cited_lines(msg)
     if not lines:
         return {"facts": [], "dropped": 0, "lines": 0}
-    parsed = await llm_.parse("doc_parse", DocFactList, system=PARSE_SYSTEM,
-                              messages=[{"role": "user", "content": f"Cited fact list:\n{render_lines(lines)}"}])
-    facts, dropped = build_facts(parsed, lines, pages=pages, text=text, upload_id=upload_id, filename=filename,
-                                 kind=kind, currency=currency)
+    parsed = await llm_.parse(
+        "doc_parse",
+        DocFactList,
+        system=PARSE_SYSTEM,
+        messages=[{"role": "user", "content": f"Cited fact list:\n{render_lines(lines)}"}],
+    )
+    facts, dropped = build_facts(
+        parsed,
+        lines,
+        pages=pages,
+        text=text,
+        upload_id=upload_id,
+        filename=filename,
+        kind=kind,
+        currency=currency,
+    )
     return {"facts": facts, "dropped": dropped, "lines": len(lines)}
 
 

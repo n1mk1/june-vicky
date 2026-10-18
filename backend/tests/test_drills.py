@@ -22,9 +22,19 @@ def _hyps(memos: dict) -> list[tuple[str, dict]]:
 
 
 def _row(h: dict, kind: str = "drill", mark: str = "repeat", **pl) -> dict:
-    return {"id": f"m-{h['id']}-{kind}", "lens": h["lens"], "topic": h["claim"], "severity": h["severity"],
-            "payload": {"attack_id": h["attack_id"], "vc_id": h["id"].split(".")[0], "mark": mark,
-                        "question": "Old question?", **pl}}
+    return {
+        "id": f"m-{h['id']}-{kind}",
+        "lens": h["lens"],
+        "topic": h["claim"],
+        "severity": h["severity"],
+        "payload": {
+            "attack_id": h["attack_id"],
+            "vc_id": h["id"].split(".")[0],
+            "mark": mark,
+            "question": "Old question?",
+            **pl,
+        },
+    }
 
 
 def test_drilled_topics_lead_the_agenda_repeat_before_study(court):
@@ -32,8 +42,9 @@ def test_drilled_topics_lead_the_agenda_repeat_before_study(court):
     memos = copy.deepcopy(base)
     (_, last), (_, second_last) = _hyps(memos)[-1], _hyps(memos)[-2]
     sev = {last["id"]: last["severity"], second_last["id"]: second_last["severity"]}
-    carried, queue = memory.carry_over(memos, panel, ctx, {"drills": [_row(second_last, mark="study"), _row(last)],
-                                                            "weaknesses": []}, cap=8)
+    carried, queue = memory.carry_over(
+        memos, panel, ctx, {"drills": [_row(second_last, mark="study"), _row(last)], "weaknesses": []}, cap=8
+    )
     assert queue == [last["id"], second_last["id"]]  # repeat first
     hs = dict((h["id"], h) for _, h in _hyps(memos))
     assert hs[last["id"]]["severity"] == round(min(1.0, sev[last["id"]] + memory.DRILL_BOOST["repeat"]), 2)
@@ -53,7 +64,9 @@ def test_a_weak_spot_raises_severity_and_never_lowers_the_doubt(court):
     # A remembered lower confidence doesn't concede the doubt.
     memos = copy.deepcopy(base)
     _, h = _hyps(memos)[0]
-    memory.carry_over(memos, panel, ctx, {"drills": [], "weaknesses": [_row(h, kind="weakness", confidence=0.1)]}, cap=8)
+    memory.carry_over(
+        memos, panel, ctx, {"drills": [], "weaknesses": [_row(h, kind="weakness", confidence=0.1)]}, cap=8
+    )
     assert h["confidence"] == before["confidence"]
 
 
@@ -82,10 +95,17 @@ def test_vicky_offers_the_next_drill_unless_the_answer_was_weak(court):
 
 
 def test_the_view_says_which_drills_came_back():
-    state = {"carried": [{"memory_id": "a", "kind": "drill", "mark": "repeat", "hypothesis_id": "x.h1"},
-                         {"memory_id": "b", "kind": "drill", "mark": "study", "hypothesis_id": "y.h2"},
-                         {"memory_id": "c", "kind": "drill", "mark": "study", "hypothesis_id": None}]}
-    turns = [{"kind": "intro", "hypothesis_id": None, "seq": 1}, {"kind": "question", "hypothesis_id": "x.h1", "seq": 2}]
+    state = {
+        "carried": [
+            {"memory_id": "a", "kind": "drill", "mark": "repeat", "hypothesis_id": "x.h1"},
+            {"memory_id": "b", "kind": "drill", "mark": "study", "hypothesis_id": "y.h2"},
+            {"memory_id": "c", "kind": "drill", "mark": "study", "hypothesis_id": None},
+        ]
+    }
+    turns = [
+        {"kind": "intro", "hypothesis_id": None, "seq": 1},
+        {"kind": "question", "hypothesis_id": "x.h1", "seq": 2},
+    ]
     v = memory.carried_view(state, turns, live=True)
     assert [(e["status"], e["asked_seq"]) for e in v] == [("asked", 2), ("queued", None), ("unmatched", None)]
     assert memory.carried_view(state, turns, live=False)[1]["status"] == "not_reached"
@@ -101,16 +121,21 @@ async def test_drilled_questions_open_the_next_session_and_weak_spots_carry_over
     from tests.test_llm_api import _login_and_confirm
 
     await _login_and_confirm(api_client)
-    await db.execute("update founder_memory set payload = payload || '{\"used_by\": \"old\"}' where kind = 'drill'")
+    await db.execute(
+        "update founder_memory set payload = payload || '{\"used_by\": \"old\"}' where kind = 'drill'"
+    )
     s = (await api_client.post("/court/start", json={"question_cap": 6, "knowledge": False})).json()
     for _ in range(3):
         s = (await api_client.post(f"/court/{s['id']}/answer", json={"text": ANSWER})).json()
     qs = [t for t in s["turns"] if t["kind"] == "question" and t["intent"] != "follow_up"]
     assert len(qs) >= 2
     marked = qs[-2:]  # not the opener, so the drill is what moves them to the top
-    r = await api_client.post(f"/court/{s['id']}/drills",
-                              json={"items": [{"seq": marked[0]["seq"], "mark": "repeat"},
-                                              {"seq": marked[1]["seq"], "mark": "study"}]})
+    r = await api_client.post(
+        f"/court/{s['id']}/drills",
+        json={
+            "items": [{"seq": marked[0]["seq"], "mark": "repeat"}, {"seq": marked[1]["seq"], "mark": "study"}]
+        },
+    )
     assert r.status_code == 200, r.text
     drills = r.json()["drills"]
     assert [d["mark"] for d in drills] == ["repeat", "study"]
@@ -118,8 +143,11 @@ async def test_drilled_questions_open_the_next_session_and_weak_spots_carry_over
     attack = {h["id"]: h["attack_id"] for v in state1["vcs"].values() for h in v["hyps"]}
     want = [attack[q["hypothesis_id"]] for q in marked]
 
-    s2 = (await api_client.post("/court/start", json={"question_cap": 6, "knowledge": False,
-                                                      "drills": [d["id"] for d in drills]})).json()
+    s2 = (
+        await api_client.post(
+            "/court/start", json={"question_cap": 6, "knowledge": False, "drills": [d["id"] for d in drills]}
+        )
+    ).json()
     state2 = await db.fetchval("select state from sessions where id::text = $1", s2["id"])
     attack2 = {h["id"]: h["attack_id"] for v in state2["vcs"].values() for h in v["hyps"]}
     first = next(t for t in s2["turns"] if t["kind"] == "question")
@@ -135,20 +163,29 @@ async def test_drilled_questions_open_the_next_session_and_weak_spots_carry_over
     assert {attack2[e["hypothesis_id"]] for e in came_back} == set(want)
     agenda = await db.fetchval("select agenda from sessions where id::text = $1", s2["id"])
     assert [a["carried"] for a in agenda[:2]] == ["drill_repeat", "drill_study"]
-    used = await db.fetch("select payload from founder_memory where id::text = any($1::text[])", [d["id"] for d in drills])
+    used = await db.fetch(
+        "select payload from founder_memory where id::text = any($1::text[])", [d["id"] for d in drills]
+    )
     assert all(u["payload"]["used_by"] == s2["id"] for u in used)
 
     # The report's open doubts are weak spots; the next session starts with them, without any drill.
     s2 = (await api_client.post(f"/court/{s2['id']}/end")).json()
-    weak = await db.fetch("select id::text, topic, payload, severity from founder_memory where kind = 'weakness' "
-                          "and payload->>'session_id' = $1", s2["id"])
+    weak = await db.fetch(
+        "select id::text, topic, payload, severity from founder_memory where kind = 'weakness' "
+        "and payload->>'session_id' = $1",
+        s2["id"],
+    )
     assert weak and all(w["payload"]["attack_id"] for w in weak)
     s3 = (await api_client.post("/court/start", json={"question_cap": 6, "knowledge": False})).json()
     carried = s3["carried"]
     assert not [e for e in carried if e["kind"] == "drill"], "used drills came back"
     assert {e["topic"] for e in carried if e["kind"] == "weakness"} >= {w["topic"] for w in weak} & {
-        h["claim"] for v in (await db.fetchval("select state from sessions where id::text = $1", s3["id"]))["vcs"].values()
-        for h in v["hyps"]}
+        h["claim"]
+        for v in (await db.fetchval("select state from sessions where id::text = $1", s3["id"]))[
+            "vcs"
+        ].values()
+        for h in v["hyps"]
+    }
     state3 = await db.fetchval("select state from sessions where id::text = $1", s3["id"])
     for e in (e for e in carried if e["kind"] == "weakness" and e["memory_id"] in {w["id"] for w in weak}):
         h = next(h for v in state3["vcs"].values() for h in v["hyps"] if h["id"] == e["hypothesis_id"])

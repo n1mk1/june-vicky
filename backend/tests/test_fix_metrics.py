@@ -18,21 +18,52 @@ def inputs_of(*files: tuple[str, str], currency: str = "cad") -> list[DatasetInp
     out = []
     for text, name in files:
         for ds in parse_upload(text.encode(), name):
-            out.append(DatasetInput(id=f"{name}#{ds.name}", name=ds.name, table_kind=ds.table_kind,
-                                    granularity=ds.granularity, transposed=ds.transposed, rows=ds.rows,
-                                    mapping=[m.model_dump() for m in propose_heuristic(ds, currency)]))
+            out.append(
+                DatasetInput(
+                    id=f"{name}#{ds.name}",
+                    name=ds.name,
+                    table_kind=ds.table_kind,
+                    granularity=ds.granularity,
+                    transposed=ds.transposed,
+                    rows=ds.rows,
+                    mapping=[m.model_dump() for m in propose_heuristic(ds, currency)],
+                )
+            )
     return out
 
 
-def ctx_of(*files: tuple[str, str], currency: str = "cad", facts: list[Fact] | None = None, fx: Rates | None = None,
-           **profile):
-    return build_context(inputs_of(*files, currency=currency), facts or [], {"currency": currency, **profile}, fx=fx)
+def ctx_of(
+    *files: tuple[str, str],
+    currency: str = "cad",
+    facts: list[Fact] | None = None,
+    fx: Rates | None = None,
+    **profile,
+):
+    return build_context(
+        inputs_of(*files, currency=currency), facts or [], {"currency": currency, **profile}, fx=fx
+    )
 
 
-def fact(name: str, value: float, unit: str = "cad", kind: str = "historical", period: str | None = None,
-         status: str = "confirmed", **kw) -> Fact:
-    return Fact(id=f"f-{name}-{period}-{status}", name=name, value=value, unit=unit, kind=kind, period=period,
-                status=status, source=Source(kind="pdf", ref="deck.pdf p.2"), **kw)
+def fact(
+    name: str,
+    value: float,
+    unit: str = "cad",
+    kind: str = "historical",
+    period: str | None = None,
+    status: str = "confirmed",
+    **kw,
+) -> Fact:
+    return Fact(
+        id=f"f-{name}-{period}-{status}",
+        name=name,
+        value=value,
+        unit=unit,
+        kind=kind,
+        period=period,
+        status=status,
+        source=Source(kind="pdf", ref="deck.pdf p.2"),
+        **kw,
+    )
 
 
 def months(start_year: int, start_month: int, n: int) -> list[str]:
@@ -59,9 +90,11 @@ def test_met2_forecast_fact_against_negative_history_does_not_crash(plan):
 
 # ---------------------------------------------------------------- MET-3
 
-NEG_COSTS = ("Month,Revenue,COGS,Sales and marketing,R&D,G&A,Cash\n"
-             "2025-01,10000,(3000),(4000),(8000),(2000),500000\n"
-             "2025-02,10000,(3000),(4000),(8000),(2000),493000\n")
+NEG_COSTS = (
+    "Month,Revenue,COGS,Sales and marketing,R&D,G&A,Cash\n"
+    "2025-01,10000,(3000),(4000),(8000),(2000),500000\n"
+    "2025-02,10000,(3000),(4000),(8000),(2000),493000\n"
+)
 
 
 def test_met3_costs_shown_as_negatives_are_read_as_costs():
@@ -83,6 +116,7 @@ def test_met3_a_single_credit_in_a_cost_column_is_not_flipped():
 
 # ---------------------------------------------------------------- MET-4
 
+
 def test_met4_day_first_first_of_month_dates_keep_twelve_months():
     csv = "Date,Revenue\n" + "".join(f"01/{m:02d}/2025,{m * 1000}\n" for m in range(1, 13))
     [ds] = parse_upload(csv.encode(), "t.csv")
@@ -98,9 +132,12 @@ def test_met4_month_first_first_of_month_dates_still_read_month_first():
 
 # ---------------------------------------------------------------- MET-7
 
+
 def test_met7_harbor_labs_services_share_uses_the_same_quarter():
     ctx = sample_context("harbor-labs")
-    assert "services_mix" not in {a.id for a in ctx.attack}  # 62,000 of 695,804 is 9%, under the 12% threshold
+    assert "services_mix" not in {
+        a.id for a in ctx.attack
+    }  # 62,000 of 695,804 is 9%, under the 12% threshold
     f = ctx.figure("one_time_revenue_share")
     assert f.value == pytest.approx(1 - 633_804 / 695_804) and f.period == "2026-Q3"
 
@@ -116,6 +153,7 @@ def test_met7_services_share_is_a_citable_figure_for_the_latest_period():
 
 # ---------------------------------------------------------------- MET-8
 
+
 def test_met8_a_forecast_word_elsewhere_does_not_make_a_claim_a_forecast():
     [arr] = quick_claims("Our ARR is $3M today. Next year we will hire five engineers.")
     assert arr["metric"] == "arr" and arr["is_forecast"] is False
@@ -125,14 +163,21 @@ def test_met8_a_forecast_word_elsewhere_does_not_make_a_claim_a_forecast():
 
 # ---------------------------------------------------------------- MET-9
 
+
 def test_met9_foreign_fact_without_a_rate_is_not_relabelled():
-    ctx = build_context([], [fact("mrr", 100_000, unit="usd", period="2025-01")], {"currency": "cad"}, fx=None)
+    ctx = build_context(
+        [], [fact("mrr", 100_000, unit="usd", period="2025-01")], {"currency": "cad"}, fx=None
+    )
     for fid in ("mrr", "arr"):
         f = ctx.figures[fid]
         assert isinstance(f, MissingFigure), f"{fid} shown as {f.display}"
     assert "USD→CAD" in ctx.figures["mrr"].reason
-    cash = build_context([], [fact("cash", 50_000, unit="usd"), fact("cac", 900, unit="eur")], {"currency": "cad"})
-    assert isinstance(cash.figures["cash_balance"], MissingFigure) and isinstance(cash.figures.get("cac"), MissingFigure | None)
+    cash = build_context(
+        [], [fact("cash", 50_000, unit="usd"), fact("cac", 900, unit="eur")], {"currency": "cad"}
+    )
+    assert isinstance(cash.figures["cash_balance"], MissingFigure) and isinstance(
+        cash.figures.get("cac"), MissingFigure | None
+    )
 
 
 def test_met9_foreign_fact_with_a_rate_converts():
@@ -144,13 +189,15 @@ def test_met9_foreign_fact_with_a_rate_converts():
 def test_met9_foreign_cash_burn_fact_is_not_used_in_the_burn_multiple():
     rows = months(2024, 1, 13)
     csv = "Month,Subscription revenue,Net income\n" + "".join(
-        f"{p},{10000 + i * 1000},-20000\n" for i, p in enumerate(rows))
+        f"{p},{10000 + i * 1000},-20000\n" for i, p in enumerate(rows)
+    )
     ctx = ctx_of((csv, "pl.csv"), facts=[fact("net_burn_l12m", 999_999, unit="usd")])
     bm = ctx.figure("burn_multiple")
     assert bm is not None and "999,999" not in bm.formula and "P&L basis" in bm.formula
 
 
 # ---------------------------------------------------------------- MET-10
+
 
 def test_met10_plan_facts_are_checked_against_history():
     ctx = sample_context("tidewell")
@@ -172,28 +219,43 @@ def _plan(value: float, period: str | None) -> Fact:
 
 
 def test_met10_the_nearest_plan_period_is_the_one_compared():
-    ctx = ctx_of((SIX_MONTHS, "pl.csv"), facts=[_plan(1_000_000, "2027-Q4"), _plan(200_000, "2025-Q3"),
-                                                 _plan(150_000, "2025-Q4"), _plan(50_000, "2025-Q1")])
+    ctx = ctx_of(
+        (SIX_MONTHS, "pl.csv"),
+        facts=[
+            _plan(1_000_000, "2027-Q4"),
+            _plan(200_000, "2025-Q3"),
+            _plan(150_000, "2025-Q4"),
+            _plan(50_000, "2025-Q1"),
+        ],
+    )
     [gap] = [a for a in ctx.attack if a.id.startswith("gap_")]
-    assert gap.id == "gap_mrr" and "Q3 2025" in gap.detail and "$200.0K" in gap.detail  # not the stale Q1, not 2027
+    assert (
+        gap.id == "gap_mrr" and "Q3 2025" in gap.detail and "$200.0K" in gap.detail
+    )  # not the stale Q1, not 2027
     assert gap.severity < 0.95
 
 
 def test_met10_a_far_future_plan_alone_is_no_gap_when_the_next_step_is_on_track():
     ctx = ctx_of((SIX_MONTHS, "pl.csv"), facts=[_plan(110_000, "2025-Q3"), _plan(1_000_000, "2027-Q4")])
     assert not [a for a in ctx.attack if a.id.startswith("gap_")]
-    far = ctx_of((SIX_MONTHS, "pl.csv"), facts=[_plan(1_000_000, "2027-Q4")])  # only a long-range target (30 months out)
+    far = ctx_of(
+        (SIX_MONTHS, "pl.csv"), facts=[_plan(1_000_000, "2027-Q4")]
+    )  # only a long-range target (30 months out)
     assert not [a for a in far.attack if a.id.startswith("gap_")]
-    stale = ctx_of((SIX_MONTHS, "pl.csv"), facts=[_plan(10_000, "2025-03")])  # a plan for a month already in history
+    stale = ctx_of(
+        (SIX_MONTHS, "pl.csv"), facts=[_plan(10_000, "2025-03")]
+    )  # a plan for a month already in history
     assert not [a for a in stale.attack if a.id.startswith("gap_")]
 
 
 # ---------------------------------------------------------------- MET-11
 
+
 def _ten_pct(skip: str | None = None) -> str:
     rows = months(2024, 1, 14)  # Jan 24 .. Feb 25
     return "Month,Subscription revenue\n" + "".join(
-        f"{p},{10000 * 1.1 ** i:.4f}\n" for i, p in enumerate(rows) if p != skip)
+        f"{p},{10000 * 1.1**i:.4f}\n" for i, p in enumerate(rows) if p != skip
+    )
 
 
 def test_met11_growth_windows_are_calendar_months():
@@ -202,10 +264,10 @@ def test_met11_growth_windows_are_calendar_months():
     assert g12.value == pytest.approx(0.10) and g12.period == "2024-02..2025-02"
     assert isinstance(ctx.figures["cmgr_recent"], MissingFigure)  # Dec 24 has no data
     yoy = ctx.figure("revenue_growth_yoy")
-    assert yoy.value == pytest.approx(1.1 ** 12 - 1) and "Feb 24" in yoy.formula
+    assert yoy.value == pytest.approx(1.1**12 - 1) and "Feb 24" in yoy.formula
     assert isinstance(ctx.figures["revenue_growth"], Figure)  # Feb vs Jan 25 are both there
     nna = ctx.figure("net_new_arr_l12m")
-    assert nna.value == pytest.approx((10000 * 1.1 ** 13 - 10000 * 1.1) * 12)
+    assert nna.value == pytest.approx((10000 * 1.1**13 - 10000 * 1.1) * 12)
 
 
 def test_met11_complete_data_is_unchanged():
@@ -215,6 +277,7 @@ def test_met11_complete_data_is_unchanged():
 
 
 # ---------------------------------------------------------------- MET-12
+
 
 def _credits_csv(net_income: int = -50000, credit_months: tuple[str, ...] = ("2024-06", "2024-12")) -> str:
     rows = months(2024, 1, 13)  # Jan 24 .. Jan 25
@@ -235,6 +298,7 @@ def test_met12_credits_in_some_months_are_excluded():
 
 # ---------------------------------------------------------------- MET-13
 
+
 def test_met13_exchange_rate_moves_are_not_retention():
     rows = months(2024, 1, 13)
     usd = {f"{p}-15": 1.30 + 0.15 * i / 12 for i, p in enumerate(rows)}
@@ -243,17 +307,21 @@ def test_met13_exchange_rate_moves_are_not_retention():
     ctx = ctx_of((csv, "c.csv"), (pl, "pl.csv"), fx=Rates(daily={"usd": usd}))
     converted = ctx.model.customer_mrr
     assert converted["2025-01"]["Acme"] == pytest.approx(1450)  # absolute money still converts
-    assert sum(converted["2025-01"].values()) / sum(converted["2024-01"].values()) > 1.1  # the trap: rates moved 11.5%
+    assert (
+        sum(converted["2025-01"].values()) / sum(converted["2024-01"].values()) > 1.1
+    )  # the trap: rates moved 11.5%
     assert ctx.figure("nrr").value == pytest.approx(1.0)
     assert ctx.figure("grr").value == pytest.approx(1.0)
 
 
 # ---------------------------------------------------------------- MET-14
 
+
 def test_met14_profitable_company_has_no_burn_multiple():
     rows = months(2024, 1, 13)
     csv = "Month,Subscription revenue,Net income\n" + "".join(
-        f"{p},{10000 + i * 1000},3000\n" for i, p in enumerate(rows))
+        f"{p},{10000 + i * 1000},3000\n" for i, p in enumerate(rows)
+    )
     ctx = ctx_of((csv, "pl.csv"))
     bm = ctx.figures["burn_multiple"]
     assert isinstance(bm, MissingFigure) and "Not burning" in bm.reason
@@ -261,11 +329,27 @@ def test_met14_profitable_company_has_no_burn_multiple():
 
 # ---------------------------------------------------------------- MET-15 / VIZ-2
 
-@pytest.mark.parametrize("raw,expected", [
-    ("$(1,234.00)", -1234.0), (" $ (1,234.00)", -1234.0), ("USD (1,234)", -1234.0), (" $ -   ", 0.0),
-    ("$ (1,234.00) ", -1234.0), ("(1,234.00) $", -1234.0), ("-", None), ("(5,000)", -5000.0), ("-$57,492.00", -57492.0),
-    ("500-", -500.0), ("1e400", None), ("-1e400", None), (float("inf"), None), (float("nan"), None), ("nan", None),
-])
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("$(1,234.00)", -1234.0),
+        (" $ (1,234.00)", -1234.0),
+        ("USD (1,234)", -1234.0),
+        (" $ -   ", 0.0),
+        ("$ (1,234.00) ", -1234.0),
+        ("(1,234.00) $", -1234.0),
+        ("-", None),
+        ("(5,000)", -5000.0),
+        ("-$57,492.00", -57492.0),
+        ("500-", -500.0),
+        ("1e400", None),
+        ("-1e400", None),
+        (float("inf"), None),
+        (float("nan"), None),
+        ("nan", None),
+    ],
+)
 def test_met15_accounting_formats_and_non_finite(raw, expected):
     assert parse_number(raw) == expected
 
@@ -279,7 +363,9 @@ def test_met15_a_column_of_accounting_cells_profiles_as_numbers():
 
 # ---------------------------------------------------------------- MET-16
 
-MONTHLY_PL = "Month,Subscription revenue,Net income\n" + "".join(f"{p},10000,-5000\n" for p in months(2024, 1, 10))
+MONTHLY_PL = "Month,Subscription revenue,Net income\n" + "".join(
+    f"{p},10000,-5000\n" for p in months(2024, 1, 10)
+)
 QUARTERLY_CASH = "Quarter,Cash\nQ1 2024,135000\nQ2 2024,120000\nQ3 2024,105000\nQ4 2024,90000\n"
 
 
@@ -300,6 +386,7 @@ def test_met16_monthly_target_says_the_quarterly_sheet_was_left_out():
 
 # ---------------------------------------------------------------- MET-17
 
+
 def test_met17_rows_for_one_customer_in_a_period_add_up():
     csv = "Month,Customer,MRR\n2025-01,Acme,1000\n2025-01,Acme,500\n2025-01,Beta,1200\n"
     ctx = ctx_of((csv, "c.csv"))
@@ -308,41 +395,61 @@ def test_met17_rows_for_one_customer_in_a_period_add_up():
 
 
 def test_met17_rows_for_one_cohort_in_a_period_add_up():
-    ds = DatasetInput(id="c", name="c", table_kind="cohort_mrr", granularity="month", transposed=False,
-                      rows=[{"period": "2025-01", "dim": "2024-01", "MRR": 100.0},
-                            {"period": "2025-01", "dim": "2024-01", "MRR": 50.0}],
-                      mapping=[{"source_column": "Cohort", "canonical_field": "dim.cohort"},
-                               {"source_column": "MRR", "canonical_field": "value.mrr", "unit": "cad"}])
+    ds = DatasetInput(
+        id="c",
+        name="c",
+        table_kind="cohort_mrr",
+        granularity="month",
+        transposed=False,
+        rows=[
+            {"period": "2025-01", "dim": "2024-01", "MRR": 100.0},
+            {"period": "2025-01", "dim": "2024-01", "MRR": 50.0},
+        ],
+        mapping=[
+            {"source_column": "Cohort", "canonical_field": "dim.cohort"},
+            {"source_column": "MRR", "canonical_field": "value.mrr", "unit": "cad"},
+        ],
+    )
     ctx = build_context([ds], [], {"currency": "cad"})
     assert ctx.model.cohort_mrr["2024-01"]["2025-01"] == 150
 
 
 # ---------------------------------------------------------------- MET-18
 
+
 @pytest.mark.parametrize("unit", ["money", "$"])
 def test_met18_money_units_are_the_reporting_currency(unit):
-    ctx = build_context([], [fact("mrr", 10_000, unit=unit), fact("round_size", 4_000_000, unit=unit)],
-                        {"currency": "cad"})
+    ctx = build_context(
+        [], [fact("mrr", 10_000, unit=unit), fact("round_size", 4_000_000, unit=unit)], {"currency": "cad"}
+    )
     assert ctx.figure("mrr").unit == "cad" and ctx.figure("arr").value == 120_000
     assert ctx.figure("fact.round_size").unit == "cad"
 
 
 def test_met18_unknown_fact_unit_is_missing_not_a_crash():
-    ctx = build_context([], [fact("cash", 10_000, unit="widgets"), fact("nrr", 1.1, unit="bananas")], {"currency": "cad"})
+    ctx = build_context(
+        [], [fact("cash", 10_000, unit="widgets"), fact("nrr", 1.1, unit="bananas")], {"currency": "cad"}
+    )
     assert isinstance(ctx.figures["cash_balance"], MissingFigure)
     assert not isinstance(ctx.figures.get("nrr"), Figure)
 
 
 # ---------------------------------------------------------------- MET-19
 
-@pytest.mark.parametrize("dates", [("2025-01-31", "2025-01-15", "2025-01-02"), ("31/01/2025", "15/01/2025", "02/01/2025")])
+
+@pytest.mark.parametrize(
+    "dates", [("2025-01-31", "2025-01-15", "2025-01-02"), ("31/01/2025", "15/01/2025", "02/01/2025")]
+)
 def test_met19_period_end_balance_is_the_latest_date(dates):
-    csv = "Date,Cash,Revenue\n" + "".join(f"{d},{c},100\n" for d, c in zip(dates, (9000, 9500, 10000), strict=True))
+    csv = "Date,Cash,Revenue\n" + "".join(
+        f"{d},{c},100\n" for d, c in zip(dates, (9000, 9500, 10000), strict=True)
+    )
     [ds] = parse_upload(csv.encode(), "bank.csv")
     assert ds.rows[0]["Cash"] == 9000 and ds.rows[0]["Revenue"] == 300
 
 
 # ---------------------------------------------------------------- MET-20
+
 
 def test_met20_source_rows_are_file_lines():
     csv = "Acme P&L\nPrepared by finance\nMonth,Revenue\n2025-01,100\n2025-02,200\n2025-03,300\n"
@@ -377,22 +484,41 @@ def test_met20_spreadsheet_rows_are_sheet_rows():
 
 # ---------------------------------------------------------------- MET-23
 
-@pytest.mark.parametrize("text,scale", [
-    ("Acme P&L (in $ thousands)", 1e3), ("All amounts in $ millions", 1e6), ("Revenue (k$)", 1e3),
-    ("Revenue (m$)", 1e6), ("(in CAD thousands)", 1e3), ("Revenue ($000)", 1e3), ("In thousands of dollars", 1e3),
-    ("Revenue", 1.0), ("Marketing spend", 1.0), ("Cost of goods sold", 1.0),
-])
+
+@pytest.mark.parametrize(
+    "text,scale",
+    [
+        ("Acme P&L (in $ thousands)", 1e3),
+        ("All amounts in $ millions", 1e6),
+        ("Revenue (k$)", 1e3),
+        ("Revenue (m$)", 1e6),
+        ("(in CAD thousands)", 1e3),
+        ("Revenue ($000)", 1e3),
+        ("In thousands of dollars", 1e3),
+        ("Revenue", 1.0),
+        ("Marketing spend", 1.0),
+        ("Cost of goods sold", 1.0),
+    ],
+)
 def test_met23_common_scale_headers(text, scale):
     assert scale_of(text) == scale
 
 
 # ---------------------------------------------------------------- MET-24
 
-@pytest.mark.parametrize("name,bad", [
-    ("Cost of sales - services", "revenue.one_time"), ("Services expense", "revenue.one_time"),
-    ("Consulting fees", "revenue.one_time"), ("SaaS tools", "revenue.recurring"), ("Platform fees", "revenue.recurring"),
-    ("Sales tax collected", "opex.s_and_m"), ("Cash collected", "cash_balance"),
-])
+
+@pytest.mark.parametrize(
+    "name,bad",
+    [
+        ("Cost of sales - services", "revenue.one_time"),
+        ("Services expense", "revenue.one_time"),
+        ("Consulting fees", "revenue.one_time"),
+        ("SaaS tools", "revenue.recurring"),
+        ("Platform fees", "revenue.recurring"),
+        ("Sales tax collected", "opex.s_and_m"),
+        ("Cash collected", "cash_balance"),
+    ],
+)
 def test_met24_expense_lines_never_map_to_revenue(name, bad):
     target, _ = _rule_match(name)
     assert target != bad
@@ -406,17 +532,26 @@ def test_met24_cost_and_tax_lines_get_a_sensible_target():
     assert _rule_match("Services expense")[0] is not None
 
 
-@pytest.mark.parametrize("name,target", [
-    ("Subscription revenue", "revenue.recurring"), ("Professional services", "revenue.one_time"),
-    ("Implementation fees", "revenue.one_time"), ("Subscription fees", "revenue.recurring"),
-    ("Services revenue", "revenue.one_time"), ("Cash", "cash_balance"), ("SR&ED tax credit", "non_dilutive_income"),
-    ("Software subscriptions", "opex.g_and_a"), ("Cost of revenue", "cogs"),
-])
+@pytest.mark.parametrize(
+    "name,target",
+    [
+        ("Subscription revenue", "revenue.recurring"),
+        ("Professional services", "revenue.one_time"),
+        ("Implementation fees", "revenue.one_time"),
+        ("Subscription fees", "revenue.recurring"),
+        ("Services revenue", "revenue.one_time"),
+        ("Cash", "cash_balance"),
+        ("SR&ED tax credit", "non_dilutive_income"),
+        ("Software subscriptions", "opex.g_and_a"),
+        ("Cost of revenue", "cogs"),
+    ],
+)
 def test_met24_revenue_lines_still_map(name, target):
     assert _rule_match(name)[0] == target
 
 
 # ---------------------------------------------------------------- MET-25
+
 
 def test_met25_latest_fact_is_by_date_not_string_order():
     older, newer = fact("cash", 1, period="FY2024"), fact("cash", 2, period="2026-09")
@@ -424,22 +559,33 @@ def test_met25_latest_fact_is_by_date_not_string_order():
     assert facts_by_metric([older, newer])["cash_balance"].value == 2
     no_period = fact("cash", 3)
     assert facts_by_metric([newer, no_period])["cash_balance"].value == 2
-    pending, confirmed = fact("cash", 4, period="2026-09", status="pending"), fact("cash", 5, period="2026-09")
+    pending, confirmed = (
+        fact("cash", 4, period="2026-09", status="pending"),
+        fact("cash", 5, period="2026-09"),
+    )
     assert facts_by_metric([confirmed, pending])["cash_balance"].value == 5
 
 
 # ---------------------------------------------------------------- MET-26
 
+
 def test_met26_missing_rate_is_the_stated_reason():
-    ds = DatasetInput(id="pl", name="pl", table_kind="series", granularity="month", transposed=False,
-                      rows=[{"period": "2025-01", "rev": 1000.0}],
-                      mapping=[{"source_column": "rev", "canonical_field": "revenue.total", "unit": "usd"}])
+    ds = DatasetInput(
+        id="pl",
+        name="pl",
+        table_kind="series",
+        granularity="month",
+        transposed=False,
+        rows=[{"period": "2025-01", "rev": 1000.0}],
+        mapping=[{"source_column": "rev", "canonical_field": "revenue.total", "unit": "usd"}],
+    )
     ctx = build_context([ds], [], {"currency": "cad"}, fx=None)
     rev = ctx.figures["revenue"]
     assert isinstance(rev, MissingFigure) and "No USD→CAD rate" in rev.reason and "2025-01" in rev.reason
 
 
 # ---------------------------------------------------------------- MET-28
+
 
 def test_met28_yearly_labels():
     csv = "Year,Subscription revenue\n2022,100000\n2023,150000\n2024,200000\n"
@@ -450,6 +596,7 @@ def test_met28_yearly_labels():
 
 
 # ---------------------------------------------------------------- MET-29
+
 
 def test_met29_derived_figures_keep_file_provenance():
     ctx = sample_context("harbor-labs")

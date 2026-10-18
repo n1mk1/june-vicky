@@ -53,13 +53,19 @@ quote a note word for word inside double quotes followed by [kb:its path]."""
 
 # ---------------------------------------------------------------- helpers
 
+
 def _guard(question: str) -> str:
     """What must match for two questions to share a cached answer: digits, periods and finance terms."""
     toks = tokens(question)
     vocab = {t for g in rag._glossary() for m in g for t in m}
-    keep = {t for t in toks if any(ch.isdigit() for ch in t) or re.fullmatch(r"q[1-4]|h[12]|fy\d*", t)
-            or t[:3] in ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-            or t in vocab}
+    keep = {
+        t
+        for t in toks
+        if any(ch.isdigit() for ch in t)
+        or re.fullmatch(r"q[1-4]|h[12]|fy\d*", t)
+        or t[:3] in ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+        or t in vocab
+    }
     return " ".join(sorted(keep))
 
 
@@ -70,8 +76,10 @@ def _guard_key(ctx: TruthContext, question: str) -> str:
 
 
 def _key(build: str, kbv: int, ctx: TruthContext, question: str) -> str:
-    return (f"rag:ans:{build}:{kbv}:{ctx.truthpack_id}:{ctx.version}:{ctx.currency}:"
-            f"{rag._sha(rag.normalize(question))}")
+    return (
+        f"rag:ans:{build}:{kbv}:{ctx.truthpack_id}:{ctx.version}:{ctx.currency}:"
+        f"{rag._sha(rag.normalize(question))}"
+    )
 
 
 def _attr(s: Any, n: int = 300) -> str:
@@ -89,16 +97,24 @@ def _chunk_block(chunks: list[dict]) -> str:
     out = []
     for c in chunks:
         ctx_lines = "".join(f"\n<context>{_body(t)}</context>" for t in c.get("context") or [])
-        out.append(f'<passage cite="{_attr(c["cite"])}" note="{_attr(c["path"])}" heading="{_attr(c["heading"])}">'
-                   f'\n{_body(c["text"])}{ctx_lines}\n</passage>')
+        out.append(
+            f'<passage cite="{_attr(c["cite"])}" note="{_attr(c["path"])}" heading="{_attr(c["heading"])}">'
+            f"\n{_body(c['text'])}{ctx_lines}\n</passage>"
+        )
     return "<passages>\n" + "\n".join(out) + "\n</passages>"
 
 
 async def link_figures(citations: list[dict], ctx: TruthContext) -> list[dict]:
     """Name the knowledge-base note behind each figure citation (the table or document Fill dashboard sent
     to intake): `source.kb_note = {id, path}`."""
-    ds = {c["source"].get("dataset_id") for c in citations if c.get("figure_id") and isinstance(c.get("source"), dict)}
-    refs = {c["source"].get("ref") for c in citations if c.get("figure_id") and isinstance(c.get("source"), dict)}
+    ds = {
+        c["source"].get("dataset_id")
+        for c in citations
+        if c.get("figure_id") and isinstance(c.get("source"), dict)
+    }
+    refs = {
+        c["source"].get("ref") for c in citations if c.get("figure_id") and isinstance(c.get("source"), dict)
+    }
     ds.discard(None)
     refs.discard(None)
     if not (ds or refs) or not ctx.engagement_id:
@@ -108,7 +124,9 @@ async def link_figures(citations: list[dict], ctx: TruthContext) -> list[dict]:
             """select d.id::text as dataset_id, u.filename, n.id::text as note_id, n.path
                from uploads u join kb_notes n on n.id = u.kb_note_id
                left join datasets d on d.upload_id = u.id
-               where u.engagement_id = $1::uuid""", ctx.engagement_id)
+               where u.engagement_id = $1::uuid""",
+            ctx.engagement_id,
+        )
     except Exception as e:
         log.info("could not link figures to notes: %s", e)
         return citations
@@ -125,6 +143,7 @@ async def link_figures(citations: list[dict], ctx: TruthContext) -> list[dict]:
 
 
 # ---------------------------------------------------------------- caches
+
 
 async def cached(question: str, ctx: TruthContext, build: str, kbv: int) -> dict | None:
     hit = None
@@ -147,7 +166,13 @@ async def cached(question: str, ctx: TruthContext, build: str, kbv: int) -> dict
            where build_id = $1::uuid and kb_version = $2 and truthpack_id is not distinct from $3::uuid
              and truthpack_version is not distinct from $4 and guard = $5 and created_at > now() - interval '24 hours'
            order by embedding <=> $6::halfvec limit 1""",
-        build, kbv, ctx.truthpack_id, ctx.version, _guard_key(ctx, question), to_pg(vec))
+        build,
+        kbv,
+        ctx.truthpack_id,
+        ctx.version,
+        _guard_key(ctx, question),
+        to_pg(vec),
+    )
     if row and float(row["sim"]) >= SEMANTIC_MIN:
         await rag.stat("ans_semantic_hit")
         ans = row["answer"]
@@ -175,17 +200,26 @@ async def remember(question: str, ctx: TruthContext, build: str, kbv: int, out: 
             """insert into qa_cache (build_id, kb_version, truthpack_id, truthpack_version, question, question_norm,
                                      guard, answer, embedding)
                values ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9::halfvec)""",
-            build, kbv, ctx.truthpack_id, ctx.version, question[:500], rag.normalize(question)[:500],
+            build,
+            kbv,
+            ctx.truthpack_id,
+            ctx.version,
+            question[:500],
+            rag.normalize(question)[:500],
             _guard_key(ctx, question),
-            json.loads(json.dumps(keep, default=str)), to_pg(vec))
+            json.loads(json.dumps(keep, default=str)),
+            to_pg(vec),
+        )
     except Exception as e:
         log.info("semantic cache write failed: %s", e)
 
 
 # ---------------------------------------------------------------- answers
 
-async def _ask_model(route: str, system: list[str], content: str, ctx: TruthContext, vault: Vault,
-                     extra: list) -> tuple[str | None, bool | None, Any]:
+
+async def _ask_model(
+    route: str, system: list[str], content: str, ctx: TruthContext, vault: Vault, extra: list
+) -> tuple[str | None, bool | None, Any]:
     """(reply, answerable, audit result). One regeneration with the findings when the audit fails."""
     from vicky.llm.client import LLMError, get_llm, with_timeout
     from vicky.llm.schemas import RagReply
@@ -194,8 +228,10 @@ async def _ask_model(route: str, system: list[str], content: str, ctx: TruthCont
     res = None
     for attempt in range(2):
         try:
-            r = await with_timeout(get_llm().parse(route, RagReply, system=system, messages=messages),
-                                   FULL_TIMEOUT_S if route == "qa_full" else TIMEOUT_S)
+            r = await with_timeout(
+                get_llm().parse(route, RagReply, system=system, messages=messages),
+                FULL_TIMEOUT_S if route == "qa_full" else TIMEOUT_S,
+            )
         except LLMError as e:
             log.info("%s failed: %s", route, e)
             return None, None, res
@@ -206,10 +242,15 @@ async def _ask_model(route: str, system: list[str], content: str, ctx: TruthCont
         if text and res.passed:
             return text, True, res
         if attempt == 0:
-            messages += [{"role": "assistant", "content": json.dumps({"answerable": True, "reply": text})},
-                         {"role": "user", "content": "That reply failed the citation audit: "
-                          f"{res.feedback() or 'it was empty'}. Rewrite it so every sentence cites a figure from "
-                          "<data> or quotes a passage word for word with its [kb:path]; drop anything you can't cite."}]
+            messages += [
+                {"role": "assistant", "content": json.dumps({"answerable": True, "reply": text})},
+                {
+                    "role": "user",
+                    "content": "That reply failed the citation audit: "
+                    f"{res.feedback() or 'it was empty'}. Rewrite it so every sentence cites a figure from "
+                    "<data> or quotes a passage word for word with its [kb:path]; drop anything you can't cite.",
+                },
+            ]
     return None, True, res
 
 
@@ -217,13 +258,20 @@ async def _done(text: str, res: Any, offline: dict, ctx: TruthContext, meta: dic
     from vicky.qa import _with_notes
 
     cites = await link_figures([c.model_dump(mode="json") for c in res.citations], ctx)
-    out = {**offline, "reply": text, "citations": cites, "audit": {"passed": True, "findings": []}, "llm": True,
-           "rag": meta}
+    out = {
+        **offline,
+        "reply": text,
+        "citations": cites,
+        "audit": {"passed": True, "findings": []},
+        "llm": True,
+        "rag": meta,
+    }
     return _with_notes(out, res)
 
 
-async def from_chunks(question: str, ctx: TruthContext, offline: dict, r: rag.Retrieval | None,
-                      path: str) -> tuple[dict | None, bool | None]:
+async def from_chunks(
+    question: str, ctx: TruthContext, offline: dict, r: rag.Retrieval | None, path: str
+) -> tuple[dict | None, bool | None]:
     """Haiku answers from the figures and the retrieved passages (or the figures alone when `r` is None)."""
     from vicky.qa import fact_sheet
 
@@ -235,7 +283,9 @@ async def from_chunks(question: str, ctx: TruthContext, offline: dict, r: rag.Re
     if chunks:
         parts.append(_chunk_block(chunks))
     parts.append(f"Question: {question}")
-    parts.append(f"A deterministic draft answer from the data (correct, but possibly clumsy): {offline['reply']}")
+    parts.append(
+        f"A deterministic draft answer from the data (correct, but possibly clumsy): {offline['reply']}"
+    )
     text, answerable, res = await _ask_model("qa_rag", [RAG_SYSTEM], "\n\n".join(parts), ctx, vault, extra)
     if text is None:
         return None, answerable
@@ -249,8 +299,10 @@ def _folder(path: str) -> str:
 
 async def vault_fits() -> tuple[bool, int]:
     """(whether the whole vault fits one catch-all read, how many notes it has)."""
-    row = await db.fetchrow("select count(*) filter (where kind <> 'hub') as n, coalesce(sum(length(content)), 0) as size "
-                            "from kb_notes")
+    row = await db.fetchrow(
+        "select count(*) filter (where kind <> 'hub') as n, coalesce(sum(length(content)), 0) as size "
+        "from kb_notes"
+    )
     return int(row["size"]) <= get_settings().rag_full_max_tokens * 4, int(row["n"])
 
 
@@ -258,8 +310,9 @@ async def _snapshot(recovered: rag.Retrieval | None) -> tuple[str, list[dict]]:
     """Every note, sorted by path, as the catch-all's <vault>. Over the cap, it fills up in order of
     relevance: the notes the recovery pass found, hubs, the rest of their folders, then the most recently
     updated notes, so it is never empty while the vault isn't."""
-    notes = await db.fetch("select id::text, path, title, kind, format, summary, content, updated_at "
-                           "from kb_notes order by path")
+    notes = await db.fetch(
+        "select id::text, path, title, kind, format, summary, content, updated_at from kb_notes order by path"
+    )
     cap = get_settings().rag_full_max_tokens * 4
     if sum(len(n["content"]) for n in notes) > cap:
         hits = [c["path"] for c in (recovered.chunks if recovered else [])]
@@ -267,8 +320,17 @@ async def _snapshot(recovered: rag.Retrieval | None) -> tuple[str, list[dict]]:
         rank = {p: i for i, p in enumerate(dict.fromkeys(hits))}
 
         def priority(n: dict) -> tuple:
-            return (0 if n["path"] in rank else 1 if n["kind"] == "hub" else 2 if _folder(n["path"]) in folders else 3,
-                    rank.get(n["path"], 0), -n["updated_at"].timestamp())
+            return (
+                0
+                if n["path"] in rank
+                else 1
+                if n["kind"] == "hub"
+                else 2
+                if _folder(n["path"]) in folders
+                else 3,
+                rank.get(n["path"], 0),
+                -n["updated_at"].timestamp(),
+            )
 
         out, size = [], 0
         for n in sorted(notes, key=priority):
@@ -277,13 +339,16 @@ async def _snapshot(recovered: rag.Retrieval | None) -> tuple[str, list[dict]]:
             out.append(n)
             size += len(n["content"])
         notes = sorted(out, key=lambda n: n["path"])
-    body = "\n".join(f'<note path="{_attr(n["path"])}" title="{_attr(n["title"])}">\n{_body(n["content"])}\n</note>'
-                     for n in notes)
+    body = "\n".join(
+        f'<note path="{_attr(n["path"])}" title="{_attr(n["title"])}">\n{_body(n["content"])}\n</note>'
+        for n in notes
+    )
     return f"<vault>\n{body}\n</vault>", notes
 
 
-async def catch_all(question: str, ctx: TruthContext, offline: dict,
-                    recovered: rag.Retrieval | None) -> tuple[dict | None, bool | None]:
+async def catch_all(
+    question: str, ctx: TruthContext, offline: dict, recovered: rag.Retrieval | None
+) -> tuple[dict | None, bool | None]:
     """Haiku over the whole vault. Runs only after the user accepted the offer. (answer, answerable):
     answerable is None when the model couldn't be reached."""
     from vicky.qa import fact_sheet
@@ -293,15 +358,21 @@ async def catch_all(question: str, ctx: TruthContext, offline: dict,
     for n in notes:
         vault._keep(n)
     sheet, extra = fact_sheet(ctx)
-    content = (f'<data company="{ctx.company}">\n{sheet}\n</data>\n\nQuestion: {question}\n\n'
-               f"A deterministic draft answer from the data (correct, but possibly clumsy): {offline['reply']}")
-    text, answerable, res = await _ask_model("qa_full", [RAG_SYSTEM, FULL_RULES, snap], content, ctx, vault, extra)
+    content = (
+        f'<data company="{ctx.company}">\n{sheet}\n</data>\n\nQuestion: {question}\n\n'
+        f"A deterministic draft answer from the data (correct, but possibly clumsy): {offline['reply']}"
+    )
+    text, answerable, res = await _ask_model(
+        "qa_full", [RAG_SYSTEM, FULL_RULES, snap], content, ctx, vault, extra
+    )
     if text is None:
         return None, answerable
     return await _done(text, res, offline, ctx, {"path": "catch_all", "notes": len(notes)}), True
 
 
-async def quote_answer(question: str, ctx: TruthContext, offline: dict, r: rag.Retrieval | None) -> dict | None:
+async def quote_answer(
+    question: str, ctx: TruthContext, offline: dict, r: rag.Retrieval | None
+) -> dict | None:
     """No model: the best line of the best passages, verbatim and cited, when the data has no answer."""
     from vicky.qa import _with_notes
 
@@ -331,11 +402,21 @@ async def quote_answer(question: str, ctx: TruthContext, offline: dict, r: rag.R
     if not res.passed:
         return None
     cites = [c.model_dump(mode="json") for c in res.citations]
-    return _with_notes({**offline, "reply": reply, "citations": cites, "topic": "notes",
-                        "audit": {"passed": True, "findings": []}, "rag": {"path": "quotes"}}, res)
+    return _with_notes(
+        {
+            **offline,
+            "reply": reply,
+            "citations": cites,
+            "topic": "notes",
+            "audit": {"passed": True, "findings": []},
+            "rag": {"path": "quotes"},
+        },
+        res,
+    )
 
 
 # ---------------------------------------------------------------- offers
+
 
 class OfferGone(Exception):
     pass
@@ -355,15 +436,24 @@ async def can_offer() -> bool:
     return bool(await db.fetchval("select exists (select 1 from kb_notes)"))
 
 
-async def create_offer(dashboard_id: str, question: str, ctx: TruthContext, retrievals: list[rag.Retrieval]) -> dict:
+async def create_offer(
+    dashboard_id: str, question: str, ctx: TruthContext, retrievals: list[rag.Retrieval]
+) -> dict:
     build = next((r.build_id for r in retrievals if r.build_id), None)
     kbv = await kb_version()
-    await db.execute("update rag_misses set decision = 'expired', decided_at = now() "
-                     "where decision = 'pending' and created_at < now() - interval '15 minutes'")
+    await db.execute(
+        "update rag_misses set decision = 'expired', decided_at = now() "
+        "where decision = 'pending' and created_at < now() - interval '15 minutes'"
+    )
     miss = await db.fetchval(
         """insert into rag_misses (build_id, kb_version, surface, dashboard_id, question, retrieved)
            values ($1::uuid, $2, 'ask', $3::uuid, $4, $5) returning id::text""",
-        build, kbv, dashboard_id, question[:500], {"passes": [r.summary() for r in retrievals]})
+        build,
+        kbv,
+        dashboard_id,
+        question[:500],
+        {"passes": [r.summary() for r in retrievals]},
+    )
     oid = uuid.uuid4().hex
     rec = {"dashboard_id": dashboard_id, "question": question, "miss_id": miss, "build_id": build}
     try:
@@ -373,11 +463,20 @@ async def create_offer(dashboard_id: str, question: str, ctx: TruthContext, retr
         return {}
     fits, n = await vault_fits()
     await rag.stat("offer")
-    prompt = (f"Search all {n} notes with AI? This reads your whole knowledge base and takes a few seconds." if fits
-              else f"Search your notes with AI? Your {n} notes are more than one read can hold, so this reads as many "
-                   "as fit, starting with the ones closest to your question. It takes a few seconds.")
-    return {"kind": "catch_all", "id": oid, "prompt": prompt, "whole_vault": fits,
-            "notes": n, "expires_at": (datetime.now(UTC) + timedelta(seconds=OFFER_TTL_S)).isoformat()}
+    prompt = (
+        f"Search all {n} notes with AI? This reads your whole knowledge base and takes a few seconds."
+        if fits
+        else f"Search your notes with AI? Your {n} notes are more than one read can hold, so this reads as many "
+        "as fit, starting with the ones closest to your question. It takes a few seconds."
+    )
+    return {
+        "kind": "catch_all",
+        "id": oid,
+        "prompt": prompt,
+        "whole_vault": fits,
+        "notes": n,
+        "expires_at": (datetime.now(UTC) + timedelta(seconds=OFFER_TTL_S)).isoformat(),
+    }
 
 
 async def take_offer(dashboard_id: str, offer_id: str) -> dict:
@@ -397,8 +496,9 @@ async def take_offer(dashboard_id: str, offer_id: str) -> dict:
 
 
 async def decline(rec: dict) -> None:
-    await db.execute("update rag_misses set decision = 'declined', decided_at = now() where id = $1::uuid",
-                     rec["miss_id"])
+    await db.execute(
+        "update rag_misses set decision = 'declined', decided_at = now() where id = $1::uuid", rec["miss_id"]
+    )
     await rag.stat("offer_declined")
 
 
@@ -414,13 +514,22 @@ async def accept(rec: dict, ctx: TruthContext, offline: dict) -> dict:
         recovered = await rag.retrieve(rec["question"], mode="recover")
         out, answerable = await catch_all(rec["question"], ctx, offline, recovered)
     cited = [n["path"] for n in (out or {}).get("notes") or []]
-    await db.execute("update rag_misses set decision = 'accepted', decided_at = now(), passed = $2, cited_notes = $3 "
-                     "where id = $1::uuid", rec["miss_id"], out is not None, cited)
+    await db.execute(
+        "update rag_misses set decision = 'accepted', decided_at = now(), passed = $2, cited_notes = $3 "
+        "where id = $1::uuid",
+        rec["miss_id"],
+        out is not None,
+        cited,
+    )
     if out is None:
         # Say what actually happened: nothing was read when the budget is spent or the model is unreachable.
-        reply = ("Today's AI budget is used up, so I couldn't search every note. Try again tomorrow." if budget_spent
-                 else "I couldn't reach the AI service to read your notes. Try again in a moment." if answerable is None
-                 else "I read every note and still couldn't find a cited answer to that.")
+        reply = (
+            "Today's AI budget is used up, so I couldn't search every note. Try again tomorrow."
+            if budget_spent
+            else "I couldn't reach the AI service to read your notes. Try again in a moment."
+            if answerable is None
+            else "I read every note and still couldn't find a cited answer to that."
+        )
         return {**offline, "reply": reply, "citations": [], "rag": {"path": "catch_all", "passed": False}}
     build = recovered.build_id if recovered else None
     if build:
@@ -429,6 +538,7 @@ async def accept(rec: dict, ctx: TruthContext, offline: dict) -> dict:
 
 
 # ---------------------------------------------------------------- the ladder
+
 
 def _extra_queries(offline: dict, ctx: TruthContext) -> list[str]:
     f = ctx.figures.get(offline.get("topic") or "")
@@ -452,7 +562,13 @@ async def answer(question: str, ctx: TruthContext, offline: dict, *, dashboard_i
         return (await quote_answer(question, ctx, offline, first) if needs_notes else None) or offline
 
     def log_path(path: str, r: rag.Retrieval | None) -> None:
-        log.info("ask vicky: path=%s kb_v=%s confidence=%s ms=%s", path, kbv, r and round(r.confidence, 3), r and r.ms)
+        log.info(
+            "ask vicky: path=%s kb_v=%s confidence=%s ms=%s",
+            path,
+            kbv,
+            r and round(r.confidence, 3),
+            r and r.ms,
+        )
 
     if first.chunks and first.confidence >= s.rag_conf_min:
         out, answerable = await from_chunks(question, ctx, offline, first, "chunks")

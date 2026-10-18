@@ -14,7 +14,7 @@ from typing import Any
 from vicky.config import get_settings
 
 log = logging.getLogger(__name__)
-MIN_SIDE = 60          # skip icons and rules
+MIN_SIDE = 60  # skip icons and rules
 MAX_PIXELS = 25_000_000  # tesseract slows to a crawl past this; downscale first
 
 
@@ -73,7 +73,9 @@ def bytes_text(data: bytes, *, sparse: bool = False) -> str:
         return ""
 
 
-def render_scale(width_pt: float, height_pt: float, scale: float = 2.0, max_pixels: int = MAX_PIXELS) -> float:
+def render_scale(
+    width_pt: float, height_pt: float, scale: float = 2.0, max_pixels: int = MAX_PIXELS
+) -> float:
     """The render scale for a page of this size: `scale`, lowered so the bitmap stays within `max_pixels`.
     A PDF a few KB long can declare a page metres wide; rendering it at full scale would exhaust memory."""
     area = float(width_pt) * float(height_pt)

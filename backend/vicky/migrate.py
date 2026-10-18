@@ -58,13 +58,18 @@ async def ensure_vectors(conn: asyncpg.Connection) -> bool:
     """pgvector, and the vector columns and indexes of 0006_rag.sql, whenever the server has the
     extension. Returns whether vectors are available; says so in the log when they aren't."""
     await conn.execute(VECTORS_SQL)
-    ok = bool(await conn.fetchval(
-        """select exists (select 1 from information_schema.columns
+    ok = bool(
+        await conn.fetchval(
+            """select exists (select 1 from information_schema.columns
                           where table_schema = current_schema() and table_name = 'kb_chunks'
-                            and column_name = 'embedding')"""))
+                            and column_name = 'embedding')"""
+        )
+    )
     if not ok:
-        log.warning("pgvector is not available on this Postgres: knowledge-base search runs on BM25 only "
-                    "(use the pgvector/pgvector:pg17 image, or enable the vector extension)")
+        log.warning(
+            "pgvector is not available on this Postgres: knowledge-base search runs on BM25 only "
+            "(use the pgvector/pgvector:pg17 image, or enable the vector extension)"
+        )
     return ok
 
 
@@ -83,9 +88,16 @@ async def seed_sources(conn: asyncpg.Connection) -> int:
                  claim=excluded.claim, url=excluded.url, as_of=excluded.as_of,
                  business_model=excluded.business_model, stage=excluded.stage,
                  topic=excluded.topic, verified=excluded.verified""",
-            e["id"], e.get("publisher", ""), e.get("title"), e.get("claim", ""), e.get("url"),
-            str(e.get("as_of") or ""), list(e.get("business_model") or []), list(e.get("stage") or []),
-            list(e.get("topic") or []), bool(e.get("verified", False)),
+            e["id"],
+            e.get("publisher", ""),
+            e.get("title"),
+            e.get("claim", ""),
+            e.get("url"),
+            str(e.get("as_of") or ""),
+            list(e.get("business_model") or []),
+            list(e.get("stage") or []),
+            list(e.get("topic") or []),
+            bool(e.get("verified", False)),
         )
     return len(entries)
 

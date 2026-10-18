@@ -13,17 +13,37 @@ from anthropic import AsyncAnthropic, DefaultAsyncHttpxClient
 
 from vicky.llm.client import LLM
 
-USAGE = {"input_tokens": 1000, "output_tokens": 200, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+USAGE = {
+    "input_tokens": 1000,
+    "output_tokens": 200,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+}
 
 
 def text_block(text: str, citations: list[dict] | None = None) -> dict:
     return {"type": "text", "text": text, "citations": citations}
 
 
-def message(content: list[dict], *, stop_reason: str = "end_turn", model: str = "claude-sonnet-5-5",
-            usage: dict | None = None, stop_details: dict | None = None) -> dict:
-    return {"id": "msg_recorded", "type": "message", "role": "assistant", "model": model, "content": content,
-            "stop_reason": stop_reason, "stop_sequence": None, "stop_details": stop_details, "usage": usage or USAGE}
+def message(
+    content: list[dict],
+    *,
+    stop_reason: str = "end_turn",
+    model: str = "claude-sonnet-5-5",
+    usage: dict | None = None,
+    stop_details: dict | None = None,
+) -> dict:
+    return {
+        "id": "msg_recorded",
+        "type": "message",
+        "role": "assistant",
+        "model": model,
+        "content": content,
+        "stop_reason": stop_reason,
+        "stop_sequence": None,
+        "stop_details": stop_details,
+        "usage": usage or USAGE,
+    }
 
 
 def json_reply(obj: Any, **kw: Any) -> dict:
@@ -35,21 +55,42 @@ def text_reply(text: str, **kw: Any) -> dict:
 
 
 def tool_use_reply(name: str, tool_input: dict, tool_id: str = "toolu_1", **kw: Any) -> dict:
-    return message([{"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}], stop_reason="tool_use", **kw)
+    return message(
+        [{"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}], stop_reason="tool_use", **kw
+    )
 
 
 def page_cite(text: str, page: int, title: str = "doc.pdf") -> dict:
-    return {"type": "page_location", "cited_text": text, "document_index": 0, "document_title": title,
-            "start_page_number": page, "end_page_number": page + 1}
+    return {
+        "type": "page_location",
+        "cited_text": text,
+        "document_index": 0,
+        "document_title": title,
+        "start_page_number": page,
+        "end_page_number": page + 1,
+    }
 
 
 def char_cite(text: str, start: int, title: str = "doc.docx") -> dict:
-    return {"type": "char_location", "cited_text": text, "document_index": 0, "document_title": title,
-            "start_char_index": start, "end_char_index": start + len(text)}
+    return {
+        "type": "char_location",
+        "cited_text": text,
+        "document_index": 0,
+        "document_title": title,
+        "start_char_index": start,
+        "end_char_index": start + len(text),
+    }
 
 
-FILE_META = {"id": "file_recorded", "type": "file", "filename": "doc.pdf", "mime_type": "application/pdf",
-             "size_bytes": 10, "created_at": "2026-10-01T00:00:00Z", "downloadable": False}
+FILE_META = {
+    "id": "file_recorded",
+    "type": "file",
+    "filename": "doc.pdf",
+    "mime_type": "application/pdf",
+    "size_bytes": 10,
+    "created_at": "2026-10-01T00:00:00Z",
+    "downloadable": False,
+}
 
 
 class Recorder:
@@ -69,8 +110,14 @@ class Recorder:
             body = json.loads(raw) if raw else None
         except (ValueError, UnicodeDecodeError):
             body = None  # multipart (Files API upload)
-        call = {"method": request.method, "path": request.url.path, "body": body, "headers": dict(request.headers),
-                "task": task_of(body), "raw": raw}
+        call = {
+            "method": request.method,
+            "path": request.url.path,
+            "body": body,
+            "headers": dict(request.headers),
+            "task": task_of(body),
+            "raw": raw,
+        }
         self.calls.append(call)
         out = self.responder(call)
         if inspect.isawaitable(out):
@@ -93,12 +140,22 @@ def queue(*responses: Any) -> Callable[[dict], Any]:
     return respond
 
 
-TASK_MARKERS = [("memo", "pre-meeting memo"), ("speak", "say your next line"), ("bid", "update your confidence"),
-                ("chair", "chairing the panel"), ("judge", "score the founder's answer"), ("claims", "quantitative claim"),
-                ("mapper", "map the columns"), ("doc_parse", "cited fact list"), ("doc_facts", "extract facts"),
-                ("persona", "investor persona card"), ("review", "review the investor's draft line"),
-                ("probes", "draft recall questions"), ("ask_knowledge", "ask the founder to recall"),
-                ("verify", "verify the founder's recall")]
+TASK_MARKERS = [
+    ("memo", "pre-meeting memo"),
+    ("speak", "say your next line"),
+    ("bid", "update your confidence"),
+    ("chair", "chairing the panel"),
+    ("judge", "score the founder's answer"),
+    ("claims", "quantitative claim"),
+    ("mapper", "map the columns"),
+    ("doc_parse", "cited fact list"),
+    ("doc_facts", "extract facts"),
+    ("persona", "investor persona card"),
+    ("review", "review the investor's draft line"),
+    ("probes", "draft recall questions"),
+    ("ask_knowledge", "ask the founder to recall"),
+    ("verify", "verify the founder's recall"),
+]
 
 
 def task_of(body: Any) -> str:
@@ -113,8 +170,12 @@ def task_of(body: Any) -> str:
 
 
 def make_llm(recorder: Recorder) -> LLM:
-    client = AsyncAnthropic(api_key="test-key", max_retries=0, base_url="https://api.anthropic.test",
-                            http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(recorder.handler)))
+    client = AsyncAnthropic(
+        api_key="test-key",
+        max_retries=0,
+        base_url="https://api.anthropic.test",
+        http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(recorder.handler)),
+    )
     return LLM(client)
 
 
@@ -123,7 +184,9 @@ def make_pdf(pages: list[list[str]]) -> bytes:
     objects: dict[int, bytes] = {}
     page_ids = [4 + 2 * i for i in range(len(pages))]
     objects[1] = b"<< /Type /Catalog /Pages 2 0 R >>"
-    objects[2] = f"<< /Type /Pages /Kids [{' '.join(f'{p} 0 R' for p in page_ids)}] /Count {len(pages)} >>".encode()
+    objects[2] = (
+        f"<< /Type /Pages /Kids [{' '.join(f'{p} 0 R' for p in page_ids)}] /Count {len(pages)} >>".encode()
+    )
     objects[3] = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
     for i, lines in enumerate(pages):
         ops = ["BT", "/F1 11 Tf", "14 TL", "72 720 Td"]
@@ -131,8 +194,10 @@ def make_pdf(pages: list[list[str]]) -> bytes:
             ops.append("(" + ln.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ") Tj T*")
         ops.append("ET")
         stream = "\n".join(ops).encode("latin-1")
-        objects[page_ids[i]] = (f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R "
-                                f">> >> /Contents {page_ids[i] + 1} 0 R >>").encode()
+        objects[page_ids[i]] = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R "
+            f">> >> /Contents {page_ids[i] + 1} 0 R >>"
+        ).encode()
         objects[page_ids[i] + 1] = b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream"
     out = b"%PDF-1.4\n"
     offsets = {}

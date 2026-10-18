@@ -36,4 +36,9 @@ def review(text: str, *, asked: list[str], intent: str, answer_key: str | None =
         key = _words(answer_key)
         if key and len(_words(text) & key) / len(key) >= GIVEAWAY:
             issues.append("it gives the answer away")
-    return {"verdict": "revise" if issues else "approve", "issues": issues, "note": "; ".join(issues), "source": "code"}
+    return {
+        "verdict": "revise" if issues else "approve",
+        "issues": issues,
+        "note": "; ".join(issues),
+        "source": "code",
+    }

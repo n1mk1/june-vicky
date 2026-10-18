@@ -46,7 +46,9 @@ async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO)
     s = get_settings()
     if s.cookie_secure and (s.access_code == "vicky-demo" or s.cookie_secret == "dev-only-change-me"):
-        raise RuntimeError("Set ACCESS_CODE and COOKIE_SECRET: the development defaults must not guard a public deploy")
+        raise RuntimeError(
+            "Set ACCESS_CODE and COOKIE_SECRET: the development defaults must not guard a public deploy"
+        )
     await migrate.migrate(s.database_url)
     await db.connect(s.database_url)
     await kv.connect(s.redis_url)
@@ -110,7 +112,9 @@ class BodyLimit:
     @staticmethod
     async def _too_large(scope, receive, send, limit: int) -> None:
         size = f"{limit // (1024 * 1024)} MB" if limit >= 1024 * 1024 else f"{limit} bytes"
-        await JSONResponse({"detail": f"Requests are limited to {size}."}, status_code=413)(scope, receive, send)
+        await JSONResponse({"detail": f"Requests are limited to {size}."}, status_code=413)(
+            scope, receive, send
+        )
 
 
 def docs_urls(cookie_secure: bool) -> dict:
@@ -120,15 +124,24 @@ def docs_urls(cookie_secure: bool) -> dict:
     return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
 
 
-app = FastAPI(title="Vicky API", version="0.1.0", lifespan=lifespan, **docs_urls(get_settings().cookie_secure))
+app = FastAPI(
+    title="Vicky API", version="0.1.0", lifespan=lifespan, **docs_urls(get_settings().cookie_secure)
+)
 app.add_middleware(BodyLimit)  # inside CORS, so a 413 still carries the CORS headers
-app.add_middleware(CORSMiddleware, allow_origins=[get_settings().web_origin], allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[get_settings().web_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(NotFound)
 async def _nf(_: Request, e: NotFound):
-    return JSONResponse({"detail": str(e) if " " in str(e) else f"{str(e).capitalize()} not found"}, status_code=404)
+    return JSONResponse(
+        {"detail": str(e) if " " in str(e) else f"{str(e).capitalize()} not found"}, status_code=404
+    )
 
 
 @app.exception_handler(Invalid)
@@ -144,15 +157,19 @@ async def _conf(_: Request, e: Conflict):
 @app.exception_handler(RequestValidationError)
 async def _req_val(_: Request, e: RequestValidationError):
     # FastAPI's default 422, without echoing the input: a NaN or Infinity there isn't valid JSON (500).
-    return JSONResponse({"detail": jsonable_encoder([{k: v for k, v in err.items() if k != "input"}
-                                                     for err in e.errors()])}, status_code=422)
+    return JSONResponse(
+        {"detail": jsonable_encoder([{k: v for k, v in err.items() if k != "input"} for err in e.errors()])},
+        status_code=422,
+    )
 
 
 @app.exception_handler(ValidationError)
 async def _val(_: Request, e: ValidationError):
     first = e.errors()[0]
     where = ".".join(str(x) for x in first.get("loc", ()))
-    return JSONResponse({"detail": f"{where}: {first.get('msg')}" if where else first.get("msg")}, status_code=422)
+    return JSONResponse(
+        {"detail": f"{where}: {first.get('msg')}" if where else first.get("msg")}, status_code=422
+    )
 
 
 @app.exception_handler(DSLError)
@@ -161,6 +178,7 @@ async def _dsl(_: Request, e: DSLError):
 
 
 # ---------------------------------------------------------------- health (open)
+
 
 async def health() -> JSONResponse:
     """503 when Postgres is unreachable, so Render's health check restarts a broken instance. Redis is
@@ -187,6 +205,7 @@ api = APIRouter(prefix="/api/v1", dependencies=[auth.Gate])
 
 # ---------------------------------------------------------------- engagements and truth
 
+
 class ProfileIn(BaseModel):
     profile: dict = Field(default_factory=dict)
 
@@ -205,7 +224,9 @@ class FactIn(BaseModel):
     def _unit(cls, v: str) -> str:
         unit = (v or "count").strip().lower()
         if unit not in FACT_UNITS:
-            raise ValueError(f"unknown unit {v!r}; use a currency code, money, pct, months, count, ratio or x")
+            raise ValueError(
+                f"unknown unit {v!r}; use a currency code, money, pct, months, count, ratio or x"
+            )
         return unit
 
 
@@ -230,7 +251,9 @@ async def list_engagements() -> list[dict]:
 async def active_engagement() -> dict:
     eid = await engagements.active_id()
     if eid is None:
-        raise NotFound("No confirmed source of truth yet. Add your files to the knowledge base and fill the dashboard first.")
+        raise NotFound(
+            "No confirmed source of truth yet. Add your files to the knowledge base and fill the dashboard first."
+        )
     return await engagements.detail(eid)
 
 
@@ -257,7 +280,9 @@ async def upload(file: UploadFile = File(...), engagement_id: str | None = Form(
     if len(data) > limit:
         raise HTTPException(413, f"Files are limited to {limit // (1024 * 1024)} MB")
     try:
-        eid = await engagements.add_upload(engagement_id or None, file.filename or "upload", data, file.content_type or "")
+        eid = await engagements.add_upload(
+            engagement_id or None, file.filename or "upload", data, file.content_type or ""
+        )
     except Invalid as e:
         raise HTTPException(415 if "Unsupported" in str(e) else 422, str(e)) from e
     return await engagements.detail(eid)
@@ -328,8 +353,15 @@ async def coverage(engagement_id: str | None = None) -> list[dict]:
 @api.post("/claims/check")
 async def claims_check(body: ClaimIn, engagement_id: str | None = None) -> dict:
     ctx = await engagements.context(await engagements.resolve(engagement_id))
-    return check_claim(body.metric, body.value, body.unit, ctx.figures, period=body.period, is_forecast=body.is_forecast,
-                       facts=ctx.facts).model_dump(mode="json")
+    return check_claim(
+        body.metric,
+        body.value,
+        body.unit,
+        ctx.figures,
+        period=body.period,
+        is_forecast=body.is_forecast,
+        facts=ctx.facts,
+    ).model_dump(mode="json")
 
 
 @api.get("/glossary")
@@ -346,6 +378,7 @@ async def sources(topic: str | None = None) -> list[dict]:
 
 
 # ---------------------------------------------------------------- dashboards
+
 
 class SpecIn(BaseModel):
     spec: dict
@@ -368,7 +401,9 @@ async def dashboard(did: str, theme: str = "vicky-dark", currency: str | None = 
 
 
 @api.post("/dashboards/{did}/widgets/preview")
-async def widget_preview(did: str, body: SpecIn, theme: str = "vicky-dark", currency: str | None = None) -> dict:
+async def widget_preview(
+    did: str, body: SpecIn, theme: str = "vicky-dark", currency: str | None = None
+) -> dict:
     return await dashboards.preview(did, body.spec, theme, currency)
 
 
@@ -412,7 +447,9 @@ class CatchAllIn(BaseModel):
 
 
 @api.post("/dashboards/{did}/chat/catch-all", response_model=None)
-async def dashboard_catch_all(did: str, body: CatchAllIn, currency: str | None = None) -> dict | PlainTextResponse:
+async def dashboard_catch_all(
+    did: str, body: CatchAllIn, currency: str | None = None
+) -> dict | PlainTextResponse:
     """The user's answer to a catch-all offer (docs/08-RAG.md §Asking permission): accept runs the
     whole-vault call once; decline runs nothing (204); an expired, used or foreign offer is 410."""
     from vicky.kb.ask import OfferGone
@@ -427,6 +464,7 @@ async def dashboard_catch_all(did: str, body: CatchAllIn, currency: str | None =
 
 
 # ---------------------------------------------------------------- areopagus
+
 
 @api.get("/areopagus")
 async def personas() -> list[dict]:
@@ -498,13 +536,16 @@ async def persona_fork(pid: str) -> dict:
 
 # ---------------------------------------------------------------- court
 
+
 class CourtStart(BaseModel):
     panel: list[str] | None = None
     question_cap: int | None = Field(default=None, ge=4, le=20)
     coaching: str | None = None
     focus: str | None = Field(default=None, max_length=500)
     knowledge: bool = True  # knowledge checks from the founder's notes (needs the search index)
-    drills: list[str] | None = Field(default=None, max_length=20)  # founder_memory drill ids; default: every pending one
+    drills: list[str] | None = Field(
+        default=None, max_length=20
+    )  # founder_memory drill ids; default: every pending one
 
 
 class DrillItem(BaseModel):
@@ -527,7 +568,9 @@ async def court_start(body: CourtStart) -> dict:
     except NotFound as e:
         raise HTTPException(409, str(e)) from e
     try:
-        sid = await court.start(body.panel, body.question_cap, body.coaching, body.focus, body.knowledge, body.drills)
+        sid = await court.start(
+            body.panel, body.question_cap, body.coaching, body.focus, body.knowledge, body.drills
+        )
     except (PersonaError, CourtError) as e:
         raise HTTPException(422, str(e)) from e
     return await court.view(sid)
@@ -580,6 +623,7 @@ async def session_report(sid: str) -> dict:
 
 # ---------------------------------------------------------------- reports
 
+
 @api.get("/reports")
 async def reports() -> list[dict]:
     rows = await db.fetch(
@@ -591,7 +635,8 @@ async def reports() -> list[dict]:
                      from jsonb_array_elements(coalesce(r.report->'questions', '[]'::jsonb)) q) as lenses
            from reports r join engagements e on e.id = r.engagement_id
            left join sessions s on s.id = r.session_id
-           order by r.created_at desc limit 50""")
+           order by r.created_at desc limit 50"""
+    )
     for r in rows:
         r["summary"] = report.describe(r.pop("lenses"), r.pop("focus"))
     return rows
@@ -602,8 +647,11 @@ async def report_md(rid: str) -> PlainTextResponse:
     md = await db.fetchval("select markdown from reports where id::text = $1", rid)
     if md is None:
         raise NotFound("report")
-    return PlainTextResponse(md, media_type="text/markdown",
-                             headers={"content-disposition": f'attachment; filename="vicky-report-{rid[:8]}.md"'})
+    return PlainTextResponse(
+        md,
+        media_type="text/markdown",
+        headers={"content-disposition": f'attachment; filename="vicky-report-{rid[:8]}.md"'},
+    )
 
 
 @api.get("/reports/{rid}")
@@ -611,16 +659,25 @@ async def report_get(rid: str) -> dict:
     row = await db.fetchrow("select * from reports where id::text = $1", rid)
     if row is None:
         raise NotFound("report")
-    return {"id": str(row["id"]), "session_id": str(row["session_id"]), "created_at": row["created_at"],
-            "markdown": row["markdown"], **row["report"]}
+    return {
+        "id": str(row["id"]),
+        "session_id": str(row["session_id"]),
+        "created_at": row["created_at"],
+        "markdown": row["markdown"],
+        **row["report"],
+    }
 
 
 # ---------------------------------------------------------------- jobs
 
+
 @api.get("/jobs/{jid}")
 async def job_status(jid: str) -> dict:
-    row = await db.fetchrow("select id::text, kind::text, status::text, error, result, enqueued_at, finished_at "
-                            "from jobs where id::text = $1", jid)
+    row = await db.fetchrow(
+        "select id::text, kind::text, status::text, error, result, enqueued_at, finished_at "
+        "from jobs where id::text = $1",
+        jid,
+    )
     if row is None:
         raise NotFound("job")
     return row
@@ -640,13 +697,15 @@ async def job_retry(jid: str) -> dict:
 
 # ---------------------------------------------------------------- simulation
 
+
 @api.post("/pitch/start")
 async def pitch_start() -> dict:
     try:
         await engagements.require_confirmed()
     except NotFound as e:
-        raise HTTPException(409, "Confirm a source of truth before the simulation: the panel checks every claim "
-                                 "against it.") from e
+        raise HTTPException(
+            409, "Confirm a source of truth before the simulation: the panel checks every claim against it."
+        ) from e
     raise HTTPException(501, "The voice simulation is not built yet. Practice in Preparation meanwhile.")
 
 
@@ -660,5 +719,3 @@ async def _not_found(path: str, request: Request) -> JSONResponse:
     if not auth.token_ok(request.cookies.get(get_settings().cookie_name)):
         return JSONResponse({"detail": "Enter the access code to continue."}, status_code=401)
     return JSONResponse({"detail": f"No route /api/v1/{path}"}, status_code=404)
-
-

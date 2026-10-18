@@ -46,8 +46,13 @@ def _parse(path) -> Playbook:
     if raw.startswith("---"):
         _, fm, body = raw.split("---", 2)
         meta = yaml.safe_load(fm) or {}
-    return Playbook(id=path.stem, title=str(meta.get("title") or path.stem), topics=[str(t) for t in meta.get("topics") or []],
-                    body=body.strip(), meta=meta)
+    return Playbook(
+        id=path.stem,
+        title=str(meta.get("title") or path.stem),
+        topics=[str(t) for t in meta.get("topics") or []],
+        body=body.strip(),
+        meta=meta,
+    )
 
 
 @lru_cache
@@ -91,7 +96,18 @@ _Q = re.compile(r"^###\s+(\d+)\.\s+(.+?)\s*$", re.M)
 
 # Search order for strong-answer anchors: the seated investors' banks first, then the archetype banks
 # kept only as a source of anchors (their investors are no longer in the roster).
-BANK_ORDER = ("aristotle", "socrates", "thales", "priya", "dana", "xenophon", "plato", "victor", "sam", "olivia")
+BANK_ORDER = (
+    "aristotle",
+    "socrates",
+    "thales",
+    "priya",
+    "dana",
+    "xenophon",
+    "plato",
+    "victor",
+    "sam",
+    "olivia",
+)
 
 
 def bank_ids() -> tuple[str, ...]:
@@ -107,19 +123,27 @@ def question_bank(persona_id: str) -> list[BankQuestion]:
     heads = list(_Q.finditer(body))
     out = []
     for i, m in enumerate(heads):
-        chunk = body[m.end(): heads[i + 1].start() if i + 1 < len(heads) else len(body)]
+        chunk = body[m.end() : heads[i + 1].start() if i + 1 < len(heads) else len(body)]
         text = m.group(2).strip().strip('"“”')
         why = re.search(r"^Why:\s*(.+?)(?=\n- |\n\n|\Z)", chunk, re.M | re.S)
         weak = re.search(r"\*\*Weak:\*\*\s*(.+?)(?=\n- \*\*|\n\n|\Z)", chunk, re.S)
         strong = re.search(r"\*\*Strong:\*\*\s*(.+?)(?=\n- \*\*|\n\n|\Z)", chunk, re.S)
-        q = BankQuestion(persona=persona_id, n=int(m.group(1)), text=text, why=_clean(why), weak=_clean(weak),
-                         strong=_clean(strong).strip('"“”'))
+        q = BankQuestion(
+            persona=persona_id,
+            n=int(m.group(1)),
+            text=text,
+            why=_clean(why),
+            weak=_clean(weak),
+            strong=_clean(strong).strip('"“”'),
+        )
         q.placeholders = set(PLACEHOLDER.findall(q.text))
         out.append(q)
     return out
 
 
-def fill(text: str, figures: dict[str, Figure], company: str, extra: dict[str, str] | None = None) -> str | None:
+def fill(
+    text: str, figures: dict[str, Figure], company: str, extra: dict[str, str] | None = None
+) -> str | None:
     """Fill {placeholders} from figure displays and the profile; None if any can't be filled."""
     values = {"company": company, **(extra or {})}
     ok = True

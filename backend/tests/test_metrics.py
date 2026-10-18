@@ -15,18 +15,36 @@ def approx(fig, value, rel=0.02):
     assert fig.value == pytest.approx(value, rel=rel), f"{fig.id}: {fig.value} != {value} ({fig.formula})"
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("$1,234.00", 1234.0), ("-$57,492.00", -57492.0), ("(5,000)", -5000.0), ("$0.00", 0.0),
-    ("12%", 0.12), ("1.2M", 1_200_000.0), ("", None), ("—", None), ("abc", None), ("£2,500", 2500.0),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("$1,234.00", 1234.0),
+        ("-$57,492.00", -57492.0),
+        ("(5,000)", -5000.0),
+        ("$0.00", 0.0),
+        ("12%", 0.12),
+        ("1.2M", 1_200_000.0),
+        ("", None),
+        ("—", None),
+        ("abc", None),
+        ("£2,500", 2500.0),
+    ],
+)
 def test_parse_number(raw, expected):
     assert parse_number(raw) == expected
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("2024-10", ("2024-10", "month")), ("Oct 2024", ("2024-10", "month")), ("Q1 2024", ("2024-Q1", "quarter")),
-    ("2024-Q3", ("2024-Q3", "quarter")), ("Sep-26", ("2026-09", "month")), ("hello", None),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("2024-10", ("2024-10", "month")),
+        ("Oct 2024", ("2024-10", "month")),
+        ("Q1 2024", ("2024-Q1", "quarter")),
+        ("2024-Q3", ("2024-Q3", "quarter")),
+        ("Sep-26", ("2026-09", "month")),
+        ("hello", None),
+    ],
+)
 def test_parse_period(raw, expected):
     assert parse_period(raw) == expected
 
@@ -54,8 +72,13 @@ def test_harbor_labs_any_layout():
     ds = parse_upload((d / "financials_quarterly.csv").read_bytes(), "financials_quarterly.csv")[0]
     assert ds.transposed and ds.granularity == "quarter"
     proposal = propose_heuristic(ds, "usd")
-    exp = [{"source_column": e["source_column"] if e["canonical_field"] != "period" else "period",
-            "canonical_field": e["canonical_field"]} for e in mapping]
+    exp = [
+        {
+            "source_column": e["source_column"] if e["canonical_field"] != "period" else "period",
+            "canonical_field": e["canonical_field"],
+        }
+        for e in mapping
+    ]
     assert mapping_accuracy(proposal, exp) >= 0.9
 
     _, model, m = sample_metrics("harbor-labs")

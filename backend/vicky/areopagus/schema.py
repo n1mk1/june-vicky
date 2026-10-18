@@ -11,10 +11,18 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from vicky.model.canonical import LENSES
 
 LENS_LABELS = {
-    "claims": "Deck claims vs the data", "forecast": "Growth and the forecast", "retention": "Retention and churn",
-    "unit_economics": "Unit economics", "concentration": "Customer concentration", "runway": "Cash and runway",
-    "governance": "Governance and mandate", "market": "Market size", "team": "Team and execution",
-    "product_tech": "Product and technology", "terms_cap_table": "Terms and cap table", "impact": "Impact",
+    "claims": "Deck claims vs the data",
+    "forecast": "Growth and the forecast",
+    "retention": "Retention and churn",
+    "unit_economics": "Unit economics",
+    "concentration": "Customer concentration",
+    "runway": "Cash and runway",
+    "governance": "Governance and mandate",
+    "market": "Market size",
+    "team": "Team and execution",
+    "product_tech": "Product and technology",
+    "terms_cap_table": "Terms and cap table",
+    "impact": "Impact",
 }
 
 
@@ -89,11 +97,23 @@ class VCPersona(BaseModel):
         return ", ".join(LENS_LABELS.get(lens, lens) for lens in self.top_lenses(2))
 
     def summary(self) -> dict:
-        return {"id": self.id, "name": self.name, "firm": self.firm, "archetype": self.archetype, "glyph": self.glyph,
-                "bio": self.bio, "lens": self.lens_line(), "signature_move": self.signature_move,
-                "priorities": self.priorities, "style": self.style.model_dump(), "kits": self.kits,
-                "builtin": self.builtin, "base_archetype": self.base_archetype, "version": self.version,
-                "cheque_role": self.cheque_role}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "firm": self.firm,
+            "archetype": self.archetype,
+            "glyph": self.glyph,
+            "bio": self.bio,
+            "lens": self.lens_line(),
+            "signature_move": self.signature_move,
+            "priorities": self.priorities,
+            "style": self.style.model_dump(),
+            "kits": self.kits,
+            "builtin": self.builtin,
+            "base_archetype": self.base_archetype,
+            "version": self.version,
+            "cheque_role": self.cheque_role,
+        }
 
 
 PersonaKind = Literal["builtin", "custom", "template"]

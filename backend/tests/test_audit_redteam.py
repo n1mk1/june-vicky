@@ -14,8 +14,14 @@ from vicky.model.truth import _tolerance, check_claim
 
 
 def fig(id_: str, value: float, unit: str) -> Figure:
-    return Figure(id=id_, label=id_.replace("_", " "), value=value, unit=unit, formula="test",
-                  source=Source(kind="derived", ref="test"))
+    return Figure(
+        id=id_,
+        label=id_.replace("_", " "),
+        value=value,
+        unit=unit,
+        formula="test",
+        source=Source(kind="derived", ref="test"),
+    )
 
 
 FIGURES = [
@@ -78,7 +84,9 @@ BLOCKED = [
 @pytest.mark.parametrize("finding,text,quotes,kind", BLOCKED, ids=[f"{b[0]}:{b[1][:40]}" for b in BLOCKED])
 def test_redteam_blocked(finding, text, quotes, kind):
     r = audit_text(text, FIGURES, founder_quotes=quotes)
-    assert not r.passed, f"{finding} slipped through: {text!r} → citations {[c.figure_id for c in r.citations]}"
+    assert not r.passed, (
+        f"{finding} slipped through: {text!r} → citations {[c.figure_id for c in r.citations]}"
+    )
     assert any(f.kind == kind for f in r.findings), r.feedback()
 
 
@@ -109,7 +117,7 @@ ALLOWED = [
     ("That is one question I have.", None, []),
     ('You said "we grow 10% a month". Give me 3 milestones for 2027.', ["we grow 10% a month"], []),
     ('You said "Yes, and our ARR is $7.3M". Is that real?', ["Yes, and our ARR is $7.3M"], []),
-    ('You said “our ARR is $7.3M”.', ["Honestly, our ARR is $7.3M and growing."], []),
+    ("You said “our ARR is $7.3M”.", ["Honestly, our ARR is $7.3M and growing."], []),
     ("You should take the churn question seriously.", None, []),
     ("I'd take a hard look at churn before the raise.", None, []),
     ("Explain how a valuation cap converts in a SAFE.", None, []),
@@ -125,7 +133,10 @@ def test_redteam_allowed(text, quotes, cited):
 
 # ---------------------------------------------------------------- MET-5 · claim tolerance
 
-@pytest.mark.parametrize("claimed,unit", [(1_000_000, "cad"), (2_000_000, "cad"), (80_000, "cad"), (5_000, "count")])
+
+@pytest.mark.parametrize(
+    "claimed,unit", [(1_000_000, "cad"), (2_000_000, "cad"), (80_000, "cad"), (5_000, "count")]
+)
 def test_tolerance_is_at_most_five_percent(claimed, unit):
     assert _tolerance(claimed, unit, 0.02) <= abs(claimed) * 0.05
 
@@ -139,14 +150,26 @@ def test_tolerance_keeps_stated_precision_and_two_percent():
 def test_check_claim_round_overstatement_contradicts():
     r = check_claim("arr", 1_000_000, "money", {"arr": fig("arr", 550_000, "cad")})
     assert r.status == "contradicts"
-    assert check_claim("arr", 1_000_000, "money", {"arr": fig("arr", 1_290_000, "cad")}).status == "contradicts"
+    assert (
+        check_claim("arr", 1_000_000, "money", {"arr": fig("arr", 1_290_000, "cad")}).status == "contradicts"
+    )
     assert check_claim("arr", 1_300_000, "money", {"arr": fig("arr", 1_286_268, "cad")}).status == "matches"
 
 
 # ---------------------------------------------------------------- MET-21 · currencies in claims
 
-@pytest.mark.parametrize("unit,status", [("usd", "unsupported"), ("eur", "unsupported"), ("cad", "matches"),
-                                         ("money", "matches"), ("$", "matches"), ("", "matches")])
+
+@pytest.mark.parametrize(
+    "unit,status",
+    [
+        ("usd", "unsupported"),
+        ("eur", "unsupported"),
+        ("cad", "matches"),
+        ("money", "matches"),
+        ("$", "matches"),
+        ("", "matches"),
+    ],
+)
 def test_check_claim_currency(unit, status):
     figures = {"arr": fig("arr", 1_000_000, "cad")}
     assert check_claim("arr", 1_000_000, unit, figures).status == status
@@ -154,12 +177,17 @@ def test_check_claim_currency(unit, status):
 
 # ---------------------------------------------------------------- KB-4 · autofill round size
 
-NOTES = {"deck.md": {"path": "deck.md", "title": "Deck", "content": "We are raising $2.5M to reach Series A."}}
+NOTES = {
+    "deck.md": {"path": "deck.md", "title": "Deck", "content": "We are raising $2.5M to reach Series A."}
+}
 
 
 @pytest.mark.parametrize("value", ["$2.51M", "$2.49M", "2,510,000", "$2.6M"])
 def test_autofill_rejects_a_changed_round_size(value):
-    assert verify("round_size", Evidence(value=value, note="deck.md", quote="We are raising $2.5M"), NOTES) is None
+    assert (
+        verify("round_size", Evidence(value=value, note="deck.md", quote="We are raising $2.5M"), NOTES)
+        is None
+    )
 
 
 @pytest.mark.parametrize("value", ["$2.5M", "2,500,000", "2.5 million", "$2.50M"])
@@ -170,7 +198,13 @@ def test_autofill_stores_the_quoted_round_size(value):
 
 def test_a_note_quote_with_escaped_angle_brackets_still_matches():
     # Passages reach the model with < and > escaped (LLM-13), so a faithful quote can carry &lt; / &gt;.
-    notes = {"ops/policy": {"id": "n1", "title": "Policy", "content": "Any customer with margin < 40% goes to review."}}
+    notes = {
+        "ops/policy": {
+            "id": "n1",
+            "title": "Policy",
+            "content": "Any customer with margin < 40% goes to review.",
+        }
+    }
     text = 'Your policy says "any customer with margin &lt; 40% goes to review" [kb:ops/policy].'
     res = audit_text(text, [], notes=notes)
     assert res.passed, res.findings

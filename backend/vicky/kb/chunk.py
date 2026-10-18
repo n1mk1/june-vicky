@@ -14,9 +14,9 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 
-TARGET_CHARS = 1600   # ~400 tokens
-MAX_CHARS = 2400      # ~600 tokens
-OVERLAP_MAX = 400     # the previous block is carried over when it is at most this long
+TARGET_CHARS = 1600  # ~400 tokens
+MAX_CHARS = 2400  # ~600 tokens
+OVERLAP_MAX = 400  # the previous block is carried over when it is at most this long
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 HARD_HEADING = re.compile(r"^## (?:Page|Slide) \d+\b")  # what convert.py writes for PDF pages and PPTX slides
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
@@ -29,7 +29,7 @@ class Chunk:
     start: int
     end: int
     text: str
-    header: str = ""                       # a split table's header row, for context only
+    header: str = ""  # a split table's header row, for context only
     tokens: list[str] = field(default_factory=list)
 
     @property
@@ -137,7 +137,7 @@ def _blocks(content: str, start: int, end: int) -> list[_Block]:
 
 def _split_long(content: str, b: _Block) -> list[tuple[int, int, str]]:
     """A block longer than MAX_CHARS as (start, end, header) pieces: tables by rows, prose by sentences."""
-    lines = [(s, e, ln) for s, e, ln in _lines(content[b.start:b.end])]
+    lines = [(s, e, ln) for s, e, ln in _lines(content[b.start : b.end])]
     lines = [(s + b.start, e + b.start, ln) for s, e, ln in lines]
     pieces: list[tuple[int, int, str]] = []
     if b.table and len(lines) > 2:
@@ -155,7 +155,7 @@ def _split_long(content: str, b: _Block) -> list[tuple[int, int, str]]:
     # prose (or a code block): cut at sentence ends, else at a space
     pos = b.start
     while b.end - pos > MAX_CHARS:
-        window = content[pos:pos + MAX_CHARS]
+        window = content[pos : pos + MAX_CHARS]
         cut = max(window.rfind(". ", 0, TARGET_CHARS + 400), window.rfind("\n", 0, TARGET_CHARS + 400))
         if cut < TARGET_CHARS // 2:
             cut = window.rfind(" ", 0, TARGET_CHARS)
@@ -211,7 +211,11 @@ def chunk_note(content: str, fmt: str = "md") -> list[Chunk]:
             if pack and b.end - pack[0].start > TARGET_CHARS:
                 add(heading, pack[0].start, pack[-1].end)
                 last = pack[-1]
-                carry = last.end - last.start <= OVERLAP_MAX and not last.table and b.end - last.start <= MAX_CHARS
+                carry = (
+                    last.end - last.start <= OVERLAP_MAX
+                    and not last.table
+                    and b.end - last.start <= MAX_CHARS
+                )
                 pack = [last] if carry else []
             pack.append(b)
         if pack:
@@ -226,7 +230,13 @@ def chunk_note(content: str, fmt: str = "md") -> list[Chunk]:
 def context_line(note: dict, c: Chunk) -> str:
     """What goes in front of a chunk when it is embedded (contextual retrieval): never stored as its text."""
     tags = ", ".join(note.get("tags") or [])
-    parts = [note.get("title") or "", note.get("path") or "", tags, (note.get("summary") or "")[:400], c.heading]
+    parts = [
+        note.get("title") or "",
+        note.get("path") or "",
+        tags,
+        (note.get("summary") or "")[:400],
+        c.heading,
+    ]
     return " · ".join(p for p in parts if p)
 
 
