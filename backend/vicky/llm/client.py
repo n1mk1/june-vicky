@@ -7,8 +7,11 @@
   `LLMError`. Opus/Sonnet requests opt into server-side fallbacks (`fallbacks: "default"`).
 - Every response's usage is priced at list rates and added to the day's spend (Redis, and the Postgres
   `spend` table that is read when Redis is down); once the day's budget is spent, calls raise
-  `BudgetExceeded` (and `auth.require_budget` turns LLM routes into 402). The budget is checked before
-  every call, including each call of a tool loop. When neither store can be read, live calls fail closed.
+  `BudgetExceeded` (and `auth.require_budget` turns LLM routes into 402). Before every call, including each
+  call of a tool loop, an estimate of its cost (the prompt plus a full `max_tokens` reply) is reserved on the
+  same counter and settled against the real cost after, so calls in flight see each other: once the spend
+  and the reservations reach the budget, further calls are refused, and parallel loops overshoot the cap by
+  one call between them, not one each. When neither store can be read, live calls fail closed.
 - Routes on a request path carry a timeout (`Route.timeout_s`): one bound on the whole call, or on the whole
   tool loop, with no SDK retries inside it, so a slow API gives the offline mind's answer in seconds.
 
@@ -16,6 +19,7 @@ Callers treat every `LLMError` the same way: use the deterministic path instead.
 """
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
@@ -123,6 +127,32 @@ def usage_usd(model: str, usage: Any) -> float:
     return (n_in * p_in + n_out * p_out + n_read * p_read + n_write * p_write) / 1e6
 
 
+CHARS_PER_TOKEN = 3  # a generous token count from the prompt's JSON size
+MAX_PROMPT_TOKENS = 1_000_000  # no prompt is larger than the context window
+
+
+def estimate_usd(model: str, prompt_tokens: float, max_tokens: int) -> float:
+    """What one call can cost at most (near enough): the prompt at the uncached input rate plus a reply
+    that uses all of `max_tokens`."""
+    p_in, p_out, _, _ = price_of(model)
+    return (min(prompt_tokens, MAX_PROMPT_TOKENS) * p_in + max_tokens * p_out) / 1e6
+
+
+def prompt_tokens(params: dict[str, Any]) -> float:
+    return len(json.dumps([params.get("system"), params.get("messages")], default=str)) / CHARS_PER_TOKEN
+
+
+class _Hold:
+    """The part of today's budget held for the call in flight, until it is settled or handed back."""
+
+    def __init__(self) -> None:
+        self.usd = 0.0
+
+    def take(self) -> float:
+        usd, self.usd = self.usd, 0.0
+        return usd
+
+
 async def spent_today() -> float:
     try:
         return await kv.spend_today()  # Redis, else the Postgres spend table
@@ -157,7 +187,13 @@ def system_blocks(system: str | list[str]) -> list[dict]:
 class LLM:
     def __init__(self, client: AsyncAnthropic | None = None):
         s = get_settings()
-        self.client = client or AsyncAnthropic(api_key=s.anthropic_api_key, max_retries=2)
+        self.client = client or AsyncAnthropic(
+            api_key=s.anthropic_api_key,
+            max_retries=2,
+            default_headers={"anthropic-workspace-id": s.anthropic_workspace_id}
+            if s.anthropic_workspace_id
+            else None,
+        )
         self.spent = 0.0  # this process, for logs and tests
 
     # ------------------------------------------------------------ plumbing
@@ -179,19 +215,43 @@ class LLM:
             p["fallbacks"] = "default"
         return p
 
-    async def _record(self, msg: Any) -> None:
+    async def _record(self, msg: Any, held: float = 0.0) -> None:
+        """Add the call's real cost to the day's spend, less what was reserved for it."""
         usd = usage_usd(getattr(msg, "model", ""), getattr(msg, "usage", None))
         self.spent += usd
-        if usd <= 0:
+        if usd <= 0 and held <= 0:
             return
         try:
-            await kv.add_spend(usd)
+            await kv.add_spend(usd - held, calls=1 if usd > 0 else 0)
         except Exception as e:  # spend tracking must never break a turn
             log.warning("could not record LLM spend: %s", e)
 
-    async def _settle(self, msg: Any) -> Any:
+    async def _reserve(self, usd: float, why: str = "daily LLM budget reached") -> float:
+        """Hold `usd` of today's budget for a call about to be sent, and return what is held. Raises
+        `BudgetExceeded` when the spend and the calls already in flight have used the budget up."""
+        try:
+            total = await kv.add_spend(usd, calls=0)
+        except Exception as e:  # neither store can be written: the plain check (fails closed if unreadable)
+            log.warning("could not reserve LLM spend (%s); checking the budget without a reservation", e)
+            if await over_budget():
+                raise BudgetExceeded(why) from None
+            return 0.0
+        if total - usd >= get_settings().daily_usd_budget:
+            await self._release(usd)
+            raise BudgetExceeded(why)
+        return usd
+
+    async def _release(self, usd: float) -> None:
+        if usd <= 0:
+            return
+        try:
+            await kv.add_spend(-usd, calls=0)
+        except Exception as e:
+            log.warning("could not hand back reserved LLM spend: %s", e)
+
+    async def _settle(self, msg: Any, hold: _Hold | None = None) -> Any:
         """Record spend, then check why the model stopped before anyone reads the content."""
-        await self._record(msg)
+        await self._record(msg, hold.take() if hold else 0.0)
         reason = getattr(msg, "stop_reason", None)
         if reason == "refusal":
             d = getattr(msg, "stop_details", None)
@@ -202,9 +262,20 @@ class LLM:
             raise LLMError("turn paused before finishing")
         return msg
 
-    async def _guard(self, call: Callable[[], Awaitable[Any]], limit_s: float | None = None) -> Any:
-        if await over_budget():
-            raise BudgetExceeded("daily LLM budget reached")
+    async def _guard(
+        self,
+        call: Callable[[], Awaitable[Any]],
+        limit_s: float | None = None,
+        hold: _Hold | None = None,
+        reserve_usd: float = 0.0,
+    ) -> Any:
+        """Run one call (or tool loop) with errors mapped to `LLMError`. With a `hold`, `reserve_usd` is
+        reserved first, and whatever is still held when the call ends (it failed) is handed back."""
+        if hold is None:
+            if await over_budget():
+                raise BudgetExceeded("daily LLM budget reached")
+        else:
+            hold.usd = await self._reserve(reserve_usd)
         try:
             return await (asyncio.wait_for(call(), limit_s) if limit_s else call())
         except pydantic.ValidationError as e:
@@ -221,9 +292,31 @@ class LLM:
             raise LLMUnavailable(f"connection: {e}") from e
         except TimeoutError as e:
             raise LLMUnavailable(f"timed out after {limit_s}s" if limit_s else "timed out") from e
+        finally:
+            if hold is not None:
+                await self._release(hold.take())
 
     def _client(self, timeout: float | None):
         return self.client.with_options(timeout=timeout, max_retries=0) if timeout else self.client
+
+    @staticmethod
+    def _estimate(p: dict[str, Any]) -> float:
+        return estimate_usd(p["model"], prompt_tokens(p), p["max_tokens"])
+
+    @staticmethod
+    def _next_estimate(p: dict[str, Any], msg: Any) -> float:
+        """The next call of a tool loop sends the last prompt again plus the reply and the tool results."""
+        u = getattr(msg, "usage", None)
+        seen = sum(
+            getattr(u, k, 0) or 0
+            for k in (
+                "input_tokens",
+                "output_tokens",
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+            )
+        )
+        return estimate_usd(p["model"], max(seen, prompt_tokens(p)) + 2000, p["max_tokens"])
 
     @staticmethod
     def _timeout(route: str, override: float | None) -> float | None:
@@ -243,16 +336,17 @@ class LLM:
         """One structured-output call; returns the validated `schema` instance."""
         p = self.params(route, system, messages)
         timeout = self._timeout(route, request_timeout_s)
+        hold = _Hold()
 
         async def call() -> T:
             msg = await self._client(timeout).beta.messages.parse(output_format=schema, **p)
-            await self._settle(msg)
+            await self._settle(msg, hold)
             out = msg.parsed_output
             if out is None:
                 raise LLMError("no structured output in the response")
             return out
 
-        return await self._guard(call, timeout)
+        return await self._guard(call, timeout, hold, self._estimate(p))
 
     async def text(
         self,
@@ -277,11 +371,12 @@ class LLM:
         with structured outputs)."""
         p = self.params(route, system, messages)
         timeout = self._timeout(route, request_timeout_s)
+        hold = _Hold()
 
         async def call() -> Any:
-            return await self._settle(await self._client(timeout).beta.messages.create(**p))
+            return await self._settle(await self._client(timeout).beta.messages.create(**p), hold)
 
-        return await self._guard(call, timeout)
+        return await self._guard(call, timeout, hold, self._estimate(p))
 
     async def run_tools(
         self,
@@ -294,9 +389,10 @@ class LLM:
         max_iterations: int = 6,
     ) -> T:
         """Tool runner over read-only tools, ending in a structured `schema` answer. The route's timeout
-        bounds the whole loop, and the budget is checked again before each further call."""
+        bounds the whole loop, and each further call reserves its own estimate before it is sent."""
         p = self.params(route, system, messages)
         timeout = self._timeout(route, None)
+        hold = _Hold()
 
         async def call() -> T:
             runner = self._client(timeout).beta.messages.tool_runner(
@@ -305,14 +401,14 @@ class LLM:
             last = None
             async for msg in runner:
                 last = msg
-                await self._record(msg)
+                await self._record(msg, hold.take())
                 if msg.stop_reason == "refusal":
                     d = getattr(msg, "stop_details", None)
                     raise LLMRefusal(getattr(d, "category", None), getattr(d, "explanation", None))
-                if (
-                    msg.stop_reason == "tool_use" and await over_budget()
-                ):  # the runner would call the model again
-                    raise BudgetExceeded("daily LLM budget reached during a tool loop")
+                if msg.stop_reason == "tool_use":  # the runner will call the model again
+                    hold.usd = await self._reserve(
+                        self._next_estimate(p, msg), "daily LLM budget reached during a tool loop"
+                    )
             if last is None:
                 raise LLMError("tool runner returned nothing")
             if last.stop_reason != "end_turn":
@@ -321,7 +417,7 @@ class LLM:
                 raise LLMError("no structured output after the tool loop")
             return last.parsed_output
 
-        return await self._guard(call, timeout)
+        return await self._guard(call, timeout, hold, self._estimate(p))
 
     async def upload(self, filename: str, data: bytes, mime: str) -> str:
         async def call() -> str:

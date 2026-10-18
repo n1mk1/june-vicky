@@ -96,7 +96,13 @@ async def _check(bid: str) -> None:
 
 
 async def _wait_for_vault(bid: str) -> None:
-    """The vault must be settled: wait for imports and organize passes still running."""
+    """The vault must be settled: wait for imports and organize passes still running. The index job's
+    inline slot is free while it waits, so the imports it waits on can run."""
+    async with jobs.slot_released():
+        await _poll_vault(bid)
+
+
+async def _poll_vault(bid: str) -> None:
     deadline = asyncio.get_event_loop().time() + SETTLE_TIMEOUT_S
     while asyncio.get_event_loop().time() < deadline:
         # Only live work counts: an import left "running" by a process that died is never coming back.

@@ -19,7 +19,7 @@ from vicky.model.context import TruthContext, build_context
 from vicky.model.coverage import coverage
 from vicky.model.currencies import norm_currency
 from vicky.model.figures import CURRENCY_UNITS, UNITS, Fact, Source, figure_dict
-from vicky.model.financials import DatasetInput
+from vicky.model.financials import DatasetInput, model_notes
 from vicky.model.fx import Rates
 from vicky.model.loader import ColumnProfile, ParsedDataset, parse_upload
 from vicky.model.mapping import ColumnMapping, propose_heuristic, unit_for
@@ -842,6 +842,7 @@ async def detail(engagement_id: str, full: bool = True) -> dict:
         extract_jobs=extract_jobs,
         facts=[f for f in (pack["facts"] if pack else []) if f.get("status") != "removed"],
         coverage=coverage(ctx.figures),
+        model_notes=model_notes(ctx.model),
     )
     return out
 
@@ -868,6 +869,7 @@ async def truth(engagement_id: str) -> dict:
         "profile": prof,
         "figures": [figure_dict(f) for f in ctx.figures.values()],
         "coverage": coverage(ctx.figures),
+        "model_notes": model_notes(ctx.model),
         "attack_list": [a.model_dump() for a in ctx.attack],
         "facts": [f.model_dump(mode="json") for f in ctx.facts if f.status != "removed"],
     }

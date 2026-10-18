@@ -100,8 +100,9 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
                 title={collapsed ? `${p.name}, ${p.firm}` : !on && full ? `The panel holds ${MAX_PANEL} investors` : undefined}
                 className={cn(
                   "group relative flex w-full items-center gap-3 rounded-[4px] border p-2.5 text-left transition-colors duration-300",
-                  on ? "border-line-strong bg-surface-solid/70" : "border-line opacity-60 hover:opacity-100",
-                  blocked && !on && "hover:opacity-60",
+                  // Unselected cards are dimmed by text colour, not opacity, so their text keeps AA contrast.
+                  on ? "border-line-strong bg-surface-solid/70" : "border-line text-ink-2 hover:border-line-strong hover:text-ink",
+                  blocked && !on && "hover:border-line hover:text-ink-2",
                   locked && "cursor-default",
                 )}
               >
@@ -114,7 +115,7 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
                         <span className="size-1.5 rounded-full bg-ember animate-[pulse-dot_1.2s_ease-in-out_infinite]" aria-label="Speaking" />
                       )}
                     </span>
-                    <span className="block truncate text-[11.5px] text-ink-2">{p.firm}</span>
+                    <span className={cn("block truncate text-[11.5px]", on ? "text-ink-2" : "text-dim")}>{p.firm}</span>
                   </span>
                 )}
                 {!collapsed && (

@@ -6,6 +6,10 @@ the arq worker (`uv run arq vicky.jobs.WorkerSettings`). Same handlers either wa
 A run that is cancelled (arq's job timeout, a redeploy, a sleeping free-tier instance) is marked
 `failed` with error `interrupted`. If the process dies before it can say so, the sweeper marks the
 row `stale` once it has been `running` longer than any job may run. Only failed or stale jobs retry.
+
+Inline runs share INLINE_CONCURRENCY slots, fewer than the DB pool's connections, so a burst of jobs
+leaves connections for requests; a job stays `queued` until a slot frees. A job that waits on other jobs
+gives its slot up while it waits (`slot_released`), so waiting can't wedge the queue.
 """
 
 import asyncio
@@ -13,7 +17,9 @@ import contextlib
 import logging
 import traceback
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
@@ -30,6 +36,16 @@ RUNNING_STALE_AFTER_S = JOB_TIMEOUT_S + 5 * 60
 INTERRUPTED = "interrupted"
 RETRYABLE = ("failed", "stale")
 _inline_tasks: set[asyncio.Task] = set()
+INLINE_CONCURRENCY = 6  # the DB pool holds 10; the rest stay free for requests
+_inline_slots: dict[asyncio.AbstractEventLoop, asyncio.Semaphore] = {}
+
+
+@dataclass
+class _Slot:
+    held: bool = False
+
+
+_slot: ContextVar[_Slot | None] = ContextVar("vicky_job_slot", default=None)
 
 
 class RetryRefused(Exception):
@@ -79,9 +95,51 @@ async def enqueue(
 
 
 def _start_inline(job_id: str) -> None:
-    task = asyncio.create_task(run_job(job_id))
+    task = asyncio.create_task(_run_inline(job_id))
     _inline_tasks.add(task)
     task.add_done_callback(_inline_tasks.discard)
+
+
+def _slots() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _inline_slots.get(loop)
+    if sem is None:
+        for old in [lp for lp in _inline_slots if lp.is_closed()]:
+            del _inline_slots[old]
+        sem = _inline_slots[loop] = asyncio.Semaphore(INLINE_CONCURRENCY)
+    return sem
+
+
+async def _run_inline(job_id: str) -> dict | None:
+    sem = _slots()
+    slot = _Slot()
+    _slot.set(slot)  # this task's own context: the handler (and tasks it starts) see the slot
+    await sem.acquire()
+    slot.held = True
+    try:
+        return await run_job(job_id)
+    finally:
+        if slot.held:
+            slot.held = False
+            sem.release()
+
+
+@contextlib.asynccontextmanager
+async def slot_released() -> AsyncIterator[None]:
+    """Inside an inline job: give the job's slot back while it waits on other jobs, and take one again
+    before carrying on. Elsewhere (a request, the arq worker) it does nothing."""
+    slot = _slot.get()
+    if slot is None or not slot.held:
+        yield
+        return
+    sem = _slots()
+    slot.held = False
+    sem.release()
+    try:
+        yield
+    finally:
+        await sem.acquire()  # if this is cancelled the slot stays released, and `held` says so
+        slot.held = True
 
 
 async def run_job(job_id: str) -> dict | None:
@@ -148,13 +206,15 @@ async def run_job(job_id: str) -> dict | None:
 
 
 async def wait_for(job_ids: list[str], timeout_s: float = 300) -> None:
-    """Wait for jobs to settle (used by session start when memos must finish first)."""
-    deadline = asyncio.get_event_loop().time() + timeout_s
-    while asyncio.get_event_loop().time() < deadline:
-        rows = await db.fetch("select status from jobs where id = any($1::uuid[])", job_ids)
-        if all(r["status"] in ("done", "failed", "stale") for r in rows):
-            return
-        await asyncio.sleep(0.25)
+    """Wait for jobs to settle (used by session start when memos must finish first). Called from inside
+    an inline job, the job's slot is free while it waits."""
+    async with slot_released():
+        deadline = asyncio.get_event_loop().time() + timeout_s
+        while asyncio.get_event_loop().time() < deadline:
+            rows = await db.fetch("select status from jobs where id = any($1::uuid[])", job_ids)
+            if all(r["status"] in ("done", "failed", "stale") for r in rows):
+                return
+            await asyncio.sleep(0.25)
 
 
 async def sweep_stale() -> int:

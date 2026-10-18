@@ -17,6 +17,7 @@ from typing import Any
 from vicky import db, qa
 from vicky.model.context import TruthContext
 from vicky.model.currencies import CURRENCIES
+from vicky.model.financials import model_notes
 from vicky.model.metrics import label_period
 from vicky.realtime import publish
 from vicky.services import engagements
@@ -189,6 +190,7 @@ async def get(dashboard_id: str, theme: str = "vicky-dark", currency: str | None
         "currency": ctx.currency,
         "reporting_currency": ctx.profile.get("reporting_currency", ctx.currency),
         "currencies": CURRENCY_LIST,
+        "model_notes": model_notes(ctx.model),
         "layout": [li for li in (dash["layout"] or []) if li.get("widget_id") in ids],
         "reserved": [dict(r) for r in RESERVED],
         "time_range": resolve_time_range(dash["time_range"], ctx),

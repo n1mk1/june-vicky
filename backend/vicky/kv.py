@@ -53,25 +53,28 @@ def today() -> str:
 # Redis can't be. Raises only when neither store can be written (or read).
 
 
-async def _db_add_spend(usd: float) -> float | None:
+async def _db_add_spend(usd: float, calls: int = 1) -> float | None:
     from vicky import db
 
     try:
         return float(
             await db.pool().fetchval(
-                """insert into spend (date, usd, calls) values ($1, $2, 1)
-               on conflict (date) do update set usd = spend.usd + excluded.usd, calls = spend.calls + 1
+                """insert into spend (date, usd, calls) values ($1, $2, $3)
+               on conflict (date) do update set usd = spend.usd + excluded.usd, calls = spend.calls + $3
                returning usd""",
                 datetime.now(UTC).date(),
                 usd,
+                calls,
             )
         )
     except Exception:
         return None
 
 
-async def add_spend(usd: float) -> float:
-    durable = await _db_add_spend(usd)
+async def add_spend(usd: float, calls: int = 1) -> float:
+    """Add to today's spend and return the new total. `usd` may be negative (a reservation handed back);
+    `calls` is how many API calls this counts as (0 for reservations and their settlement)."""
+    durable = await _db_add_spend(usd, calls)
     key = f"vicky:spend:{today()}"
     try:
         total = await client().incrbyfloat(key, usd)

@@ -39,7 +39,7 @@ def live_llm(monkeypatch):
     get_settings.cache_clear()
     state = SimpleNamespace(spend=0.0, recorder=None)
 
-    async def add_spend(usd: float) -> float:
+    async def add_spend(usd: float, calls: int = 1) -> float:
         state.spend += usd
         return state.spend
 

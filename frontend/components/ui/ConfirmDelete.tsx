@@ -69,7 +69,7 @@ export function ConfirmDelete({ what, onConfirm, className, title = "Delete" }: 
           }
         }}
         aria-label={`Confirm delete ${what}`}
-        className="h-6 rounded-[3px] bg-ember px-2 font-mono text-[10.5px] uppercase tracking-[-0.02em] text-black transition-opacity hover:opacity-90 disabled:opacity-60"
+        className="h-6 rounded-[3px] bg-ember px-2 font-mono text-[10.5px] uppercase tracking-[-0.02em] text-invert-ink transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         {busy ? "Deleting" : "Delete"}
       </button>

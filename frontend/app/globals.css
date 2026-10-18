@@ -6,7 +6,8 @@
  * Black and white, as on the landing, with orange as a tertiary accent. `--ember` (the name the
  * components use for "the one loud thing") is that orange: used sparingly for markers, status
  * dots, focus rings, weak scores and highlights, never for large fills. Both oranges pass AA for
- * small text on their paper (7.3:1 on black, 4.7:1 on white).
+ * small text on every surface they sit on: dark 7.3:1 on black and 6.5:1 on glass over the solid surface;
+ * light 5.6:1 on white, 5.3:1 on glass, 5.1:1 on #f4f4f4 and 4.8:1 on glass over it.
  */
 
 /* Light: white paper, black ink */
@@ -22,7 +23,7 @@
   --dim: rgba(0, 0, 0, 0.58);
   --line: rgba(0, 0, 0, 0.13);
   --line-strong: rgba(0, 0, 0, 0.36);
-  --ember: #c94a00;
+  --ember: #b54200;
   --invert-bg: #000000;
   --invert-ink: #ffffff;
   --paper: #ffffff;

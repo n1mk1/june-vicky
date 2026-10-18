@@ -381,6 +381,30 @@ def _derive(model: CanonicalModel) -> None:
             )
 
 
+FX_PERIODS_SHOWN = 4
+
+
+def model_notes(model: CanonicalModel) -> list[str]:
+    """What the build left out or reinterpreted, in plain words for the founder: the build's own notes, then
+    one line per currency that had no published rate for some periods."""
+    out = list(dict.fromkeys(model.notes))
+    gaps: dict[str, set[str]] = defaultdict(set)
+    for pairs in model.fx_gaps.values():
+        for src, period in pairs:
+            gaps[src].add(period)
+    for src in sorted(gaps):
+        periods = sorted(gaps[src], key=period_sort_key)
+        shown = ", ".join(periods[:FX_PERIODS_SHOWN])
+        more = len(periods) - FX_PERIODS_SHOWN
+        when = f"{shown} and {more} more" if more > 0 else shown
+        out.append(
+            f"No {src.upper()}→{model.currency.upper()} rate for {when} ({SOURCE_NAME}): amounts in "
+            f"{src.upper()} for {'that period' if len(periods) == 1 else 'those periods'} are left out rather "
+            f"than shown in the wrong currency"
+        )
+    return out
+
+
 def model_summary(model: CanonicalModel) -> dict[str, Any]:
     return {
         "granularity": model.granularity,
@@ -391,4 +415,5 @@ def model_summary(model: CanonicalModel) -> dict[str, Any]:
         "has_cohort_mrr": bool(model.cohort_mrr),
         "notes": list(model.notes),
         "fx_skipped": list(model.fx_skipped),
+        "messages": model_notes(model),
     }

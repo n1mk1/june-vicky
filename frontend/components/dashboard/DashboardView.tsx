@@ -3,6 +3,7 @@
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { ModelNotes } from "@/components/truth/ModelNotes";
 import { PillButton, PillLink } from "@/components/ui/Pill";
 import { EmptyState, ErrorNote, Loading } from "@/components/ui/States";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api";
@@ -362,6 +363,7 @@ export function DashboardView() {
       <div className="flex min-h-6 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
         <div className="flex min-w-0 items-center gap-3">
           <LiveDot />
+          <ModelNotes notes={d.model_notes} compact />
           {note && (
             <span role="status" className="truncate text-[11.5px] text-ink-2">
               {note}

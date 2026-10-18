@@ -34,5 +34,5 @@ export function useTheme() {
 export const palette = {
   // Black and white with the orange tertiary accent, as in globals.css.
   dark: { ink: "#ffffff", dim: "rgba(255,255,255,0.42)", line: "rgba(255,255,255,0.14)", ember: "#ff6a13", bg: "#000000" },
-  light: { ink: "#000000", dim: "rgba(0,0,0,0.45)", line: "rgba(0,0,0,0.13)", ember: "#c94a00", bg: "#ffffff" },
+  light: { ink: "#000000", dim: "rgba(0,0,0,0.45)", line: "rgba(0,0,0,0.13)", ember: "#b54200", bg: "#ffffff" },
 } as const;

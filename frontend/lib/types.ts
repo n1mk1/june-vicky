@@ -139,6 +139,8 @@ export interface Engagement {
   facts: Fact[];
   truthpack: { id: string; version: number; confirmed_at: string | null } | null;
   coverage: CoverageItem[];
+  /** What building the model left out or reinterpreted (short quarters, missing exchange rates), from the metrics engine. */
+  model_notes?: string[];
   /** Reading facts out of documents (and tables with no dates); each lands in step 03 when its job is done. */
   extract_jobs?: { id: string; upload_id: string; status: string; error: string | null }[];
 }
@@ -188,6 +190,8 @@ export interface Truth {
   profile: Profile;
   figures: AnyFigure[];
   coverage: CoverageItem[];
+  /** What building the model left out or reinterpreted (short quarters, missing exchange rates), from the metrics engine. */
+  model_notes?: string[];
   attack_list: AttackItem[];
   facts: Fact[];
 }
@@ -330,6 +334,8 @@ export interface Dashboard {
   currency: string;
   reporting_currency: string;
   currencies: { code: string; name: string; symbol: string }[];
+  /** What building the model left out or reinterpreted (short quarters, missing exchange rates), from the metrics engine. */
+  model_notes?: string[];
   layout: LayoutItem[];
   reserved: { id: string; x: number; y: number; w: number; h: number }[];
   time_range: TimeRange | null;

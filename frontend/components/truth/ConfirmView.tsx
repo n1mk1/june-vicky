@@ -16,6 +16,7 @@ import type { Engagement } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { CoverageList } from "./CoverageList";
+import { ModelNotes } from "./ModelNotes";
 import { FactsTable } from "./FactsTable";
 import { MappingTable, type MappingSaver } from "./MappingTable";
 import { ProfileForm } from "./ProfileForm";
@@ -223,6 +224,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
           <div className="flex flex-col gap-5">
             <StepTitle n={4} title="Coverage" body="What the panel can check you on, and what it can't yet." />
             <CoverageList items={e.coverage} />
+            <ModelNotes notes={e.model_notes} />
             {unconfirmed > 0 && (
               <p className="text-[12px] text-ink-2">
                 {unconfirmed} table{unconfirmed === 1 ? "" : "s"} still use the proposed mapping. Confirming accepts{" "}
