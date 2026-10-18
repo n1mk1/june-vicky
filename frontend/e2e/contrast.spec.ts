@@ -52,7 +52,8 @@ for (const theme of ["light", "dark"] as const) {
   test.describe(`${theme} theme`, () => {
     test("unselected roster cards keep AA text", async ({ page }) => {
       await asTheme(page, theme);
-      await page.goto("/preparation");
+      // The default panel seats every built-in investor; seat one so the rest show unselected.
+      await page.goto("/preparation?panel=aristotle");
       const card = page.locator('aside button[aria-pressed="false"]').first();
       await expect(card).toBeVisible();
       for (const part of [card.locator(".font-display").first(), card.locator("span.truncate").first()]) {

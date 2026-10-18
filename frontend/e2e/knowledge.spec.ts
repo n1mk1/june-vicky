@@ -47,8 +47,33 @@ async function runNotes(api: APIRequestContext): Promise<Note[]> {
   return ((await r.json()) as Note[]).filter((n) => n.title.includes(RUN) || n.path.includes(RUN));
 }
 
-/** Wait until the import/organize job has finished and the vault reloaded. */
-async function settled(page: Page) {
+type KbStatus = { running: boolean; jobs: { id: string; status: string }[] };
+
+async function kbStatus(api: APIRequestContext): Promise<KbStatus> {
+  const r = await api.get("/api/v1/kb/status");
+  expect(r.ok()).toBeTruthy();
+  return (await r.json()) as KbStatus;
+}
+
+/** The newest knowledge-base job before an action, so `settled` can tell its job from an older one. */
+async function newestJob(api: APIRequestContext): Promise<string | null> {
+  return (await kbStatus(api)).jobs[0]?.id ?? null;
+}
+
+/**
+ * Wait until the import/organize job started after `before` has finished and the vault reloaded. "Done:" alone
+ * isn't enough: an earlier job's summary (e.g. global setup's import) shows until the new job is listed.
+ */
+async function settled(page: Page, api: APIRequestContext, before: string | null) {
+  await expect
+    .poll(
+      async () => {
+        const s = await kbStatus(api);
+        return !s.running && s.jobs[0] && s.jobs[0].id !== before ? s.jobs[0].status : "waiting";
+      },
+      { timeout: JOB_MS },
+    )
+    .toBe("done");
   await expect(page.getByText(/Done:/)).toBeVisible({ timeout: JOB_MS });
 }
 
@@ -94,6 +119,7 @@ test("tabs run Knowledge base → Reports and the flagships stand out", async ({
 
 test("import converts, files and links the notes", async ({ page, request }) => {
   await page.goto("/knowledge");
+  const before = await newestJob(request);
   await page.getByLabel("Import files").setInputFiles([
     { name: `${RUN} pnl.csv`, mimeType: "text/csv", buffer: Buffer.from(CSV) },
     { name: `${RUN} plan.md`, mimeType: "text/markdown", buffer: Buffer.from(MD(RUN)) },
@@ -102,7 +128,7 @@ test("import converts, files and links the notes", async ({ page, request }) => 
     { name: `${RUN} market.html`, mimeType: "text/html", buffer: Buffer.from(`<title>${RUN} market</title><p>Billing tools are a crowded market.</p>`) },
   ]);
   await expect(page.getByText(/5 files added/)).toBeVisible({ timeout: JOB_MS });
-  await settled(page);
+  await settled(page, request, before);
 
   const notes = await runNotes(request);
   expect(notes.map((n) => n.kind).sort()).toEqual(["document", "document", "note", "table", "table"]);
@@ -224,6 +250,7 @@ test("drag-and-drop imports, delete removes a note", async ({ page, request }) =
   await page.goto("/knowledge");
   // A production build streams the page in: wait for the vault UI (and its drop handlers) first.
   await expect(page.getByRole("button", { name: "New note", exact: true })).toBeEnabled();
+  const before = await newestJob(request);
   await page.evaluate(async (run) => {
     const dt = new DataTransfer();
     dt.items.add(new File([`# ${run} dropped\n\nDropped onto the page.`], `${run} dropped.md`, { type: "text/markdown" }));
@@ -231,7 +258,7 @@ test("drag-and-drop imports, delete removes a note", async ({ page, request }) =
     for (const type of ["dragenter", "dragover", "drop"]) target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
   }, RUN);
   await expect(page.getByText(/1 file added/)).toBeVisible({ timeout: JOB_MS });
-  await settled(page);
+  await settled(page, request, before);
   await openNote(page, `${RUN} dropped`);
   await page.getByRole("button", { name: "Delete note" }).click();
   await page.getByRole("button", { name: "Confirm delete note" }).click();
