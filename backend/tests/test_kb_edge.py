@@ -249,6 +249,13 @@ async def test_kb_notes_crud_paths_and_deletes(api_client):
     await api_client.delete(f"/kb/notes/{sheets[1]['id']}")
     assert (await api_client.get(f"/kb/files/{fid}")).status_code == 404
 
+    # The organizer's hubs forget a deleted note: no ghost of it stays in the graph.
+    await _import(api_client, [("files", ("ghost check.csv", b"month,revenue\n2025-01,5\n", "text/csv"))])
+    victim = next(n for n in (await api_client.get("/kb/notes")).json() if n["title"] == "ghost check")
+    hubs = lambda g: [n for n in g["nodes"] if n["kind"] == "missing" and n["title"] == "ghost check"]  # noqa: E731
+    await api_client.delete(f"/kb/notes/{victim['id']}")
+    assert hubs((await api_client.get("/kb/graph")).json()) == []
+
 
 @pytestmark_db
 async def test_kb_zip_folders_concurrency_and_export_with_originals(api_client):

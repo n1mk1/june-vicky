@@ -313,10 +313,19 @@ async def move_links(conn, old: str, new: str) -> None:
 async def delete_note(nid: str) -> None:
     nid = _uuid(nid)
     async with db.pool().acquire() as conn, conn.transaction():
-        path = await conn.fetchval("delete from kb_notes where id = $1 returning path", nid)
-        if path is None:
+        gone = await conn.fetchrow("delete from kb_notes where id = $1 returning path, title", nid)
+        if gone is None:
             raise NoteNotFound("note")
+        path = gone["path"]
         await conn.execute("update kb_notes set links = array_remove(links, $1) where $1 = any(links)", path)
+        # The organizer's hubs list every note; drop their lines that point at this one, so the graph
+        # doesn't keep a ghost of it. Hubs the founder edited are theirs and stay as written.
+        res = Resolver([{"path": path, "title": gone["title"]}])
+        for hub in await conn.fetch("select id, content from kb_notes where kind = 'hub' and author = 'ai'"):
+            lines = hub["content"].split("\n")
+            kept = [ln for ln in lines if not any(res.resolve(t) == path for t in wikilinks(ln))]
+            if len(kept) != len(lines):
+                await conn.execute("update kb_notes set content = $2 where id = $1", hub["id"], "\n".join(kept))
         # An original with no notes left is dropped too (its text lives nowhere else).
         await conn.execute("delete from kb_files f where not exists (select 1 from kb_notes n where n.file_id = f.id) "
                            "and f.status <> 'stored'")
