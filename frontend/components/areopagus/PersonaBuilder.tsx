@@ -1,7 +1,7 @@
 "use client";
 
 import { Sparkles, X } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Field, inputCls, selectCls } from "@/components/ui/Field";
 import { PillButton } from "@/components/ui/Pill";
 import { Segmented } from "@/components/ui/Segmented";
@@ -15,6 +15,16 @@ import { cn } from "@/lib/utils";
 import { ChipInput } from "./ChipInput";
 import { LensSliders } from "./LensSliders";
 
+const FOCUSABLE = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]",
+]
+  .map((s) => `${s}:not([tabindex='-1'])`)
+  .join(",");
 const MIN_DESC = 10;
 const MAX_DESC = 2000;
 const EXAMPLE =
@@ -233,14 +243,68 @@ export function PersonaBuilder({
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialog = useRef<HTMLDivElement>(null);
+  // Whatever opened the builder (New investor, a card's Edit) gets focus back when it closes.
+  const [opener] = useState(() => (typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null)));
 
+  const close = useRef(onClose);
   useEffect(() => {
+    close.current = onClose;
+  }, [onClose]);
+
+  // A modal sheet: Esc closes it, and Tab / Shift+Tab cycle inside it instead of reaching the page behind.
+  useEffect(() => {
+    const el = dialog.current;
+    if (!el) return;
+    const items = () => [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => x.getClientRects().length > 0);
+    if (!el.contains(document.activeElement)) (items()[0] ?? el).focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        close.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const list = items();
+      const first = list[0];
+      const last = list.at(-1);
+      const active = document.activeElement;
+      if (!first || !last) {
+        e.preventDefault();
+        el.focus();
+      } else if (!el.contains(active)) {
+        // Focus fell to <body> (the step it was on was replaced): bring it back in.
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (active === first || active === el)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (e.target instanceof Node && !el.contains(e.target)) (items()[0] ?? el).focus();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("focusin", onFocusIn);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = dialog.current;
+    return () => {
+      // After the sheet is really gone (not a StrictMode re-run), and only if focus went nowhere else.
+      window.setTimeout(() => {
+        if (el?.isConnected || !opener?.isConnected) return;
+        const active = document.activeElement;
+        if (!active || active === document.body) opener.focus();
+      });
+    };
+  }, [opener]);
 
   const generate = async () => {
     setGenerating(true);
@@ -347,10 +411,12 @@ export function PersonaBuilder({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-[2px]" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div
+        ref={dialog}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={mode === "edit" ? "Edit investor" : "New investor"}
-        className="glass flex h-full w-full flex-col bg-surface-solid/95 sm:max-w-[520px] sm:rounded-l-[22px]"
+        className="glass flex h-full w-full flex-col bg-surface-solid/95 outline-none sm:max-w-[520px] sm:rounded-l-[22px]"
       >
         <header className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5 pb-4">
           <div className="flex flex-col gap-1">

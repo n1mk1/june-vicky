@@ -34,6 +34,23 @@ function card(page: Page, name: string) {
 }
 
 test.describe("Areopagus builder", () => {
+  test("the builder keeps keyboard focus inside and gives it back on close", async ({ page }) => {
+    await page.goto("/areopagus");
+    const opener = page.getByRole("button", { name: "New investor" });
+    await opener.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "New investor" });
+    await expect(dialog.getByLabel("Describe the investor")).toBeFocused();
+    const inside = () => dialog.evaluate((d) => d.contains(document.activeElement));
+    for (const key of ["Tab", "Tab", "Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab"]) {
+      await page.keyboard.press(key);
+      expect(await inside(), `focus left the dialog after ${key}`).toBe(true);
+    }
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  });
+
   test("describe an investor, adjust the draft, save it", async ({ page }) => {
     await page.goto("/areopagus");
     await page.getByRole("button", { name: "New investor" }).click();

@@ -180,7 +180,7 @@ id, session_id FK unique, engagement_id, report jsonb (`Report`, §4), markdown 
 `recall(topic)` queries by engagement + lens/topic, newest first.
 
 ### 2.18 `jobs`
-id, engagement_id, session_id?, kind enum `memo | prescan | extract | report | persona_gen | audit | kb_ingest | kb_organize`, status enum `queued | running | done | failed | stale`, payload jsonb, result jsonb, error text, attempts int, enqueued_at, started_at, finished_at. `stale` is set by a sweeper when `queued` exceeds its TTL (Key Value restart); the UI offers Retry.
+id, engagement_id, session_id?, kind enum `memo | prescan | extract | report | persona_gen | audit | kb_ingest | kb_organize`, status enum `queued | running | done | failed | stale`, payload jsonb, result jsonb, error text, attempts int, enqueued_at, started_at, finished_at. `stale` is set by a sweeper on `queued` rows enqueued over 15 min ago (Key Value restart) and `running` rows started over 15 min ago (job timeout 600 s + 5 min margin). A run cancelled mid-way (worker `job_timeout`, redeploy, instance sleep) ends `failed` with error `interrupted`. The UI offers Retry; `POST /jobs/{id}/retry` re-queues only `failed` or `stale` rows (409 otherwise).
 
 ### 2.19 `sources`
 id text PK (e.g. `sacks_burn_multiple`), publisher, claim text, url, as_of date, business_model text[], stage text[], topic text[], verified bool. Seeded from `data/sources.yaml` at migration time; the YAML is the source of truth.
@@ -256,14 +256,14 @@ One row per knowledge question answered: id, session_id (cascade), turn_id (the 
  "bid":0.82,"intent":"follow_up","target_hyp":"h1"}
 
 // ChairDecision
-{"action":"call_on","vc_id":"mark","intent":"follow_up","hypothesis_id":"h1","note":"push on the last-3-month rate"}
+{"action":"call_on","vc_id":"socrates","intent":"follow_up","hypothesis_id":"h1","note":"push on the last-3-month rate"}
 
 // Claim
 {"text":"growing 10% a month","metric":"cmgr","value":0.10,"unit":"pct","period":"L12M","is_forecast":false}
 
 // Report (reports.report)
 {"verdict":{"readiness":"not_ready","overall":3.1,"dims":{…},"delta":-0.4},
- "per_vc":[{"vc_id":"james","verdict":"…","second_meeting":false}],
+ "per_vc":[{"vc_id":"aristotle","verdict":"…","second_meeting":false}],
  "questions":[{"turn_id":"…","question":"…","why_asked":"…","answer":"…","scores":{…},
                "good":"…","missing":"…","correct_figure":{Figure},"strong_answer":"…","citations":[…]}],
  "ledger":[{Claim + status + figure}],"slides":[{"slide":2,"note":"…","reword":"…"}],

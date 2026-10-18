@@ -1,11 +1,15 @@
 """Bank of Canada daily rates: fetched from the Valet API and cached in Redis per currency and year.
 
 A past year is fetched once it is over and kept; the current year counts as fresh for six hours.
-When the API can't be reached, whatever is cached is used, and a period with no rate stays
+Years are fetched together under one overall deadline, so a slow Valet API holds a request up for
+DEADLINE_S at most. When the API can't be reached, whatever is cached is used, the failure is
+remembered for FAILURE_TTL_S (no retry on every request), and a period with no rate stays
 unconverted (see `vicky.model.fx`).
 """
 
+import asyncio
 import logging
+import time
 from collections import defaultdict
 from datetime import UTC, date, datetime
 
@@ -16,8 +20,12 @@ from vicky.model.fx import FOREIGN, VALET_URL, Rates, series_id
 
 log = logging.getLogger(__name__)
 TIMEOUT_S = 8.0
+DEADLINE_S = 10.0  # for all the years of one load together
+FAILURE_TTL_S = 5 * 60
 FRESH_S = 6 * 3600
 FIRST_YEAR = 2017  # the Valet daily series start in January 2017
+# year → monotonic time until which a failed fetch isn't retried (per process).
+_down: dict[int, float] = {}
 
 
 def _key(code: str, year: int) -> str:
@@ -74,15 +82,24 @@ async def load(codes: set[str], since: date | None = None, *, transport: httpx.A
     for (c, y), e in entries.items():
         if _stale(e, y, now):
             todo[y].append(c)
+    clock = time.monotonic()
+    todo = {y: cs for y, cs in todo.items() if _down.get(y, 0.0) <= clock}
     if todo:
         async with httpx.AsyncClient(timeout=TIMEOUT_S, transport=transport) as client:
-            for y, cs in todo.items():
-                try:
-                    got = await fetch_year(client, cs, y)
-                except Exception as e:
+            tasks = {y: asyncio.create_task(fetch_year(client, cs, y)) for y, cs in todo.items()}
+            _, late = await asyncio.wait(tasks.values(), timeout=DEADLINE_S)
+            for t in late:
+                t.cancel()
+            if late:
+                await asyncio.wait(late)
+            for y, t in tasks.items():
+                e = TimeoutError(f"no answer within {DEADLINE_S:g} s") if t in late else t.exception()
+                if e is not None:
+                    _down[y] = time.monotonic() + FAILURE_TTL_S
                     log.warning("fx: Bank of Canada rates for %d not fetched (%s); using the cache", y, e)
                     continue
-                for c, obs in got.items():
+                _down.pop(y, None)
+                for c, obs in t.result().items():
                     entries[(c, y)] = {"fetched": now.isoformat(), "obs": obs}
                     await _store(c, y, obs, now)
     for (c, _), e in entries.items():

@@ -64,7 +64,7 @@ export function NoteEditor({ id, notes, startInEdit, onOpen, onCreate, onChanged
     latest.current = { draft, version: note?.version, content: note?.content ?? "" };
   }, [draft, note?.version, note?.content]);
 
-  const put = useCallback(
+  const putNow = useCallback(
     async (body: Record<string, unknown>, opts: { reloadTree?: boolean } = {}) => {
       const v = latest.current.version;
       setSave("saving");
@@ -88,6 +88,19 @@ export function NoteEditor({ id, notes, startInEdit, onOpen, onCreate, onChanged
       }
     },
     [id, mutate, guard, onChanged],
+  );
+
+  // Every PUT carries the version it edits, so two at once (an autosave and a rename or tag) would
+  // send the same version and the second would 409 and be lost. They go one after another through
+  // this chain, and each reads the version only when its turn comes.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const put = useCallback(
+    (body: Record<string, unknown>, opts: { reloadTree?: boolean } = {}): Promise<KbNoteDetail | null> => {
+      const run = queue.current.then(() => putNow(body, opts));
+      queue.current = run.catch(() => null);
+      return run;
+    },
+    [putNow],
   );
 
   const inFlight = useRef(false);

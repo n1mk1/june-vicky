@@ -54,6 +54,17 @@ RULES: list[tuple[str, str | None, float]] = [
     (r" net (income|profit|loss|earnings)| bottom line ", "net_income", 0.95),
     # non-dilutive
     (r" sr ?and ?ed | sred | srred | tax credit| r and d credit| rnd credit| grant| non dilutive| government (funding|assistance)| irap ", "non_dilutive_income", 0.9),
+    # Costs, taxes and cash movements named with revenue words ("Cost of sales - services", "SaaS tools", "Sales tax
+    # collected", "Cash collected") come before the revenue lines; they never map to revenue or to a cash balance.
+    (r" cost of (sales|revenue|goods|services)\b", "cogs", 0.8),
+    (r" (sales tax|gst|hst|pst|qst|vat|payable|accrued)\b| tax(es)?\b(?! credits?)", None, 0.6),
+    (r" (collected|collections|receipts|received|deposits|inflows?|outflows?)\b", None, 0.5),
+    (r" (consulting|legal|bank|banking|contractor) fees\b", "opex.g_and_a", 0.5),
+    (r" (platform|transaction|processing|app store) fees\b", "cogs", 0.5),
+    (r" (services|implementation|onboarding|project|delivery) (expenses?|costs?)\b", "cogs", 0.5),
+    (r" (consulting|training) (expenses?|costs?)\b", "opex.g_and_a", 0.5),
+    (r" (subscription|subscriptions|saas|software|platform|license|licence) (expenses?|costs?|tools|spend)\b| tools\b",
+     "opex.g_and_a", 0.5),
     # revenue lines
     (r" (subscription|recurring|saas|license|licence|platform|mrr)\b.*(revenue|sales|income)?", "revenue.recurring", 0.85),
     (r" (onboarding|implementation|professional services|services|setup|set up|one time|consulting|project|training)\b.*", "revenue.one_time", 0.75),
@@ -84,10 +95,17 @@ RULES: list[tuple[str, str | None, float]] = [
 COMPONENT_OF_TOTAL = {"cogs": "cogs"}
 
 
+# A line named as a cost is never revenue, whatever revenue word it also has ("Recurring software costs").
+_EXPENSE = re.compile(r" (expenses?|costs?|spend|spending|tools|payable)\b")
+
+
 def _rule_match(name: str) -> tuple[str | None, float]:
     n = _norm(name)
+    expense = bool(_EXPENSE.search(n))
     for pattern, target, conf in RULES:
         if re.search(pattern, n):
+            if expense and target and target.startswith("revenue"):
+                continue
             return target, conf
     return None, 0.3
 

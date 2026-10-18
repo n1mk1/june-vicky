@@ -104,7 +104,7 @@ export function PrepView() {
     router.replace(`/preparation?s=${encodeURIComponent(s.id)}`, { scroll: false });
   };
 
-  const start = async (focusOverride?: string) => {
+  const start = async (focusOverride?: string): Promise<boolean> => {
     setBusy("start");
     setError(null);
     setGate(null);
@@ -121,8 +121,10 @@ export function PrepView() {
         sessionStorage.removeItem(QUESTION_KEY);
       } catch {}
       opened(s);
+      return true;
     } catch (err) {
       fail(err);
+      return false;
     } finally {
       setBusy(null);
     }
@@ -153,19 +155,19 @@ export function PrepView() {
     }
   };
 
-  const answer = async (text: string) => {
-    if (!session) {
-      void start(text);
-      return;
-    }
+  /** Resolves to false when the answer didn't reach the panel, so the bar gives the text back. */
+  const answer = async (text: string): Promise<boolean> => {
+    if (!session) return start(text);
     setBusy("answer");
     setError(null);
     setDraft(text);
     setFreshFrom(feed.length + 1);
     try {
       setLive(await apiPost<Session>(`court/${session.id}/answer`, { text }));
+      return true;
     } catch (err) {
       fail(err);
+      return false;
     } finally {
       setDraft(null);
       setBusy(null);
@@ -273,7 +275,8 @@ export function PrepView() {
         speaking={speaking}
         onToggle={(id) =>
           setChosen((cur) => {
-            const s = cur ?? selected;
+            // Ids the Areopagus no longer has (an old link, a deleted custom investor) don't hold a seat.
+            const s = (cur ?? selected).filter((x) => !known || known.includes(x));
             if (s.includes(id)) return s.filter((x) => x !== id);
             return s.length >= MAX_PANEL ? s : [...s, id];
           })
@@ -323,7 +326,7 @@ export function PrepView() {
         <PromptBar
           label="Your answer"
           placeholder={placeholder}
-          onSubmit={(text) => void answer(text)}
+          onSubmit={answer}
           disabled={!!busy || ended || (!session && selected.length === 0) || (!!session && !awaitingFounder)}
           busy={busy === "answer" || busy === "start" || busy === "drill"}
           hint={

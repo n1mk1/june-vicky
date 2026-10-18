@@ -5,8 +5,12 @@
 - Structured outputs go through `messages.parse()`; tool loops through the SDK tool runner.
 - `stop_reason` is checked before any content is read: `refusal` → `LLMRefusal`, `max_tokens` →
   `LLMError`. Opus/Sonnet requests opt into server-side fallbacks (`fallbacks: "default"`).
-- Every response's usage is priced at list rates and added to `vicky:spend:{date}`; once the day's
-  budget is spent, calls raise `BudgetExceeded` (and `auth.require_budget` turns LLM routes into 402).
+- Every response's usage is priced at list rates and added to the day's spend (Redis, and the Postgres
+  `spend` table that is read when Redis is down); once the day's budget is spent, calls raise
+  `BudgetExceeded` (and `auth.require_budget` turns LLM routes into 402). The budget is checked before
+  every call, including each call of a tool loop. When neither store can be read, live calls fail closed.
+- Routes on a request path carry a timeout (`Route.timeout_s`): one bound on the whole call, or on the whole
+  tool loop, with no SDK retries inside it, so a slow API gives the offline mind's answer in seconds.
 
 Callers treat every `LLMError` the same way: use the deterministic path instead.
 """
@@ -55,20 +59,22 @@ class Route:
     effort: Literal["low", "medium", "high", "xhigh", "max"]
     max_tokens: int
     thinking_off: bool = False  # Sonnet 5.5 only: `between_tools` (no thinking) for sub-second routes
+    timeout_s: float | None = None  # whole call (or whole tool loop); None: the SDK's own timeout and retries
 
 
-# TRD §5.2 roster.
+# TRD §5.2 roster. The court routes run inside /court/start and /court/{sid}/answer, so each has a timeout
+# after which the offline mind answers (the chair has its own, `chair_timeout_s`).
 ROUTES: dict[str, Route] = {
-    "memo": Route("deep", "high", 16000),
-    "update_bid": Route("fast", "low", 4000),
-    "speak": Route("fast", "medium", 4000),
+    "memo": Route("deep", "high", 16000, timeout_s=60),  # the whole tool loop
+    "update_bid": Route("fast", "low", 4000, timeout_s=12),
+    "speak": Route("fast", "medium", 4000, timeout_s=12),
     "chair": Route("fast", "low", 1024, thinking_off=True),
-    "judge": Route("deep", "high", 8000),       # Vicky scores the answer
-    "review": Route("tiny", "low", 2000),       # Vicky reviews an investor's draft line before it is spoken
-    "probes": Route("fast", "medium", 6000),    # knowledge questions from the founder's notes, at session start
-    "ask_knowledge": Route("fast", "low", 2000),
-    "verify": Route("tiny", "low", 2000),       # Vicky checks a knowledge answer against the notes
-    "claims": Route("tiny", "low", 4000),
+    "judge": Route("deep", "high", 8000, timeout_s=20),       # Vicky scores the answer
+    "review": Route("tiny", "low", 2000, timeout_s=12),       # Vicky reviews an investor's draft line before it is spoken
+    "probes": Route("fast", "medium", 6000, timeout_s=30),    # knowledge questions from the founder's notes, at start
+    "ask_knowledge": Route("fast", "low", 2000, timeout_s=12),
+    "verify": Route("tiny", "low", 2000, timeout_s=12),       # Vicky checks a knowledge answer against the notes
+    "claims": Route("tiny", "low", 4000, timeout_s=12),
     "mapper": Route("fast", "medium", 8000),
     "doc_facts": Route("deep", "medium", 16000),
     "doc_parse": Route("deep", "medium", 16000),
@@ -113,9 +119,10 @@ def usage_usd(model: str, usage: Any) -> float:
 
 async def spent_today() -> float:
     try:
-        return await kv.spend_today()
-    except Exception:  # Redis down: the budget can't be read, so it can't block
-        return 0.0
+        return await kv.spend_today()  # Redis, else the Postgres spend table
+    except Exception as e:  # neither store can be read: a live call can't be shown to fit the budget
+        log.warning("daily spend unreadable (%s); live LLM calls are off until it can be read", e)
+        return float("inf")
 
 
 async def over_budget() -> bool:
@@ -184,11 +191,11 @@ class LLM:
             raise LLMError("turn paused before finishing")
         return msg
 
-    async def _guard(self, call: Callable[[], Awaitable[Any]]) -> Any:
+    async def _guard(self, call: Callable[[], Awaitable[Any]], limit_s: float | None = None) -> Any:
         if await over_budget():
             raise BudgetExceeded("daily LLM budget reached")
         try:
-            return await call()
+            return await (asyncio.wait_for(call(), limit_s) if limit_s else call())
         except pydantic.ValidationError as e:
             raise LLMError(f"structured output did not validate: {e.errors()[:1]}") from e
         except anthropic.BadRequestError as e:
@@ -202,10 +209,14 @@ class LLM:
         except anthropic.APIConnectionError as e:  # includes APITimeoutError
             raise LLMUnavailable(f"connection: {e}") from e
         except TimeoutError as e:
-            raise LLMUnavailable("timed out") from e
+            raise LLMUnavailable(f"timed out after {limit_s}s" if limit_s else "timed out") from e
 
     def _client(self, timeout: float | None):
         return self.client.with_options(timeout=timeout, max_retries=0) if timeout else self.client
+
+    @staticmethod
+    def _timeout(route: str, override: float | None) -> float | None:
+        return override or ROUTES[route].timeout_s
 
     # ------------------------------------------------------------ calls
 
@@ -213,16 +224,17 @@ class LLM:
                     request_timeout_s: float | None = None) -> T:
         """One structured-output call; returns the validated `schema` instance."""
         p = self.params(route, system, messages)
+        timeout = self._timeout(route, request_timeout_s)
 
         async def call() -> T:
-            msg = await self._client(request_timeout_s).beta.messages.parse(output_format=schema, **p)
+            msg = await self._client(timeout).beta.messages.parse(output_format=schema, **p)
             await self._settle(msg)
             out = msg.parsed_output
             if out is None:
                 raise LLMError("no structured output in the response")
             return out
 
-        return await self._guard(call)
+        return await self._guard(call, timeout)
 
     async def text(self, route: str, *, system: str | list[str], messages: list[dict],
                    request_timeout_s: float | None = None) -> str:
@@ -234,20 +246,23 @@ class LLM:
         """A plain call that returns the whole message (used for citations, which can't be combined
         with structured outputs)."""
         p = self.params(route, system, messages)
+        timeout = self._timeout(route, request_timeout_s)
 
         async def call() -> Any:
-            return await self._settle(await self._client(request_timeout_s).beta.messages.create(**p))
+            return await self._settle(await self._client(timeout).beta.messages.create(**p))
 
-        return await self._guard(call)
+        return await self._guard(call, timeout)
 
     async def run_tools(self, route: str, schema: type[T], *, system: str | list[str], messages: list[dict],
                         tools: Iterable[Any], max_iterations: int = 6) -> T:
-        """Tool runner over read-only tools, ending in a structured `schema` answer."""
+        """Tool runner over read-only tools, ending in a structured `schema` answer. The route's timeout
+        bounds the whole loop, and the budget is checked again before each further call."""
         p = self.params(route, system, messages)
+        timeout = self._timeout(route, None)
 
         async def call() -> T:
-            runner = self.client.beta.messages.tool_runner(tools=list(tools), output_format=schema,
-                                                            max_iterations=max_iterations, **p)
+            runner = self._client(timeout).beta.messages.tool_runner(tools=list(tools), output_format=schema,
+                                                                     max_iterations=max_iterations, **p)
             last = None
             async for msg in runner:
                 last = msg
@@ -255,6 +270,8 @@ class LLM:
                 if msg.stop_reason == "refusal":
                     d = getattr(msg, "stop_details", None)
                     raise LLMRefusal(getattr(d, "category", None), getattr(d, "explanation", None))
+                if msg.stop_reason == "tool_use" and await over_budget():  # the runner would call the model again
+                    raise BudgetExceeded("daily LLM budget reached during a tool loop")
             if last is None:
                 raise LLMError("tool runner returned nothing")
             if last.stop_reason != "end_turn":
@@ -263,7 +280,7 @@ class LLM:
                 raise LLMError("no structured output after the tool loop")
             return last.parsed_output
 
-        return await self._guard(call)
+        return await self._guard(call, timeout)
 
     async def upload(self, filename: str, data: bytes, mime: str) -> str:
         async def call() -> str:

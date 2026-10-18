@@ -30,7 +30,7 @@ on 2026-10-17 and can change.
 ### BDC Capital
 - BDC Capital describes itself as Canada's largest and most active venture capital investor, and its Seed Venture Fund says it leads seed rounds for Canadian entrepreneurs. Source: https://www.bdc.ca/en/bdc-capital/venture-capital/funds/seed-fund (verify with an advisor)
 
-## What Claire probes
+## What a mandate fund probes
 
 - How much of runway depends on SR&ED refunds and IRAP funding, and what happens if a
   claim is reduced on review or a refund arrives late? (Show burn and runway without them.)

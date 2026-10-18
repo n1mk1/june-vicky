@@ -50,7 +50,12 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
         )}
       </div>
 
-      <ul className="scroll-thin flex min-h-0 flex-1 gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0">
+      {/* Scrolls sideways on phones; focusable so the keyboard can scroll it when the seats are locked. */}
+      <ul
+        tabIndex={0}
+        aria-label="Investors on the panel"
+        className="scroll-thin flex min-h-0 flex-1 gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0"
+      >
         {/* The chair is always seated. */}
         <li className="w-[200px] shrink-0 lg:w-auto">
           <div

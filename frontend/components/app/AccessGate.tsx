@@ -9,16 +9,31 @@ import { ApiError, enterAccessCode } from "@/lib/api";
 import { errorText } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 
-/** Only same-site paths are allowed as the return target; without one, start in the knowledge base. */
-function safeNext(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/access") || raw === "/") return "/knowledge";
-  return raw;
+const HOME = "/knowledge";
+
+/**
+ * Only same-site paths are allowed as the return target; without one, start in the knowledge base.
+ * Browsers read `/\host` and `/<tab>/host` as `//host`, so the target is parsed the way the browser
+ * will parse it and must keep this origin. Backslashes and control characters are refused outright,
+ * and a path that normalises to `//host` (`/.//host`) is refused too, since it would leave the site
+ * when used as a relative URL. Called only in the browser (on submit), so it may read `location`.
+ */
+function safeNext(raw: string | null, origin: string): string {
+  if (!raw || !raw.startsWith("/") || [...raw].some((c) => c === "\\" || c < " " || c === "\u007f")) return HOME;
+  let url: URL;
+  try {
+    url = new URL(raw, origin);
+  } catch {
+    return HOME;
+  }
+  if (url.origin !== origin || url.pathname.startsWith("//") || url.pathname === "/" || url.pathname.startsWith("/access")) return HOME;
+  return url.pathname + url.search + url.hash;
 }
 
 /** FR-14: one shared code in, signed cookie out, back to where the user was going. */
 export function AccessGate() {
   const router = useRouter();
-  const next = safeNext(useSearchParams().get("next"));
+  const nextParam = useSearchParams().get("next");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +46,7 @@ export function AccessGate() {
     setError(null);
     try {
       await enterAccessCode(value);
-      router.replace(next);
+      router.replace(safeNext(nextParam, window.location.origin));
       router.refresh();
     } catch (err) {
       setBusy(false);

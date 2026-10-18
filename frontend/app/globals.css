@@ -18,7 +18,8 @@
   --surface-solid: #f4f4f4;
   --ink: #000000;
   --ink-2: rgba(0, 0, 0, 0.7);
-  --dim: rgba(0, 0, 0, 0.45);
+  /* 0.58 keeps dimmed small text at AA (4.5:1) on every light surface: 5.3:1 on white, 5.2:1 on #f4f4f4. */
+  --dim: rgba(0, 0, 0, 0.58);
   --line: rgba(0, 0, 0, 0.13);
   --line-strong: rgba(0, 0, 0, 0.36);
   --ember: #c94a00;
@@ -36,7 +37,8 @@
   --surface-solid: #0b0b0b;
   --ink: #ffffff;
   --ink-2: rgba(255, 255, 255, 0.7);
-  --dim: rgba(255, 255, 255, 0.42);
+  /* 0.5 keeps dimmed small text at AA (4.5:1) on every dark surface: 5.3:1 on black and on the glass. */
+  --dim: rgba(255, 255, 255, 0.5);
   --line: rgba(255, 255, 255, 0.14);
   --line-strong: rgba(255, 255, 255, 0.34);
   --ember: #ff6a13;

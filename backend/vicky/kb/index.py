@@ -68,7 +68,7 @@ async def active_build_id() -> str | None:
 async def start_build(engagement_id: str | None = None) -> dict:
     """Queue a full rebuild. A build already queued or running is cancelled: the new one starts from the
     vault as it is now."""
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         await conn.execute("select pg_advisory_xact_lock($1)", LOCK_KEY)
         await conn.execute("update kb_index_builds set status = 'cancelled', finished_at = now() "
                            "where status in ('queued', 'building')")
@@ -145,8 +145,8 @@ async def build(bid: str) -> dict[str, Any]:
                     r["vec"] = voyage.to_pg(v)
                 embedded += len(part)
         await _check(bid)
-        await _insert(bid, rows, model)
-        old = await _activate(bid, notes=len(notes), chunks=len(rows), embedded=embedded, reused=reused, model=model)
+        chunks = await _insert(bid, rows, model)
+        old = await _activate(bid, notes=len(notes), chunks=chunks, embedded=embedded, reused=reused, model=model)
         await _discard_caches(old)
         try:  # warm this process's BM25 index now, so the first search after a Fill doesn't wait for it
             from vicky.kb import rag
@@ -154,10 +154,10 @@ async def build(bid: str) -> dict[str, Any]:
             await rag._index(bid)
         except Exception as e:
             log.info("could not warm the search index: %s", e)
-        await publish("kb", "kb.index.ready", {"build_id": bid, "chunks": len(rows)})
-        log.info("kb index %s active: %d notes, %d chunks (%d embedded, %d reused)", bid, len(notes), len(rows),
+        await publish("kb", "kb.index.ready", {"build_id": bid, "chunks": chunks})
+        log.info("kb index %s active: %d notes, %d chunks (%d embedded, %d reused)", bid, len(notes), chunks,
                  embedded, reused)
-        return {"build_id": bid, "notes": len(notes), "chunks": len(rows), "embedded": embedded, "reused": reused}
+        return {"build_id": bid, "notes": len(notes), "chunks": chunks, "embedded": embedded, "reused": reused}
     except Cancelled:
         await db.execute("delete from kb_chunks where build_id = $1::uuid", bid)
         return {"build_id": bid, "cancelled": True}
@@ -170,16 +170,18 @@ async def build(bid: str) -> dict[str, Any]:
         raise
 
 
-async def _insert(bid: str, rows: list[dict], model: str | None) -> None:
+async def _insert(bid: str, rows: list[dict], model: str | None) -> int:
+    """Insert the chunks; returns how many went in. A chunk whose note was deleted since the vault was read
+    is skipped (insert … select from the note), instead of failing the whole build on the foreign key."""
     with_vec = await has_vector()
     cols = ("build_id, note_id, note_md5, ord, heading, start_char, end_char, text, text_sha256, sha256, "
             "embed_model")
+    vals = "$1::uuid, n.id, $3, $4, $5, $6, $7, $8, $9, $10, $11"
     if with_vec:
-        sql = (f"insert into kb_chunks ({cols}, embedding) values "
-               "($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::halfvec)")
+        sql = f"insert into kb_chunks ({cols}, embedding) select {vals}, $12::halfvec from kb_notes n where n.id = $2::uuid"
     else:
-        sql = f"insert into kb_chunks ({cols}) values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
-    async with db.pool().acquire() as conn:
+        sql = f"insert into kb_chunks ({cols}) select {vals} from kb_notes n where n.id = $2::uuid"
+    async with db.acquire() as conn:
         for i in range(0, len(rows), INSERT_BATCH):
             args = []
             for r in rows[i:i + INSERT_BATCH]:
@@ -190,12 +192,13 @@ async def _insert(bid: str, rows: list[dict], model: str | None) -> None:
                     a.append(r["vec"])
                 args.append(a)
             await conn.executemany(sql, args)
+        return int(await conn.fetchval("select count(*) from kb_chunks where build_id = $1::uuid", bid))
 
 
 async def _activate(bid: str, **counts: Any) -> str | None:
     """Swap: the new build becomes active and the old one's chunks and semantic-cache rows are deleted.
     Returns the old build id."""
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         await conn.execute("select pg_advisory_xact_lock($1)", LOCK_KEY)
         st = await conn.fetchval("select status from kb_index_builds where id = $1::uuid for update", bid)
         if st != "building":

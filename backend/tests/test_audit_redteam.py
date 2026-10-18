@@ -166,3 +166,11 @@ def test_autofill_rejects_a_changed_round_size(value):
 def test_autofill_stores_the_quoted_round_size(value):
     ok = verify("round_size", Evidence(value=value, note="deck.md", quote="We are raising $2.5M"), NOTES)
     assert ok and ok[0] == 2_500_000
+
+
+def test_a_note_quote_with_escaped_angle_brackets_still_matches():
+    # Passages reach the model with < and > escaped (LLM-13), so a faithful quote can carry &lt; / &gt;.
+    notes = {"ops/policy": {"id": "n1", "title": "Policy", "content": "Any customer with margin < 40% goes to review."}}
+    text = 'Your policy says "any customer with margin &lt; 40% goes to review" [kb:ops/policy].'
+    res = audit_text(text, [], notes=notes)
+    assert res.passed, res.findings

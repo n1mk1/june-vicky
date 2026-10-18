@@ -13,6 +13,13 @@ from vicky.areopagus.schema import VCPersona
 HERE = Path(__file__).resolve().parent
 DEFAULT_PANEL = ["aristotle", "thales", "xenophon", "plato", "socrates"]
 MAX_PANEL = 5
+# The built-ins before the philosopher rename (ADR 0002). Sessions recorded under these ids still open,
+# show the new names and can be continued; new sessions seat the new investors.
+LEGACY_IDS = {"james": "aristotle", "alex": "thales", "mark": "socrates", "claire": "plato", "kenji": "xenophon"}
+
+
+def canonical(pid: str) -> str:
+    return LEGACY_IDS.get(pid, pid)
 
 
 class PersonaError(Exception):
@@ -49,8 +56,9 @@ async def all_personas() -> list[VCPersona]:
 
 
 async def get(pid: str) -> VCPersona | None:
-    if pid in builtins():
-        return builtins()[pid]
+    """By id; an old built-in id gives the investor it became."""
+    if (cid := canonical(pid)) in builtins():
+        return builtins()[cid]
     r = await db.fetchrow("select * from vc_personas where slug = $1", pid)
     return _from_row(r) if r else None
 
@@ -100,9 +108,13 @@ async def fork(pid: str) -> VCPersona:
 
 
 async def panel(ids: list[str] | None, strict: bool = True) -> list[VCPersona]:
-    """The investors for these ids. Not strict: skip ids that no longer exist (a custom investor
-    deleted after a session seated them), so the session can still be viewed and ended."""
+    """The investors for these ids. Strict (a new session): old built-in ids seat the investors they became.
+    Not strict (an existing session): skip ids that no longer exist (a custom investor deleted after a
+    session seated them), so the session can still be viewed and ended; an old built-in id gives the
+    investor it became, keyed by the old id, because that is the key the session's state and turns use."""
     ids = [i for i in (ids or DEFAULT_PANEL) if i][:MAX_PANEL]
+    if strict:
+        ids = [canonical(i) for i in ids]
     out = []
     for i in dict.fromkeys(ids):
         p = await get(i)
@@ -110,7 +122,7 @@ async def panel(ids: list[str] | None, strict: bool = True) -> list[VCPersona]:
             if not strict:
                 continue
             raise PersonaError(f"Unknown investor {i!r}")
-        out.append(p)
+        out.append(p if p.id == i else p.model_copy(update={"id": i}))
     if not out and strict:
         raise PersonaError("Pick at least one investor")
     return out

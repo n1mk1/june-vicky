@@ -10,9 +10,11 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from vicky import auth, db, jobs, kv, memory, migrate, realtime, report
 from vicky.areopagus import builder, registry
@@ -26,17 +28,17 @@ from vicky.model.figures import figure_dict
 from vicky.model.truth import check_claim
 from vicky.services import dashboards, engagements
 from vicky.services.dashboards import Conflict
-from vicky.services.engagements import Invalid, NotFound
+from vicky.services.engagements import FACT_UNITS, Invalid, NotFound
 from vicky.viz.dsl import DSLError
 
 log = logging.getLogger("vicky")
 
 
 async def _sweeper() -> None:
-    while True:
-        await asyncio.sleep(300)
+    while True:  # first pass at startup: rows a previous process left `running` become retryable
         with contextlib.suppress(Exception):
             await jobs.sweep_stale()
+        await asyncio.sleep(300)
 
 
 @asynccontextmanager
@@ -55,12 +57,71 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         sweeper.cancel()
+        await jobs.shutdown()  # inline jobs still running are cancelled and marked interrupted
         await realtime.hub.stop()
         await kv.close()
         await db.close()
 
 
-app = FastAPI(title="Vicky API", version="0.1.0", lifespan=lifespan)
+class BodyLimit:
+    """413 for a request body over REQUEST_MAX_BYTES: refused up front by its content-length, or as
+    soon as a streamed (chunked) body passes the cap, so nothing big is ever buffered."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        limit = get_settings().max_request_bytes()
+        length = dict(scope.get("headers") or ()).get(b"content-length")
+        if length is not None and (not length.isdigit() or int(length) > limit):
+            return await self._too_large(scope, receive, send, limit)
+        seen, started, rejected = 0, False, False
+
+        async def limited_receive():
+            nonlocal seen, rejected
+            if rejected:
+                return {"type": "http.disconnect"}
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > limit:
+                    # Answer 413 now; the app sees the client go away and whatever it sends is dropped.
+                    rejected = True
+                    if not started:
+                        await self._too_large(scope, receive, send, limit)
+                    return {"type": "http.disconnect"}
+            return message
+
+        async def tracked_send(message) -> None:
+            nonlocal started
+            if rejected:
+                return
+            started = started or message["type"] == "http.response.start"
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, tracked_send)
+        except Exception:
+            if not rejected:
+                raise
+
+    @staticmethod
+    async def _too_large(scope, receive, send, limit: int) -> None:
+        size = f"{limit // (1024 * 1024)} MB" if limit >= 1024 * 1024 else f"{limit} bytes"
+        await JSONResponse({"detail": f"Requests are limited to {size}."}, status_code=413)(scope, receive, send)
+
+
+def docs_urls(cookie_secure: bool) -> dict:
+    """The interactive docs and schema are for local development; a public deploy (COOKIE_SECURE) serves none."""
+    if cookie_secure:
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+
+app = FastAPI(title="Vicky API", version="0.1.0", lifespan=lifespan, **docs_urls(get_settings().cookie_secure))
+app.add_middleware(BodyLimit)  # inside CORS, so a 413 still carries the CORS headers
 app.add_middleware(CORSMiddleware, allow_origins=[get_settings().web_origin], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -80,6 +141,13 @@ async def _conf(_: Request, e: Conflict):
     return JSONResponse({"detail": str(e)}, status_code=409)
 
 
+@app.exception_handler(RequestValidationError)
+async def _req_val(_: Request, e: RequestValidationError):
+    # FastAPI's default 422, without echoing the input: a NaN or Infinity there isn't valid JSON (500).
+    return JSONResponse({"detail": jsonable_encoder([{k: v for k, v in err.items() if k != "input"}
+                                                     for err in e.errors()])}, status_code=422)
+
+
 @app.exception_handler(ValidationError)
 async def _val(_: Request, e: ValidationError):
     first = e.errors()[0]
@@ -94,7 +162,9 @@ async def _dsl(_: Request, e: DSLError):
 
 # ---------------------------------------------------------------- health (open)
 
-async def health() -> dict:
+async def health() -> JSONResponse:
+    """503 when Postgres is unreachable, so Render's health check restarts a broken instance. Redis is
+    reported but doesn't fail the check: every Redis use degrades gracefully."""
     out = {"db": "error", "kv": "error"}
     with contextlib.suppress(Exception):
         await db.fetchval("select 1")
@@ -102,7 +172,7 @@ async def health() -> dict:
     with contextlib.suppress(Exception):
         await kv.client().ping()
         out["kv"] = "ok"
-    return out
+    return JSONResponse(out, status_code=200 if out["db"] == "ok" else 503)
 
 
 app.add_api_route("/healthz", health, methods=["GET"])
@@ -124,11 +194,19 @@ class ProfileIn(BaseModel):
 class FactIn(BaseModel):
     name: str
     label: str | None = None
-    value: float
-    unit: str = "count"
+    value: float = Field(allow_inf_nan=False)
+    unit: str = "count"  # a unit in model.figures.UNITS, or "money" / "$" for the reporting currency
     period: str | None = None
     kind: str | None = None
     note: str | None = None
+
+    @field_validator("unit")
+    @classmethod
+    def _unit(cls, v: str) -> str:
+        unit = (v or "count").strip().lower()
+        if unit not in FACT_UNITS:
+            raise ValueError(f"unknown unit {v!r}; use a currency code, money, pct, months, count, ratio or x")
+        return unit
 
 
 class MappingIn(BaseModel):
@@ -137,7 +215,7 @@ class MappingIn(BaseModel):
 
 class ClaimIn(BaseModel):
     metric: str
-    value: float
+    value: float = Field(allow_inf_nan=False)
     unit: str = ""
     period: str | None = None
     is_forecast: bool = False
@@ -550,7 +628,13 @@ async def job_status(jid: str) -> dict:
 
 @api.post("/jobs/{jid}/retry")
 async def job_retry(jid: str) -> dict:
-    await jobs.retry(jid)
+    """Only a failed or stale job runs again: 404 for no such job, 409 for one queued, running or done."""
+    try:
+        await jobs.retry(jid)
+    except KeyError as e:
+        raise NotFound("job") from e
+    except jobs.RetryRefused as e:
+        raise HTTPException(409, f"Only a failed or stale job can be retried; this one is {e.status}.") from e
     return {"ok": True}
 
 

@@ -13,7 +13,7 @@ Version 1.0 — 17 Oct 2026. Companion to [01-PRD](01-PRD.md). Source decisions:
 | Packaging | Docker everywhere. Render builds Dockerfiles (`runtime: docker`); docker-compose runs the stack locally |
 | Repo | Private GitHub repo `n1mk1/june-vicky`. Code + sample data; brief, PDF and Trionn reference captures gitignored |
 | Backend | Python 3.13, FastAPI + uvicorn, asyncpg, pandas, pypdf, arq (jobs), uv (packaging) |
-| Frontend | Next.js 16 (App Router, `output: "standalone"`), React 19, Tailwind v4, React Three Fiber, ECharts, CopilotKit + AG-UI, react-grid-layout 2.x |
+| Frontend | Next.js 16 (App Router, `output: "standalone"`), React 19, Tailwind v4, React Three Fiber, ECharts, react-grid-layout 2.x |
 | LLM | Anthropic Python SDK 1.x (async). Opus 5.5 memos/judge/report/Vicky chat; Sonnet 5.5 belief-bid/speech/chair/persona-gen/mapping; Haiku 5.5 claim extraction + intent routing |
 | Voice | ElevenLabs realtime STT; one TTS voice per VC and one for Vicky |
 | Identity | One shared workspace behind `ACCESS_CODE` → signed HTTP-only cookie |
@@ -26,11 +26,11 @@ Version 1.0 — 17 Oct 2026. Companion to [01-PRD](01-PRD.md). Source decisions:
 
 ```
                      browser (any number of tabs)
-      ┌────────────────┬────────────────────────┐
-      │ HTTPS           │ AG-UI SSE (chat tab)    │ WSS (all tabs)
+      ┌──────────────────────────────────────────┐
+      │ HTTPS                                    │ WSS (all tabs)
 vicky-web (Next.js, Docker)                      │
-  /api/copilotkit → CopilotKit runtime ──private──▶ vicky-api (FastAPI, Docker)
-  /api/v1/[...path] route-handler proxy ─private─▶   REST · /ws · /agui/{dashboard,court,pitch}
+  /api/v1/[...path] route-handler proxy ─private─▶ vicky-api (FastAPI, Docker)
+                                                     REST · /ws
                                                      ├── Render Postgres  vicky-db
                                                      └── Render Key Value vicky-kv ◀─ queue/pubsub ─▶ vicky-worker (arq, same image)
 ```
@@ -39,7 +39,7 @@ vicky-web (Next.js, Docker)                      │
 
 | Service | Type | Image | Responsibilities |
 |---|---|---|---|
-| `vicky-web` | Render web | `frontend/Dockerfile` (node:22-alpine, standalone) | UI; `/api/v1/*` proxy reading `API_INTERNAL_URL` at runtime (multipart + streaming); `/api/copilotkit` CopilotKit runtime; `/api/health` |
+| `vicky-web` | Render web | `frontend/Dockerfile` (node:22-alpine, standalone) | UI; `/api/v1/*` proxy reading `API_INTERNAL_URL` at runtime (multipart + streaming); `/api/realtime` (serves `API_PUBLIC_WS_URL` to the browser); `/api/health` |
 | `vicky-api` | Render web | `backend/Dockerfile` (python:3.13-slim + uv) | REST, uploads, one multiplexed WebSocket per tab (`/ws?session=…`), AG-UI endpoints; latency-critical work (dashboard turns, CSV/XLSX parsing, claim checks, chair step, live interrupts, VC speech streaming); migrations at startup under `pg_advisory_lock` on free tier |
 | `vicky-worker` | Render worker | same image, `uv run arq vicky.jobs.WorkerSettings` | Memos, deck pre-scan, PDF/DOCX extraction, reports + LLM audit, persona generation. Commented out in the free phase |
 | `vicky-db` | Render Postgres 17 | — | Only durable store |
@@ -201,7 +201,7 @@ Curated entries `{id, claim, url, publisher, as_of, business_model, stage, topic
 - `schema.py` `VCPersona{id, name, archetype, bio, cheque_role, priorities{lens: weight} over 12 lenses, style{tone, interrupt_tendency, follow_up_depth, aggression}, signature_move, question_seeds[], dealbreakers[], scoring_weights, voice_id, base_archetype?, kits[], builtin}`.
 - `kits/` deterministic analyses returning Figures: QuantAudit, Customer, Channel, Governance, RedTeam, Market, Terms (dilution/waterfall math only, never valuation), Milestone, Benchmark, Cash (default-alive, fatal-pinch date), Product.
 - `mind.py` `VCMind.write_memo() / update_and_bid(answer) / speak(intent)` with override hooks `memo_method`, `choose_target`, `follow_up_policy`, `on_answer`. **No-concession rule** in `update_and_bid`: confidence on a hypothesis can only drop when the answer cites a Figure matching it.
-- Built-ins (`areopagus/builtin/*.yaml`), named for Greek philosophers: Aristotle (Lead Seed Fund, lines-not-dots), Thales (Angel Operator, stories-before-numbers), Xenophon (Strategic Investor, trap terms), Plato (Government-Backed Fund, mandate audit) and Socrates (Skeptical Partner, pre-mortem chain). The other archetypes (Series A readiness, capital efficiency, term sheets, technical diligence, market) remain as builder templates and question banks. Default panel James, Alex, Mark; max 5 seated.
+- Built-ins (`areopagus/builtin/*.yaml`), named for Greek philosophers: Aristotle (Lead Seed Fund, lines-not-dots), Thales (Angel Operator, stories-before-numbers), Xenophon (Strategic Investor, trap terms), Plato (Government-Backed Fund, mandate audit) and Socrates (Skeptical Partner, pre-mortem chain). The replaced archetypes (Series A readiness, capital efficiency, term sheets, technical diligence, market) keep only their question banks, as strong-answer anchors. Builder templates (`areopagus/templates.yaml`): Impact Partner, Family Office Principal, Accelerator Partner, Revenue-Based Lender. Default panel all five (`registry.DEFAULT_PANEL`); max 5 seated.
 - `custom.py` `SpecMind` driven by the spec; kits chosen from lenses; `base_archetype` inherits hooks.
 - Guardrails: persona text inside a delimited block treated as character description; field caps; audit on every VC.
 
@@ -213,7 +213,7 @@ Curated entries `{id, claim, url, publisher, as_of, business_model, stage, topic
 4. Chair step: Sonnet low over bids, open hypotheses, ledger, goals, budgets and the candidate list → `ChairDecision`; referee validates; invalid or > 1.5 s → top code candidate. Every decision logged.
 5. Speak: the VC drafts the line → deterministic audit (failure → regenerate once → offline line) → **Vicky reviews it** (`court/review.py` + `LineReview`): sent back → one rewrite, kept if it passes code's checks → stored with the review in `turns.audit.review` → streamed / TTS.
 6. Coaching: Coached mode time-out after two weak answers on one hypothesis (names the gap, points at the Figure, adds no figure).
-7. End conditions: question cap (6–20), time cap, all hypotheses resolved (< 0.2 or > 0.8), founder ends. Then report job + LLM audit.
+7. End conditions: question cap (4–20, default 8), time cap, all hypotheses resolved (< 0.2 or > 0.8), founder ends. Then report job + LLM audit.
 
 ### 5.6 Simulation pipeline
 
@@ -230,7 +230,7 @@ Regex-extract every number; normalize units ($, K, M, %, months, x); each must m
 - `evaluate.py` computes series with per-point provenance; cached in Redis by spec hash; invalidated when a dataset or fact changes.
 - `echarts.py` builds the full option (`dataset.source`, `dataZoom` inside + slider, shared `axisPointer`, `brush`, theme names). The LLM never supplies values.
 - Realtime: `dashboards.version` optimistic concurrency; diffs on `vicky:dashboard:{id}`; all tabs apply via WebSocket; chat tab also gets AG-UI state deltas (store dedupes by version).
-- Frontend: `components/charts/EChart.tsx` (~40-line wrapper over `echarts/core`), `lib/echarts-theme.ts` (`vicky-dark` / `vicky-light` from CSS tokens), widgets `WidgetFrame`, `EChartWidget`, `KpiWidget`, `MissingDataTile`, `DashboardGrid` (react-grid-layout; CSS-grid fallback), `DashboardChat` (CopilotKit headless hooks; fallback is PromptBar + WebSocket). `recharts` removed after `TrendChart` migrates.
+- Frontend: `components/charts/EChart.tsx` (~40-line wrapper over `echarts/core`), `lib/echarts-theme.ts` (`vicky-dark` / `vicky-light` from CSS tokens), widgets `WidgetFrame`, `EChartWidget`, `KpiWidget`, `MissingDataTile`, `DashboardGrid` (react-grid-layout; CSS-grid fallback), `DashboardChat` (PromptBar → `POST /dashboards/{id}/chat`; diffs arrive over the WebSocket). `recharts` removed after `TrendChart` migrates.
 
 ## 7. Realtime protocols
 
@@ -247,7 +247,7 @@ Reconnect: client resumes with `since_version`; server replays from Postgres (tu
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/auth/access` | Exchange access code for cookie |
-| GET | `/healthz` | `{db: ok, kv: ok}` |
+| GET | `/healthz` | `{db, kv}`; 503 when `db` is `error` (`kv` is informational) |
 | GET/POST | `/engagements`, `/engagements/{id}/profile` | List; create/update company profile |
 | POST | `/uploads` | Multipart ≤ 10 MB → `uploads` row; triggers parse or extraction job |
 | GET/PUT | `/datasets/{id}/mapping` | Proposed mapping; confirm/edit |
@@ -262,14 +262,16 @@ Reconnect: client resumes with `since_version`; server replays from Postgres (tu
 | POST | `/voice/stt-token` | Short-lived ElevenLabs token |
 | GET | `/voice/tts?text=&voice_id=` | Streamed audio |
 | GET | `/sessions/{id}/report`, `/reports`, `/reports/{id}.md` | Reports |
-| GET | `/jobs/{id}` | Job status; stale rows show Retry |
+| GET/POST | `/jobs/{id}`, `/jobs/{id}/retry` | Job status (404 unknown); retry re-queues a `failed`/`stale` job (409 in any other state) |
 
 ## 9. Security, limits and cost
 
-- Access gate: `ACCESS_CODE` → signed cookie (`COOKIE_SECRET`, generated by Render); every route but `/healthz` requires it; 401 otherwise.
-- Rate limit per IP (`vicky:rl:{ip}`); daily USD budget guard on LLM routes.
+- Access gate: `ACCESS_CODE` → signed cookie (`COOKIE_SECRET`, generated by Render) carrying an HMAC of `ACCESS_CODE`, so changing the code revokes every issued cookie; every route but `/healthz` requires it; 401 otherwise. The cookie is host-only on the web origin (same-origin proxy; no `Domain`).
+- `/healthz` is 503 when Postgres is unreachable (Redis state is informational), so Render's health check restarts a broken instance.
+- Interactive API docs (`/docs`, `/redoc`, `/openapi.json`) are off when `COOKIE_SECURE=true`.
+- Rate limit per IP (`vicky:rl:{ip}`; client IP from `X-Forwarded-For` only behind `TRUSTED_PROXY_CIDRS`); wrong access codes also capped across all IPs (`ACCESS_FAILURES_PER_MIN`); daily USD budget guard on LLM routes.
 - Secrets only via env (`ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ACCESS_CODE`, `COOKIE_SECRET`); never `ARG` in Dockerfiles; `.env` gitignored, `.env.example` committed.
-- Uploads ≤ 10 MB, bytea in Postgres (Render has no free disk).
+- Uploads ≤ 10 MB, bytea in Postgres (Render has no free disk). Request bodies over `REQUEST_MAX_BYTES` are 413 before they are read.
 - ElevenLabs key never reaches the browser; STT uses short-lived tokens.
 - Persona spec text is data, never instructions.
 
@@ -278,7 +280,7 @@ Reconnect: client resumes with `since_version`; server replays from Postgres (tu
 - `backend/Dockerfile`: multi-stage on `python:3.13-slim`; uv from `ghcr.io/astral-sh/uv:0.11`; `uv sync --frozen --no-dev` before copying source; non-root; `PYTHONUNBUFFERED=1`; `entrypoint.sh` maps `$PORT`; CMD uvicorn with `--ws-ping-interval 20`.
 - `frontend/Dockerfile`: `node:22-alpine` multi-stage; `npm ci` → `next build` (standalone) → runtime copies `public`, `.next/standalone`, `.next/static`; `HOSTNAME=0.0.0.0`; no hardcoded PORT; `CMD ["node","server.js"]`.
 - `docker-compose.yml`: `db` (postgres:17), `kv` (valkey:8), `api` (reload, `JOBS_MODE=inline`), profile `full`: `worker`, `web` (`next dev`). `docker compose up db kv` or `docker compose --profile full up`.
-- `render.yaml` (no `rootDir`; repo-root-relative paths): `vicky-api` web/docker with `healthCheckPath: /healthz`, `maxShutdownDelaySeconds: 60`, `autoDeployTrigger: checksPass`, `buildFilter` on `backend/**`; `vicky-worker` (commented out on free); `vicky-web` with `API_INTERNAL_URL` from `vicky-api` hostport and `API_PUBLIC_WS_URL` set after first deploy; `vicky-kv` keyvalue free, `ipAllowList: []`; `databases: vicky-db` free, Postgres 17.
+- `render.yaml` (no `rootDir`; repo-root-relative paths): `vicky-api` web/docker with `healthCheckPath: /healthz`, `maxShutdownDelaySeconds: 60`, `autoDeployTrigger: checksPass`, `buildFilter` on `backend/**`; `vicky-worker` (commented out on free); env group `vicky-shared` (`COOKIE_SECRET`, `WEB_ORIGIN`, `LLM_MODE`, `DAILY_USD_BUDGET`) shared by api and worker; `vicky-web` with `API_INTERNAL_URL` from `vicky-api` hostport and `API_PUBLIC_WS_URL` set after first deploy; `vicky-kv` keyvalue free, `ipAllowList: []`; `databases: vicky-db` free, Postgres 17.
 - Fallback: if `runtime: docker` is refused on the free web plan, move `vicky-api` to `0.5c-512mb` immediately.
 - CI (`.github/workflows/ci.yml`): backend (uv sync, ruff, pytest with Postgres + Valkey service containers), frontend (npm ci, tsc, eslint, build), docker-build (both images, no push). Render auto-deploys `main` on green.
 - Demo switch (day before judging): `vicky-db` → `0.1c-256mb`, `vicky-kv` → `256mb`, api and web → `0.5c-512mb`, uncomment worker, `JOBS_MODE=worker`, `preDeployCommand: uv run python -m vicky.migrate`, raise `DAILY_USD_BUDGET`. ≈ $37/mo prorated; downgrade after.
@@ -290,9 +292,15 @@ Reconnect: client resumes with `since_version`; server replays from Postgres (tu
 | `DATABASE_URL` | api, worker | fromDatabase |
 | `REDIS_URL` | api, worker | fromService keyvalue |
 | `JOBS_MODE` | api | `inline` (free) / `worker` |
-| `WEB_ORIGIN` | api | CORS + cookie domain |
-| `DAILY_USD_BUDGET` | api, worker | default 5 |
-| `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ACCESS_CODE`, `COOKIE_SECRET` | api, worker | `sync: false` |
+| `WEB_ORIGIN` | api, worker | CORS allow-origin only (no cookie `Domain` is set); env group `vicky-shared` |
+| `DAILY_USD_BUDGET`, `LLM_MODE` | api, worker | budget default 5; env group `vicky-shared` |
+| `COOKIE_SECRET` | api, worker | `generateValue: true` in env group `vicky-shared` |
+| `COOKIE_SECURE` | api | `true` on Render, `false` on http://localhost; `true` also disables `/docs`, `/redoc`, `/openapi.json` |
+| `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY` | api, worker | `sync: false` |
+| `ACCESS_CODE` | api | `sync: false` |
+| `TRUSTED_PROXY_CIDRS` | api | default `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7`; `X-Forwarded-For` is honoured only when the direct peer is in these ranges, and the client is the rightmost entry outside them (Render's edge proxy and private network are inside) |
+| `ACCESS_FAILURES_PER_MIN` | api | default 60: wrong access codes per minute across all IPs before `/auth/access` returns 429 for everyone |
+| `REQUEST_MAX_BYTES` | api | default unset = `KB_UPLOAD_MAX_BYTES` + 4 MiB (54 MiB); larger bodies get 413 before they are read |
 | `VOYAGE_API_KEY` | api, worker | `sync: false`; knowledge-base embeddings and reranking ([08-RAG](08-RAG.md)); unset = BM25 only |
 | `EMBED_MODEL`, `RERANK_MODEL`, `RERANK_MODEL_FAST`, `RAG_CONF_MIN`, `RAG_FULL_MAX_TOKENS`, `RAG_REUSE_EMBEDDINGS` | api, worker | defaults in `vicky/config.py` |
 | `API_INTERNAL_URL`, `API_PUBLIC_WS_URL` | web | read at request time, never baked at build |
@@ -311,10 +319,9 @@ Reconnect: client resumes with `since_version`; server replays from Postgres (tu
 | `runtime: docker` refused on free plan | `0.5c-512mb` at once |
 | Free API cold start (~1 min) during judging | Paid tier the day before; landing pings `/healthz` on load |
 | Free Postgres expires in 30 days | Created now; upgrade keeps data |
-| Free Key Value loses queued jobs | Stale `jobs` rows show Retry; nothing durable in Redis |
+| Free Key Value loses queued jobs; redeploy or sleep cuts a running job | Sweeper marks old `queued`/`running` rows `stale`, a cancelled run ends `failed` (`interrupted`); both show Retry; nothing durable in Redis |
 | Citations API incompatible with structured outputs | Two-pass extraction + pypdf verification |
 | Opus memos slow or costly | Parallel jobs; cached per TruthPack + persona version; budget guard |
 | Forced `tool_choice` unsupported on 5.5 | `auto` + `strict` + steering; structured outputs |
-| CopilotKit/AG-UI hook drift | Verify `@copilotkit/*` 1.79 headless hooks and `HttpAgent` at install; fallback PromptBar + WebSocket |
 | react-grid-layout on React 19 | Verify; fallback CSS-grid reorder |
 | Preserved-thinking edited-history 400s | Stateless rebuild; never replay thinking; append-only transcripts |

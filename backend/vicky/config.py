@@ -1,6 +1,8 @@
 """Settings from the environment (see .env.example at the repo root)."""
 
+from contextlib import suppress
 from functools import lru_cache
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from typing import Literal
 
 from pydantic import Field
@@ -34,6 +36,14 @@ class Settings(BaseSettings):
 
     rate_limit_per_min: int = 240
     access_attempts_per_min: int = 5
+    # Wrong access codes per minute across every address before /auth/access answers 429 for everyone.
+    access_failures_per_min: int = 60
+    # Peers whose X-Forwarded-For is believed: Render's edge proxy and private network, docker, localhost.
+    # The client is the rightmost forwarded address outside these ranges. Empty = never read the header.
+    trusted_proxy_cidrs: str = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"
+    # Largest request body; bigger ones get 413 before they are read. Unset = a full-size knowledge-base
+    # file plus multipart framing (see max_request_bytes).
+    request_max_bytes: int | None = None
     upload_max_bytes: int = 10 * 1024 * 1024
     # Knowledge base imports: per file (a zip counts as one file) and the most a zip may expand to.
     kb_upload_max_bytes: int = 50 * 1024 * 1024
@@ -54,6 +64,21 @@ class Settings(BaseSettings):
     interrupt_veto_timeout_s: float = 1.0
 
     vicky_voice_id: str | None = Field(default=None)
+
+    def max_request_bytes(self) -> int:
+        if self.request_max_bytes:
+            return self.request_max_bytes
+        return max(self.kb_upload_max_bytes, self.upload_max_bytes) + 4 * 1024 * 1024
+
+
+def parse_cidrs(cidrs: str) -> tuple[IPv4Network | IPv6Network, ...]:
+    """`"10.0.0.0/8, ::1"` → networks; entries that aren't an address or a network are ignored."""
+    out = []
+    for raw in cidrs.split(","):
+        with suppress(ValueError):
+            if raw.strip():
+                out.append(ip_network(raw.strip(), strict=False))
+    return tuple(out)
 
 
 @lru_cache

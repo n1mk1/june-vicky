@@ -25,10 +25,15 @@ interface PanelProps {
   marks?: boolean;
   className?: string;
   bodyClassName?: string;
+  /**
+   * For a body that scrolls: names it and puts it in the tab order, so keyboard users can scroll it
+   * even when nothing inside is focusable (WCAG 2.1.1).
+   */
+  scrollLabel?: string;
   children: ReactNode;
 }
 
-export function Panel({ title, aside, marks, className, bodyClassName, children }: PanelProps) {
+export function Panel({ title, aside, marks, className, bodyClassName, scrollLabel, children }: PanelProps) {
   return (
     <section className={cn("glass relative flex min-h-0 flex-col rounded-[4px]", className)}>
       {marks && <CornerMarks />}
@@ -42,7 +47,12 @@ export function Panel({ title, aside, marks, className, bodyClassName, children 
           {aside}
         </header>
       )}
-      <div className={cn("min-h-0 flex-1", bodyClassName)}>{children}</div>
+      <div
+        className={cn("min-h-0 flex-1", bodyClassName)}
+        {...(scrollLabel ? { tabIndex: 0, role: "region", "aria-label": scrollLabel } : {})}
+      >
+        {children}
+      </div>
     </section>
   );
 }

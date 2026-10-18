@@ -38,18 +38,17 @@ services:
           property: connectionString
       - key: JOBS_MODE
         value: inline
-      # Public origin of vicky-web (CORS + cookie domain). Fix it after the first deploy if Render
-      # gave the web service a suffixed hostname.
-      - key: WEB_ORIGIN
-        value: https://vicky-web.onrender.com
-      - key: DAILY_USD_BUDGET
-        value: "5"
-      - key: LLM_MODE
-        value: auto
+      # WEB_ORIGIN, LLM_MODE, DAILY_USD_BUDGET and COOKIE_SECRET (shared with the worker).
+      - fromGroup: vicky-shared
+      # Secure cookie, and no /docs, /redoc or /openapi.json.
       - key: COOKIE_SECURE
         value: "true"
-      - key: COOKIE_SECRET
-        generateValue: true
+      # X-Forwarded-For is read only from peers in TRUSTED_PROXY_CIDRS (default: private ranges, which
+      # cover Render's proxy and private network). Uncomment to override.
+      # - key: TRUSTED_PROXY_CIDRS
+      #   value: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7
+      # Secrets: `sync: false` is ignored inside an environment group, so each service lists its own
+      # and Render asks for them on the first Blueprint sync.
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: ELEVENLABS_API_KEY
@@ -57,12 +56,13 @@ services:
       # Knowledge-base search (docs/08-RAG.md): embeddings and reranking. Unset = BM25 only.
       - key: VOYAGE_API_KEY
         sync: false
+      # Signs into the access cookie: changing it revokes every cookie issued under the old code.
       - key: ACCESS_CODE
         sync: false
 
   # Workers have no free plan; uncomment for the demo phase (and set vicky-api JOBS_MODE=worker).
-  # The worker must share COOKIE_SECRET with the api: after uncommenting, copy the api's generated
-  # value into the worker (or move both into an envVarGroup).
+  # Shared settings come from the vicky-shared group; the secrets the jobs use (Claude for memos and
+  # extraction, Voyage for kb_index embeddings) are listed here, so enter the same values as the api.
   # - type: worker
   #   name: vicky-worker
   #   runtime: docker
@@ -92,19 +92,12 @@ services:
   #         property: connectionString
   #     - key: JOBS_MODE
   #       value: worker
-  #     - key: WEB_ORIGIN
-  #       value: https://vicky-web.onrender.com
-  #     - key: DAILY_USD_BUDGET
-  #       value: "5"
-  #     - key: LLM_MODE
-  #       value: auto
-  #     - key: COOKIE_SECRET
-  #       sync: false
+  #     - fromGroup: vicky-shared
   #     - key: ANTHROPIC_API_KEY
   #       sync: false
   #     - key: ELEVENLABS_API_KEY
   #       sync: false
-  #     - key: ACCESS_CODE
+  #     - key: VOYAGE_API_KEY
   #       sync: false
 
   - type: web
@@ -141,6 +134,23 @@ services:
     region: ohio
     maxmemoryPolicy: noeviction
     ipAllowList: [] # private network only
+
+# Settings the api and the worker must agree on. Moving COOKIE_SECRET here generates a new value once,
+# which signs everyone out a single time.
+envVarGroups:
+  - name: vicky-shared
+    envVars:
+      # Public origin of vicky-web: the CORS allow-origin (the cookie sets no Domain; the browser only
+      # talks to vicky-web, which proxies /api/v1). Fix it after the first deploy if Render gave the web
+      # service a suffixed hostname.
+      - key: WEB_ORIGIN
+        value: https://vicky-web.onrender.com
+      - key: DAILY_USD_BUDGET
+        value: "5"
+      - key: LLM_MODE
+        value: auto
+      - key: COOKIE_SECRET
+        generateValue: true
 
 databases:
   - name: vicky-db

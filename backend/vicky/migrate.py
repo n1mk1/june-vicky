@@ -1,6 +1,9 @@
 """Apply SQL migrations in order under a Postgres advisory lock (idempotent).
 
 Run standalone with `uv run python -m vicky.migrate`; the API also calls `migrate()` at startup.
+After the migrations, `ensure_vectors` runs on every start: a database that gains pgvector after
+0006_rag.sql was applied (an image switched to pgvector/pgvector, the extension enabled later) gets
+its vector columns and indexes then, instead of searching on BM25 only for good.
 """
 
 import asyncio
@@ -16,6 +19,53 @@ from vicky.config import get_settings
 log = logging.getLogger(__name__)
 MIGRATIONS_DIR = BACKEND_DIR / "migrations"
 LOCK_KEY = 7_331_001
+
+# The vector part of 0006_rag.sql, kept identical (types, dimensions, index names and opclasses). Each
+# step checks the catalog first, so a start where everything exists takes no table lock.
+VECTORS_SQL = """
+do $$ begin
+  if not exists (select 1 from pg_extension where extname = 'vector') then
+    create extension if not exists vector;
+  end if;
+exception when others then
+  raise notice 'pgvector not available (%); knowledge-base search runs on BM25 only', sqlerrm;
+end $$;
+
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'vector') then
+    if to_regclass('kb_chunks') is not null and not exists (
+        select 1 from information_schema.columns
+        where table_schema = current_schema() and table_name = 'kb_chunks' and column_name = 'embedding') then
+      alter table kb_chunks add column if not exists embedding halfvec(1024);
+    end if;
+    if to_regclass('kb_chunks') is not null and to_regclass('kb_chunks_embedding') is null then
+      create index if not exists kb_chunks_embedding on kb_chunks using hnsw (embedding halfvec_cosine_ops);
+    end if;
+    if to_regclass('qa_cache') is not null and not exists (
+        select 1 from information_schema.columns
+        where table_schema = current_schema() and table_name = 'qa_cache' and column_name = 'embedding') then
+      alter table qa_cache add column if not exists embedding halfvec(1024);
+    end if;
+    if to_regclass('qa_cache') is not null and to_regclass('qa_cache_embedding') is null then
+      create index if not exists qa_cache_embedding on qa_cache using hnsw (embedding halfvec_cosine_ops);
+    end if;
+  end if;
+end $$;
+"""
+
+
+async def ensure_vectors(conn: asyncpg.Connection) -> bool:
+    """pgvector, and the vector columns and indexes of 0006_rag.sql, whenever the server has the
+    extension. Returns whether vectors are available; says so in the log when they aren't."""
+    await conn.execute(VECTORS_SQL)
+    ok = bool(await conn.fetchval(
+        """select exists (select 1 from information_schema.columns
+                          where table_schema = current_schema() and table_name = 'kb_chunks'
+                            and column_name = 'embedding')"""))
+    if not ok:
+        log.warning("pgvector is not available on this Postgres: knowledge-base search runs on BM25 only "
+                    "(use the pgvector/pgvector:pg17 image, or enable the vector extension)")
+    return ok
 
 
 async def seed_sources(conn: asyncpg.Connection) -> int:
@@ -57,6 +107,7 @@ async def migrate(dsn: str | None = None) -> list[str]:
                 await conn.execute("insert into schema_migrations (name) values ($1)", path.name)
             applied.append(path.name)
             log.info("applied migration %s", path.name)
+        await ensure_vectors(conn)
         await seed_sources(conn)
     finally:
         await conn.execute("select pg_advisory_unlock($1)", LOCK_KEY)

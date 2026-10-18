@@ -12,11 +12,12 @@ dimension tables; a table with no dates stays raw.
 import csv
 import hashlib
 import io
+import math
 import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from vicky.model.currencies import STRIP_RE, currency_in
@@ -27,6 +28,9 @@ MONTHS = {m: i + 1 for i, m in enumerate(
 MONTHS.update({"sept": 9, "june": 6, "july": 7})
 FULL_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
                "november", "december"]
+
+# A series row's source lines in the file ("row 6" in a figure's source); not a column.
+SRC_ROWS = "_src_rows"
 
 _NUM_RE = re.compile(r"^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$")
 _MISSING = {"", "-", "—", "–", "n/a", "na", "nan", "null", "none", "#n/a", "#div/0!", "#value!", "#ref!"}
@@ -40,23 +44,29 @@ def parse_number(raw: Any) -> float | None:
     if isinstance(raw, bool):
         return None
     if isinstance(raw, int | float):
-        return float(raw)
+        return float(raw) if math.isfinite(raw) else None
     s = str(raw).strip()
     if s.lower() in _MISSING:
         return None
-    neg = False
-    if s.startswith("(") and s.endswith(")"):
-        neg, s = True, s[1:-1].strip()
+    neg, money = False, False
     s = s.replace("−", "-")
-    if s.startswith("-"):
-        neg, s = (not neg), s[1:].strip()
-    elif s.startswith("+"):
-        s = s[1:].strip()
-    s = STRIP_RE.sub("", s).strip()  # US$, £, "USD", "1 200 €" … (the column's currency is read separately)
-    if s.startswith("-"):
-        neg, s = (not neg), s[1:].strip()
-    if s.endswith("-"):  # trailing minus, as some accounting exports print it
-        neg, s = (not neg), s[:-1].strip()
+    # Peel signs, parentheses and currency markers in any order: "$(1,234.00)", "USD (1,234)", "-$5", "(US$5)".
+    while s:
+        if s in ("-", "–", "—"):  # Excel's "Accounting" zero: a lone dash beside a currency symbol
+            return 0.0 if money else None
+        bare = STRIP_RE.sub("", s).strip()  # US$, £, "USD", "1 200 €" … (the column's currency is read separately)
+        if bare != s:
+            money, s = True, bare
+        elif s.startswith("(") and s.endswith(")"):
+            neg, s = (not neg), s[1:-1].strip()
+        elif s.startswith("-"):
+            neg, s = (not neg), s[1:].strip()
+        elif s.startswith("+"):
+            s = s[1:].strip()
+        elif s.endswith("-"):  # trailing minus, as some accounting exports print it
+            neg, s = (not neg), s[:-1].strip()
+        else:
+            break
     pct = s.endswith("%")
     if pct:
         s = s[:-1].strip()
@@ -70,6 +80,8 @@ def parse_number(raw: Any) -> float | None:
     if not _NUM_RE.match(core):
         return None
     v = float(core) * _SUFFIX.get(suffix, 1.0)
+    if not math.isfinite(v):  # "1e400" overflows to infinity: not a figure anything can be computed from
+        return None
     if pct:
         v /= 100.0
     return -v if neg else v
@@ -168,6 +180,23 @@ def period_sort_key(p: str) -> tuple[int, int]:
     return int(p), 12
 
 
+def period_end_month(p: str) -> int:
+    """The period's last month as a running month count (year × 12 + month index), for calendar arithmetic."""
+    y, m = period_sort_key(p)
+    return y * 12 + m - 1
+
+
+def shift_period(p: str, months: int) -> str:
+    """The period of the same granularity `months` calendar months away (2025-02, -12 → 2024-02; 2025-Q1, -3 → 2024-Q4)."""
+    n = period_end_month(p) + months
+    y, m = divmod(n, 12)
+    if "-Q" in p:
+        return f"{y}-Q{m // 3 + 1}"
+    if "-" in p:
+        return f"{y:04d}-{m + 1:02d}"
+    return f"{y}"
+
+
 def quarter_of(month_key: str) -> str:
     y, m = month_key.split("-")
     return f"{y}-Q{(int(m) - 1) // 3 + 1}"
@@ -178,7 +207,12 @@ def _blank(v: Any) -> bool:
 
 
 def _dayfirst(values: list[Any]) -> bool | None:
-    """True when the column's numeric dates are day-first (a first part over 12), False when month-first."""
+    """True when the column's numeric dates are day-first (a first part over 12), False when month-first.
+
+    When every date is ambiguous (01/01/2025 … 01/12/2025), the part that varies is the month: a fixed
+    first part with a moving second part is day-first, otherwise the dates would collapse into one month."""
+    firsts: set[int] = set()
+    seconds: set[int] = set()
     for v in values:
         m = _DMY.match(str(v).strip()) if isinstance(v, str) else None
         if m:
@@ -187,6 +221,33 @@ def _dayfirst(values: list[Any]) -> bool | None:
                 return True
             if b > 12 >= a:
                 return False
+            firsts.add(a)
+            seconds.add(b)
+    if len(firsts) == 1 and len(seconds) > 1:
+        return True
+    if len(seconds) == 1 and len(firsts) > 1:
+        return False
+    return None
+
+
+def _day_of(v: Any, dayfirst: bool | None) -> date | None:
+    """The full date a period cell names (a datetime, 2025-01-31, 31/01/2025), else None (month labels)."""
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    s = str(v).strip()
+    try:
+        m = re.match(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ t].*)?$", s, re.I)
+        if m:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        m = _DMY.match(s.lower())
+        if m:
+            a, b, y = int(m.group(1)), int(m.group(2)), _year(m.group(3))
+            first = dayfirst if dayfirst is not None else a > 12
+            return date(y, b, a) if first else date(y, a, b)
+    except ValueError:
+        return None
     return None
 
 
@@ -243,6 +304,7 @@ class RawTable:
     header: list[str]
     rows: list[list[Any]]
     preamble: str = ""  # title rows above the header ("All figures in CAD thousands")
+    lines: list[int] = field(default_factory=list)  # each data row's 1-based line (row) in the file
 
 
 @dataclass
@@ -300,13 +362,13 @@ def _header_index(rows: list[list[Any]]) -> int:
     return 0
 
 
-def _split(name: str, rows: list[list[Any]]) -> RawTable:
+def _split(name: str, rows: list[list[Any]], lines: list[int]) -> RawTable:
     if not rows:
         return RawTable(name, [], [])
     h = _header_index(rows)
     preamble = " · ".join(" ".join(str(c).strip() for c in r if not _blank(c)) for r in rows[:h])
     header = [str(c).strip() if not _blank(c) else "" for c in rows[h]]
-    return RawTable(name, header, rows[h + 1:], preamble)
+    return RawTable(name, header, rows[h + 1:], preamble, lines[h + 1:])
 
 
 def _read_csv(data: bytes, filename: str) -> RawTable:
@@ -315,12 +377,20 @@ def _read_csv(data: bytes, filename: str) -> RawTable:
         dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
     except csv.Error:
         dialect = csv.excel
-    rows = [r for r in csv.reader(io.StringIO(text), dialect) if any(c.strip() for c in r)]
+    reader = csv.reader(io.StringIO(text), dialect)
+    rows: list[list[Any]] = []
+    lines: list[int] = []  # the line each kept row starts on, so sources cite the file's own line numbers
+    last = 0
+    for r in reader:
+        start, last = last + 1, reader.line_num
+        if any(c.strip() for c in r):
+            rows.append(r)
+            lines.append(start)
     if not rows:
         return RawTable(filename, [], [])
     width = max(len(r) for r in rows)
     rows = [r + [""] * (width - len(r)) for r in rows]
-    return _split(_stem(filename), rows)
+    return _split(_stem(filename), rows, lines)
 
 
 def _read_xlsx(data: bytes, filename: str) -> list[RawTable]:
@@ -329,13 +399,13 @@ def _read_xlsx(data: bytes, filename: str) -> list[RawTable]:
     wb = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
     tables: list[RawTable] = []
     for ws in wb.worksheets:
-        rows = [list(r) for r in ws.iter_rows(values_only=True)]
-        rows = [r for r in rows if any(c not in (None, "") for c in r)]
-        if len(rows) < 2:
+        numbered = [(n, list(r)) for n, r in enumerate(ws.iter_rows(values_only=True), start=1)]
+        numbered = [(n, r) for n, r in numbered if any(c not in (None, "") for c in r)]
+        if len(numbered) < 2:
             continue
-        width = max(len(r) for r in rows)
-        rows = [r + [None] * (width - len(r)) for r in rows]
-        t = _split(f"{_stem(filename)} · {ws.title}", rows)
+        width = max(len(r) for _, r in numbered)
+        rows = [r + [None] * (width - len(r)) for _, r in numbered]
+        t = _split(f"{_stem(filename)} · {ws.title}", rows, [n for n, _ in numbered])
         t.header = [h or f"col_{i + 1}" for i, h in enumerate(t.header)]
         tables.append(t)
     return tables
@@ -358,12 +428,16 @@ def _share(values: list[Any], pred) -> float:
     return sum(1 for v in vals if pred(v)) / len(vals)
 
 
+# "($000)", "(in $ thousands)", "in USD millions", "(k$)"; a symbol has no word boundary before it, so only
+# the three-letter code alternative takes `\b`.
 _SCALE_RES = [
-    (re.compile(r"\$\s?bn?\b|\bin billions\b|\(\s*(?:[a-z]{3}\s*)?(?:bn|b|billions?)\s*\)", re.I), 1e9),
-    (re.compile(r"\$\s?(?:mm|m)\b|\bin millions\b|\(\s*(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:mm|m|mn|millions?)\s*\)|"
-                r"\b(?:[a-z]{3}|[$£€])\s?millions?\b", re.I), 1e6),
-    (re.compile(r"\$\s?k\b|\$\s?'?000s?\b|'000s?\b|\bin thousands\b|\(\s*(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:k|000s?|thousands?)\s*\)|"
-                r"\b(?:[a-z]{3}|[$£€])\s?(?:'?000s?|thousands?)\b", re.I), 1e3),
+    (re.compile(r"\$\s?bn?\b|\bin billions\b|\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:bn|b|billions?)\s*\)|"
+                r"(?:\b[a-z]{3}|[$£€])\s?billions?\b|\bb(?:n)?\s?\$", re.I), 1e9),
+    (re.compile(r"\$\s?(?:mm|m)\b|\bin millions\b|\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:mm|m|mn|millions?)\s*\)|"
+                r"(?:\b[a-z]{3}|[$£€])\s?millions?\b|\bmm?\s?\$", re.I), 1e6),
+    (re.compile(r"\$\s?k\b|\$\s?'?000s?\b|'000s?\b|\bin thousands\b|"
+                r"\(\s*(?:in\s+)?(?:[a-z]{3}\s*)?(?:[$£€]\s*)?(?:k|000s?|thousands?)\s*\)|"
+                r"(?:\b[a-z]{3}|[$£€])\s?(?:'?000s?|thousands?)\b|\bk\s?\$", re.I), 1e3),
 ]
 _NOT_MONEY = re.compile(r"%|percent|margin|rate|ratio|headcount|head count|employees|\bfte|staff|customers|clients|"
                         r"users|subscribers|accounts|logos|count|number of|#|months|days|units", re.I)
@@ -597,25 +671,34 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
         return n * scales[i] if n is not None and scales[i] != 1.0 else n
 
     # Rows whose period is coarser or finer than the table's (a "2024" subtotal in a monthly table) are left out.
-    keyed = [(reader(r[period_idx]), r) for r in rows]
-    keyed = [(p, r) for p, r in keyed if p]
+    # Each row keeps its line in the file (`t.lines`; a table built in code counts from the header on line 1).
+    lines = t.lines if len(t.lines) == len(rows) else list(range(2, len(rows) + 2))
+    keyed = [(reader(r[period_idx]), r, n) for r, n in zip(rows, lines, strict=True)]
+    keyed = [(p, r, n) for p, r, n in keyed if p]
     if not keyed:
         return ParsedDataset(t.name, "raw", None, "none", False, profiles, [], fingerprint(header),
                              [*notes, "No rows with a readable date"])
-    gran = _dominant([p[1] for p, _ in keyed])
-    off = [p[0] for p, _ in keyed if p[1] != gran]
+    gran = _dominant([p[1] for p, _, _ in keyed])
+    off = [p[0] for p, _, _ in keyed if p[1] != gran]
     if off:
-        keyed = [(p, r) for p, r in keyed if p[1] == gran]
+        keyed = [(p, r, n) for p, r, n in keyed if p[1] == gran]
         notes.append(f"Left out {len(off)} subtotal row{'s' if len(off) > 1 else ''} ({', '.join(sorted(set(off))[:3])})")
+    # Oldest first within each period, whatever the file order (bank exports list the newest first), so a
+    # balance takes the value on the period's latest date.
+    first_day = _dayfirst([v for v in cols[period_idx] if not _blank(v)])
+    days = [_day_of(r[period_idx], first_day) for _, r, _ in keyed]
+    if any(days):
+        order = sorted(range(len(keyed)), key=lambda j: (period_sort_key(keyed[j][0][0]), days[j] or date.min))
+        keyed = [keyed[j] for j in order]
     text_dims = [i for i, p in enumerate(profiles) if i != period_idx and p.dtype in ("text", "period")]
     numeric_cols = [i for i, p in enumerate(profiles) if p.dtype == "number"]
 
     # A long customer/cohort table repeats each period once per customer; a P&L with a notes
     # column has one row per period and must stay a series.
-    repeats = len(keyed) > len({p[0] for p, _ in keyed})
+    repeats = len(keyed) > len({p[0] for p, _, _ in keyed})
     if text_dims and numeric_cols and repeats:
         dim_idx = text_dims[0]
-        dim_values = [str(r[dim_idx]).strip() for _, r in keyed if not _blank(r[dim_idx])]
+        dim_values = [str(r[dim_idx]).strip() for _, r, _ in keyed if not _blank(r[dim_idx])]
         is_cohort = _share(list(cols[dim_idx]), lambda v: parse_period(v) is not None) >= 0.8
         ledger = not is_cohort and not _CUSTOMER_HEAD.search(header[dim_idx]) and (
             _CATEGORY_HEAD.search(header[dim_idx]) or _line_items(dim_values))
@@ -623,7 +706,7 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
             return _pivot(t, header, keyed, dim_idx, numeric_cols, num, scales, notes)
         kind = "cohort_mrr" if is_cohort else "customer_mrr"
         out_rows = []
-        for p, r in keyed:
+        for p, r, _ in keyed:
             dim_raw = r[dim_idx]
             dim = parse_period(dim_raw)[0] if is_cohort and parse_period(dim_raw) else str(dim_raw).strip()
             row = {"period": p[0], "dim": dim}
@@ -636,11 +719,12 @@ def parse_table(t: RawTable, period_column: str | None = None) -> ParsedDataset:
 
     merged: dict[str, dict[str, Any]] = {}
     stock = [is_stock(h) for h in header]
-    for p, r in keyed:
+    for p, r, n in keyed:
         row = merged.get(p[0])
         first = row is None
         if first:
-            row = merged[p[0]] = {"period": p[0]}
+            row = merged[p[0]] = {"period": p[0], SRC_ROWS: []}
+        row[SRC_ROWS].append(n)
         for i, h in enumerate(header):
             if i == period_idx:
                 continue
@@ -677,7 +761,7 @@ def _pivot(t: RawTable, header: list[str], keyed: list, dim_idx: int, numeric_co
     val_idx = next((i for i in numeric_cols if _AMOUNT_HEAD.search(header[i])), numeric_cols[0])
     merged: dict[str, dict[str, Any]] = {}
     raw_by: dict[str, list[Any]] = {}
-    for p, r in keyed:
+    for p, r, _ in keyed:
         label = str(r[dim_idx]).strip() if not _blank(r[dim_idx]) else ""
         v = num(val_idx, r[val_idx])
         if not label:

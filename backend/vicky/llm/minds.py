@@ -78,6 +78,17 @@ def _clean(s: str, n: int = 600) -> str:
     return re.sub(r"[<>]", "", str(s or ""))[:n]
 
 
+def _attr(s: Any, n: int = 200) -> str:
+    """A value for a tag attribute: no angle brackets or double quotes, so it can't end the attribute or the tag."""
+    return re.sub(r'[<>"]', "", str(s or ""))[:n]
+
+
+def _body(s: Any) -> str:
+    """Note text inside a <passage> tag, with its angle brackets escaped so it can't close the tag or open
+    another. Everything else is kept as written ("R&D" stays "R&D"), so a word-for-word quote still matches."""
+    return str(s or "").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def persona_block(p: VCPersona) -> str:
     lenses = ", ".join(f"{LENS_LABELS.get(k, k)} {v:.2f}" for k, v in sorted(p.priorities.items(), key=lambda kv: -kv[1]))
     lines = [f"Name: {_clean(p.name, 40)}" + (f" ({_clean(p.firm, 80)})" if p.firm else ""),
@@ -134,8 +145,8 @@ def notes_block(kb: list[dict] | None) -> str:
     """Passages of the founder's own knowledge base retrieved for this turn (docs/08-RAG.md §Live court)."""
     if not kb:
         return ""
-    body = "\n".join(f'<passage cite="{c["cite"]}" heading="{c.get("heading") or ""}">\n{c["text"]}\n</passage>'
-                     for c in kb)
+    body = "\n".join(f'<passage cite="{_attr(c["cite"], 420)}" heading="{_attr(c.get("heading"))}">\n'
+                     f"{_body(c['text'])}\n</passage>" for c in kb)
     return ("The founder's own notes (quote one only word for word inside double quotes, followed by its cite "
             "token, e.g. \"exact words\" [kb:folder/Note.md]; never restate a number from a note):\n" + body)
 
@@ -545,7 +556,8 @@ async def chair(ranked: list[referee.Candidate], state: dict, panel: dict[str, V
         return _code_pick(ranked, f"fallback: {why}", True, t0)
     cand = referee.pick(decision, ranked)
     own = {h["id"] for h in state["vcs"].get(cand.vc_id, {}).get("hyps", []) if h["status"] == "open"}
-    if cand.intent == "knowledge" or decision.get("hypothesis_id") not in own:
+    # A follow-up stays on the thread it follows (the referee allowed that one); a knowledge check on its probe.
+    if cand.intent in ("knowledge", "follow_up") or decision.get("hypothesis_id") not in own:
         decision["hypothesis_id"] = cand.target_hyp
     decision["intent"] = cand.intent  # the referee decides whether a follow-up is still allowed
     decision["note"] = _clean(decision.get("note") or "", 200)
@@ -682,8 +694,8 @@ def _probes_prompt(panel: list[VCPersona], passages: dict[str, list[tuple[str, d
     for p in panel:
         rows.append(f"Investor {p.id}: {_clean(p.name, 40)} ({_clean(p.firm or p.archetype, 80)}); lens {p.lens_line()}")
         for lens, c in passages.get(p.id, []):
-            rows.append(f'<passage id="{c["id"]}" lens="{lens}" heading="{_clean(c.get("heading") or "", 80)}">\n'
-                        f"{c['text']}\n</passage>")
+            rows.append(f'<passage id="{_attr(c["id"])}" lens="{_attr(lens, 40)}" heading="{_attr(c.get("heading"), 80)}">\n'
+                        f"{_body(c['text'])}\n</passage>")
     return "\n\n".join(rows)
 
 
@@ -764,7 +776,7 @@ def _verify_prompt(pr: dict, question: str, answer: str, passages: list[dict]) -
     exp = pr["expected"]
     return "\n\n".join(x for x in [
         f"Question asked: {question}", f"Founder's answer: {answer}",
-        f'Answer key (from {exp.get("cite")}): "{exp.get("quote")}"', notes_block(passages)] if x)
+        f'Answer key (from {_attr(exp.get("cite"), 420)}): "{_body(exp.get("quote"))}"', notes_block(passages)] if x)
 
 
 async def verify_knowledge(pr: dict, question: str, answer: str, passages: list[dict], ctx: TruthContext,

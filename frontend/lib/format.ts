@@ -8,40 +8,66 @@ import type { InputRef, PointSource, Source } from "./types";
 
 export { isCurrency };
 
+/**
+ * Rounding matches the backend (`model/figures.py`): `toFixed` rounds the exact binary value half away
+ * from zero, which is what the backend's Decimal ROUND_HALF_UP does, so 0.125 reads "13%" on both sides.
+ * The tier is picked after rounding (999.6 → "$1,000", not "$1000"), and a value that rounds to zero
+ * has no minus sign.
+ */
+const signed = (value: number, shown: string, text: string) => (value < 0 && Number(shown) !== 0 ? `-${text}` : text);
+
 /** Compact value for axes, tooltips and popovers: $1.29M, 9.0%, 8.0 mo, 1,204. */
 export function fmtValue(value: number | null | undefined, unit?: string | null, currency?: string | null): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "–";
+  if (value === null || value === undefined || !Number.isFinite(value)) return "–";
   const u = (unit ?? "").toLowerCase();
   if (u === "money" || isCurrency(u)) return fmtMoney(value, isCurrency(u) ? u : (currency ?? DEFAULT_CURRENCY));
-  if (u === "pct") return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
-  if (u === "months") return `${value.toFixed(1)} mo`;
-  if (u === "x") return `${value.toFixed(2)}x`;
-  if (u === "ratio") return value.toFixed(2);
-  if (Math.abs(value) >= 1000) return Math.round(value).toLocaleString("en-US");
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  const v = Math.abs(value);
+  if (u === "pct") {
+    const tenth = (v * 100).toFixed(1);
+    const shown = Number(tenth) < 10 ? tenth : (v * 100).toFixed(0);
+    return signed(value, shown, `${shown}%`);
+  }
+  if (u === "months" || u === "x" || u === "ratio") {
+    const shown = v.toFixed(u === "months" ? 1 : 2);
+    return signed(value, shown, `${shown}${u === "months" ? " mo" : u === "x" ? "x" : ""}`);
+  }
+  if (v >= 999.5) {
+    const shown = v.toFixed(0);
+    return signed(value, shown, Number(shown).toLocaleString("en-US"));
+  }
+  return Number.isInteger(value) ? String(value) : signed(value, v.toFixed(2), v.toFixed(2));
 }
 
 export function fmtMoney(value: number, currency = DEFAULT_CURRENCY): string {
+  if (!Number.isFinite(value)) return "–";
   const sym = currencySymbol(currency);
-  const sign = value < 0 ? "-" : "";
   const v = Math.abs(value);
-  if (v >= 1_000_000) return `${sign}${sym}${(v / 1_000_000).toFixed(2)}M`;
-  if (v >= 10_000) return `${sign}${sym}${(v / 1_000).toFixed(1)}K`;
-  if (v >= 1_000) return `${sign}${sym}${Math.round(v).toLocaleString("en-US")}`;
-  return `${sign}${sym}${Math.round(v)}`;
+  const whole = v.toFixed(0);
+  if (Number(whole) < 1_000) return signed(value, whole, `${sym}${whole}`);
+  if (Number(whole) < 10_000) return signed(value, whole, `${sym}${Number(whole).toLocaleString("en-US")}`);
+  const k = (v / 1_000).toFixed(1);
+  if (Number(k) < 1_000) return signed(value, k, `${sym}${k}K`);
+  const m = (v / 1_000_000).toFixed(2);
+  return signed(value, m, `${sym}${m}M`);
 }
 
-/** Short axis label: $120K, 40%, 1.2K. */
+/** Short axis label: $120K, $12.5K, 40%, 2.5%, 1.2K. Ticks keep the decimals they need, never rounded to a neighbour. */
 export function fmtAxis(value: number, unit?: string | null, currency?: string | null): string {
+  if (!Number.isFinite(value)) return "";
   const u = (unit ?? "").toLowerCase();
-  if (u === "pct") return `${Math.round(value * 100)}%`;
+  const v = Math.abs(value);
+  if (u === "pct") {
+    const shown = +(v * 100).toFixed(1);
+    return signed(value, String(shown), `${shown}%`);
+  }
   const money = u === "money" || isCurrency(u);
   const sym = money ? currencySymbol(isCurrency(u) ? u : (currency ?? DEFAULT_CURRENCY)) : "";
-  const sign = value < 0 ? "-" : "";
-  const v = Math.abs(value);
-  if (v >= 1_000_000) return `${sign}${sym}${+(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${sign}${sym}${+(v / 1_000).toFixed(0)}K`;
-  return `${sign}${sym}${+v.toFixed(2)}`;
+  const units = +v.toFixed(2);
+  if (units < 1_000) return signed(value, String(units), `${sym}${units}`);
+  const k = +(v / 1_000).toFixed(1);
+  if (k < 1_000) return signed(value, String(k), `${sym}${k}K`);
+  const m = +(v / 1_000_000).toFixed(2);
+  return signed(value, String(m), `${sym}${m}M`);
 }
 
 export const fmtScore = (n: number | null | undefined, digits = 1) =>

@@ -52,9 +52,9 @@ through `check_claim`.
 
 ## Common deck failures the panel will attack
 
-- A metric whose definition on the slide differs from the spreadsheet (James).
-- A headline number that collapses after one follow-up (Mark).
-- A benchmark with no source (Priya).
-- Runway quoted on plan growth, or burn net of tax credits (Dana).
-- A market size with no bottom-up build (Olivia).
-- Product claims that are really custom work for one customer (Sam).
+- A metric whose definition on the slide differs from the spreadsheet (Aristotle).
+- A headline number that collapses after one follow-up (Socrates).
+- A benchmark with no source (any investor).
+- Runway quoted on plan growth, or burn net of tax credits (Plato).
+- A market size with no bottom-up build (Xenophon).
+- Product claims that are really custom work for one customer (Thales).

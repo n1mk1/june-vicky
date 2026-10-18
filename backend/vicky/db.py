@@ -8,6 +8,9 @@ import asyncpg
 from vicky.config import get_settings
 
 _pool: asyncpg.Pool | None = None
+# Waiting longer than this for a pooled connection means the pool is wedged: fail the request instead of
+# hanging every caller behind it.
+ACQUIRE_TIMEOUT_S = 30.0
 
 
 def _json_default(value: Any) -> Any:
@@ -44,6 +47,11 @@ def pool() -> asyncpg.Pool:
     return _pool
 
 
+def acquire(timeout: float | None = ACQUIRE_TIMEOUT_S):
+    """`async with db.acquire() as conn:`, a pooled connection with an acquire timeout."""
+    return pool().acquire(timeout=timeout)
+
+
 async def close() -> None:
     global _pool
     if _pool is not None:
@@ -52,18 +60,22 @@ async def close() -> None:
 
 
 async def fetch(sql: str, *args: Any) -> list[dict]:
-    rows = await pool().fetch(sql, *args)
+    async with acquire() as conn:
+        rows = await conn.fetch(sql, *args)
     return [dict(r) for r in rows]
 
 
 async def fetchrow(sql: str, *args: Any) -> dict | None:
-    row = await pool().fetchrow(sql, *args)
+    async with acquire() as conn:
+        row = await conn.fetchrow(sql, *args)
     return dict(row) if row else None
 
 
 async def fetchval(sql: str, *args: Any) -> Any:
-    return await pool().fetchval(sql, *args)
+    async with acquire() as conn:
+        return await conn.fetchval(sql, *args)
 
 
 async def execute(sql: str, *args: Any) -> str:
-    return await pool().execute(sql, *args)
+    async with acquire() as conn:
+        return await conn.execute(sql, *args)

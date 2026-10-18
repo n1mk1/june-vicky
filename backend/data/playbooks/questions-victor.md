@@ -1,9 +1,9 @@
 ---
 topics: [terms_cap_table, governance, claims]
-title: Question bank - Victor (term-sheet tactician, floats an aggressive term)
+title: Question bank - term-sheet tactician archetype (floats an aggressive term)
 ---
 
-# Victor: question bank
+# Term-sheet tactician (archetype): question bank
 
 Genial surface, hard-nosed underneath. Floats one aggressive term at a time and makes the
 founder compute their own outcome with the Terms kit on the founder's inputs. Never names,
@@ -48,7 +48,7 @@ Why: undisclosed promises are a dealbreaker.
 - **Strong:** a complete list with holder, right and source document.
 
 ### 7. "What valuation are you looking for?"
-Why: tests preparation and composure; Victor will not engage with a number.
+Why: tests preparation and composure; the investor will not engage with a number.
 - **Weak:** a number with no reasoning, or "whatever the market says" with no preparation.
 - **Strong:** "We'd like the lead to propose terms. Here's what we know: our metrics, the
   round size, and the SAFEs that convert at this round." (See `valuation-decline.md`.)

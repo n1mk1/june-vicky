@@ -114,14 +114,24 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
 
   const unconfirmed = e.datasets.filter((d) => !d.mapping_confirmed).length;
 
+  // Every dataset of the engagement must save, not only the tables that registered a saver: a table
+  // whose mapping hasn't loaded (or failed to load) has nothing to save, so it counts as a failure
+  // unless its mapping was already confirmed.
   const saveMappings = async () => {
     setSaving(true);
     setMappingError(null);
-    const results = await Promise.all([...savers.current.values()].map((save) => save()));
+    const results = await Promise.all(
+      e.datasets.map((d) => {
+        const save = savers.current.get(d.id);
+        return save ? save() : Promise.resolve(d.mapping_confirmed ? true : null);
+      }),
+    );
     setSaving(false);
-    if (results.every(Boolean)) {
+    if (results.every((r) => r === true)) {
       res.reload();
       setStep(3);
+    } else if (results.some((r) => r === null)) {
+      setMappingError("Some tables haven't loaded yet, so their mapping isn't saved. Wait for them (or retry them), then save again.");
     } else {
       setMappingError("Some tables couldn't be saved. The reason is shown on each one.");
     }

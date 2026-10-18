@@ -20,6 +20,7 @@ from vicky.kb.store import (
     INBOX,
     WIKILINK,
     Resolver,
+    clean_path,
     clean_tags,
     folder_of,
     insert_draft,
@@ -29,6 +30,7 @@ from vicky.kb.store import (
 
 log = logging.getLogger(__name__)
 LOCK_KEY = 7_331_002
+LOCK_POLL_S = 0.5
 BATCH = 40
 EXCERPT_CHARS = 1400
 
@@ -341,7 +343,7 @@ async def claude_hubs(vault: list[dict]) -> tuple[str, list[dict], int]:
 
 async def _vault() -> list[dict]:
     return await db.fetch("select id::text, path, title, kind, format, content, tags, summary, links, meta, author, "
-                          "organized_at from kb_notes order by created_at")
+                          "version, organized_at from kb_notes order by created_at")
 
 
 def _fix_links(body: str, res: Resolver) -> str:
@@ -351,14 +353,45 @@ def _fix_links(body: str, res: Resolver) -> str:
     return WIKILINK.sub(sub, body)
 
 
+# One pass at a time. In this process an asyncio lock queues callers without touching the pool, and callers
+# that arrive while a pass runs are coalesced: one more pass, started after they asked, covers them all.
+# Across processes a Postgres advisory lock is polled with `pg_try_advisory_lock`, so a waiter never holds
+# a pooled connection while the holder needs one.
+_lock = asyncio.Lock()
+_asked = 0          # requests registered
+_covered = 0        # requests a finished pass started after
+_full_pending = False
+_last: dict = {}
+
+
 async def organize(full: bool = False) -> dict:
     """Organize unorganized notes (all notes with `full`), then rewrite the AI hub notes."""
-    async with db.pool().acquire() as lock:
-        await lock.execute("select pg_advisory_lock($1)", LOCK_KEY)
+    global _asked, _covered, _full_pending, _last
+    _asked += 1
+    mine = _asked
+    _full_pending = _full_pending or full
+    async with _lock:
+        if _covered >= mine:  # a pass that started after this request already ran
+            return {**_last, "coalesced": True}
+        upto, run_full, _full_pending = _asked, _full_pending, False
         try:
-            return await _organize(full)
-        finally:
-            await lock.execute("select pg_advisory_unlock($1)", LOCK_KEY)
+            result = await _pg_locked(lambda: _organize(run_full))
+        except BaseException:
+            _full_pending = _full_pending or run_full
+            raise
+        _covered, _last = upto, result
+        return result
+
+
+async def _pg_locked(fn):
+    while True:
+        async with db.acquire() as conn:
+            if await conn.fetchval("select pg_try_advisory_lock($1)", LOCK_KEY):
+                try:
+                    return await fn()
+                finally:
+                    await conn.execute("select pg_advisory_unlock($1)", LOCK_KEY)
+        await asyncio.sleep(LOCK_POLL_S)
 
 
 async def _organize(full: bool) -> dict:
@@ -381,14 +414,22 @@ async def _organize(full: bool) -> dict:
     elif todo:
         plans = heuristic_plan(todo, vault)
 
-    moved = 0
-    async with db.pool().acquire() as conn, conn.transaction():
+    moved = skipped = 0
+    async with db.acquire() as conn, conn.transaction():
         renames: dict[str, str] = {}
         rows = {n["path"]: n for n in vault}
+        applied: list[tuple[dict, dict]] = []
         for p in plans:
             n = rows[p["path"]]
+            # The plan was made from the vault as it was read. A note the founder changed since (rename, retitle,
+            # edit) or deleted is left alone: it stays unorganized and the next pass plans it afresh.
+            cur = await conn.fetchrow("select path, author, version from kb_notes where id = $1 for update", n["id"])
+            if cur is None or cur["version"] != n["version"] or cur["path"] != n["path"]:
+                skipped += 1
+                continue
+            founder = cur["author"] == "founder"
             new_path = n["path"]
-            if folder_of(n["path"]).split("/", 1)[0] == INBOX and n["author"] != "founder":
+            if folder_of(n["path"]).split("/", 1)[0] == INBOX and not founder:
                 new_path = await unique_path(conn, f"{p['folder']}/{n['path'].rsplit('/', 1)[-1]}", exclude_id=n["id"])
             if new_path != n["path"]:
                 renames[n["path"]] = new_path
@@ -396,18 +437,20 @@ async def _organize(full: bool) -> dict:
             await conn.execute(
                 """update kb_notes set path = $2, title = $3, tags = $4, summary = $5, organized_at = now()
                    where id = $1""",
-                n["id"], new_path, p["title"] if n["author"] != "founder" else n["title"],
+                n["id"], new_path, p["title"] if not founder else n["title"],
                 clean_tags([*(n["tags"] or []), *p["tags"]]), p["summary"] or n["summary"])
+            applied.append((p, n))
         for old, new in renames.items():
             await move_links(conn, old, new)
-        for p in plans:
-            n = rows[p["path"]]
+        for p, n in applied:
             related = [renames.get(r, r) for r in p["related"]]
-            merged = list(dict.fromkeys([*(n["links"] or []), *related]))[:12]
+            current = await conn.fetchval("select links from kb_notes where id = $1", n["id"])
+            merged = list(dict.fromkeys([*(current or []), *related]))[:12]
             await conn.execute("update kb_notes set links = $2 where id = $1", n["id"], merged)
 
     hubs_written = await write_hubs()
-    return {"organized": len(plans), "moved": moved, "hubs": hubs_written, "by": by, "dropped_sentences": dropped}
+    return {"organized": len(plans) - skipped, "moved": moved, "skipped": skipped, "hubs": hubs_written, "by": by,
+            "dropped_sentences": dropped}
 
 
 async def write_hubs() -> int:
@@ -421,20 +464,37 @@ async def write_hubs() -> int:
             home, hubs, _ = await claude_hubs(vault)
         except Exception as e:
             log.warning("kb hub writer fell back to the heuristic: %s", e)
-    async with db.pool().acquire() as conn, conn.transaction():
-        await conn.execute("delete from kb_notes where kind = 'hub' and author = 'ai'")
+    async with db.acquire() as conn, conn.transaction():
         names = [*vault, *[{"path": f"{h['folder']}/{h['title']}.md", "title": h["title"]} for h in hubs]]
         res = Resolver(names)
+        # Hubs are updated in place by path, not deleted and re-inserted: a note id an index build or an open
+        # editor holds stays valid.
+        old = {r["path"].lower(): r["id"] for r in
+               await conn.fetch("select id::text, path from kb_notes where kind = 'hub' and author = 'ai'")}
+        kept: list[str] = []
+        drafts = []
         for h in hubs:
             label = FOLDERS.get(h["folder"], h["title"])
             body = f"# {h['title']}\n\n{_fix_links(h['body'], res)}\n"
-            await insert_draft(conn, Draft(name="", title=h["title"], kind="hub", format="md", content=body,
-                                           tags=["hub", h["folder"]], summary=f"Hub for {label.lower()}."),
-                               path=f"{h['folder']}/{h['title']}", file_id=None, author="ai")
-        await insert_draft(conn, Draft(name="", title="Home", kind="hub", format="md",
-                                       content=f"# Home\n\n{_fix_links(home, res)}\n", tags=["hub"],
-                                       summary="Start here: the map of the knowledge base."),
-                           path="Home", file_id=None, author="ai")
-        await conn.execute("update kb_notes set organized_at = now() where kind = 'hub' and author = 'ai'")
+            drafts.append((Draft(name="", title=h["title"], kind="hub", format="md", content=body,
+                                 tags=["hub", h["folder"]], summary=f"Hub for {label.lower()}."),
+                           f"{h['folder']}/{h['title']}"))
+        drafts.append((Draft(name="", title="Home", kind="hub", format="md",
+                             content=f"# Home\n\n{_fix_links(home, res)}\n", tags=["hub"],
+                             summary="Start here: the map of the knowledge base."), "Home"))
+        new: list[tuple[Draft, str]] = []
+        for d, path in drafts:
+            hid = old.pop(clean_path(path, "md").lower(), None)
+            if hid is None:
+                new.append((d, path))
+                continue
+            await conn.execute("update kb_notes set title = $2, content = $3, tags = $4, summary = $5 where id = $1",
+                               hid, d.title[:200], d.content, clean_tags(d.tags), d.summary[:1000])
+            kept.append(hid)
+        if old:  # hubs of folders that are gone; dropped before inserting so their paths are free again
+            await conn.execute("delete from kb_notes where id = any($1::uuid[])", list(old.values()))
+        for d, path in new:
+            kept.append(await insert_draft(conn, d, path=path, file_id=None, author="ai"))
+        await conn.execute("update kb_notes set organized_at = now() where id = any($1::uuid[])", kept)
     return len(hubs) + 1
 

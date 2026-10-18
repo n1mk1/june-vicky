@@ -142,7 +142,7 @@ class EvaluatedWidget(BaseModel):
 # ---------------------------------------------------------------- formatting
 
 def _fmt(v: float | None, unit: str | None = None) -> str:
-    if v is None:
+    if v is None or not math.isfinite(v):
         return "n/a"
     if unit == "pct":
         return f"{v * 100:.1f}%"
@@ -173,6 +173,13 @@ class P:
     defs: list[str] = field(default_factory=list)
     note: str | None = None
     boxed: bool = False  # text already ends with the value (function results)
+
+
+OUT_OF_RANGE = "result out of range"
+
+
+def _finite(v: float | None) -> bool:
+    return v is not None and math.isfinite(v)
 
 
 @dataclass
@@ -262,6 +269,9 @@ class Frame:
         for g in self.periods:
             members = self.groups[g]
             cells = [(p, self.model.cell(fid, p)) for p in members]
+            if any(c is not None and not math.isfinite(c.value) for _, c in cells):
+                out[g] = P(None, f"{label} n/a", note=f"a {label} value for {label_period(g)} is out of range")
+                continue
             if not self.complete[g]:
                 out[g] = P(None, f"{label} n/a", note=f"{label_period(g)} is a partial {self.target}")
                 continue
@@ -277,6 +287,9 @@ class Frame:
                 out[g] = P(v, f"{label} {_fmt(v, self.unit_of_field(fid))}", inputs[-1:], defs)
                 continue
             v = sum(c.value for _, c in present) if present else 0.0
+            if not math.isfinite(v):
+                out[g] = P(None, f"{label} n/a", inputs, note=OUT_OF_RANGE)
+                continue
             defs = []
             if len(members) > 1:
                 parts = " + ".join(_fmt(c.value if c else 0.0) for _, c in cells)
@@ -299,7 +312,13 @@ class Frame:
             if not self.complete[g] or any(p not in by_p for p in members):
                 out[g] = P(None, f"{col} n/a")
                 continue
+            if not all(math.isfinite(by_p[p]) for p in members):
+                out[g] = P(None, f"{col} n/a", note=f"a {col} value for {label_period(g)} is out of range")
+                continue
             v = sum(by_p[p] for p in members)
+            if not math.isfinite(v):
+                out[g] = P(None, f"{col} n/a", note=OUT_OF_RANGE)
+                continue
             inputs = [InputRef(raw=key, period=p, value=by_p[p], dataset_id=ds, ref=ref) for p in members]
             out[g] = P(v, f"{col} {_fmt(v)}", inputs)
         self._cache[ck] = out
@@ -369,8 +388,18 @@ class Evaluator:
             return self.map1(v, lambda p: P(None if p.value is None else -p.value, f"−({p.text})", p.inputs, p.defs,
                                             p.note))
         if isinstance(node, Bin):
+            if node.op == "*":
+                self._no_percent_scaling(node)
             return self.binary(node.op, self.ev(node.left), self.ev(node.right))
         return self.call(node)
+
+    def _no_percent_scaling(self, node: Bin) -> None:
+        """`gross_margin * 100` would keep the pct unit and show "9255%": percent series are fractions."""
+        for series, factor in ((node.left, node.right), (node.right, node.left)):
+            if isinstance(factor, Num) and abs(factor.value) == 100 and self.unit(series) == "pct":
+                src = to_source(series)
+                raise DSLError(f"{src} is a percentage stored as a fraction (0.92 shows as 92%), so multiplying it by "
+                               f"100 would show it 100 times too large. Use {src} on its own.")
 
     def name(self, nid: str) -> Val:
         kind = name_kind(nid)
@@ -410,6 +439,9 @@ class Evaluator:
                 else:
                     v = -(ni.value - nd.value)
                     defs.append(f"burn ex non-dilutive = −(net income {_fmt(ni.value)} − non-dilutive income {_fmt(nd.value)})")
+                if not math.isfinite(v):
+                    out[g] = P(None, f"{lbl} n/a", inputs, note=OUT_OF_RANGE)
+                    continue
                 out[g] = P(v, f"{lbl} {_fmt(v)}", inputs, defs)
                 continue
             if hid in ("mrr", "arr"):
@@ -424,6 +456,9 @@ class Evaluator:
                 v = mrr * 12 if hid == "arr" else mrr
                 if hid == "arr":
                     defs.append(f"ARR = MRR {_fmt(mrr)} × 12")
+                if not math.isfinite(v):
+                    out[g] = P(None, f"{lbl} n/a", inputs, note=OUT_OF_RANGE)
+                    continue
                 out[g] = P(v, f"{lbl} {_fmt(v)}", inputs, defs)
                 continue
             # gross margins
@@ -440,6 +475,9 @@ class Evaluator:
                 out[g] = P(None, f"{lbl} n/a", inputs, defs, note="revenue is zero")
                 continue
             v = (rev - cost) / rev
+            if not math.isfinite(v):
+                out[g] = P(None, f"{lbl} n/a", inputs, note=OUT_OF_RANGE)
+                continue
             defs.append(f"{lbl} = (revenue {_fmt(rev)} − cost of revenue {_fmt(parts[1].value)}{cs}) ÷ revenue {_fmt(rev)}")
             out[g] = P(v, f"{lbl} {_fmt(v, 'pct')}", inputs, defs)
         fr._cache[key] = out
@@ -533,6 +571,8 @@ class Evaluator:
         if any(v is None for v in vals):
             return P(None, text, inputs, defs, next(p.note for p in ps if p.value is None))
         v = {"sum": sum(vals), "avg": sum(vals) / len(vals), "min": min(vals), "max": max(vals)}[fn]
+        if not math.isfinite(v):
+            return P(None, text, inputs, defs, OUT_OF_RANGE)
         return P(v, text, inputs, defs)
 
     def reduce(self, fn: str, v: Val, src: str) -> Val:
@@ -545,6 +585,8 @@ class Evaluator:
         unit = self.unit_hint
         r = {"sum": sum(vals), "avg": sum(vals) / len(vals), "min": min(vals), "max": max(vals)}[fn]
         inputs, _ = _merge(*ps)
+        if not math.isfinite(r):
+            return CV(P(None, f"{fn}({src})", inputs, note=OUT_OF_RANGE))
         defs: list[str] = []
         span = f"{label_period(self.window[0])}–{label_period(self.window[-1])}"
         shown = ", ".join(_fmt(x, unit) for x in vals) if len(vals) <= 12 else f"{len(vals)} values"
@@ -576,6 +618,9 @@ class Evaluator:
                 out[g] = P(None, f"{what} n/a", inputs, defs, "missing or zero base")
                 continue
             v = cur.value / prev.value - 1
+            if not math.isfinite(v):
+                out[g] = P(None, f"{what} n/a", inputs, defs, OUT_OF_RANGE)
+                continue
             defs.append(f"{what}: {_fmt(cur.value)} ({label_period(g)}) ÷ {_fmt(prev.value)} ({label_period(q)}) − 1 = {_fmt(v, 'pct')}")
             out[g] = P(v, f"growth {_fmt(v, 'pct')}", inputs, defs, boxed=True)
         return SV(out)
@@ -593,7 +638,13 @@ class Evaluator:
             if start.value is None or end.value is None or start.value <= 0 or end.value <= 0:
                 out[g] = P(None, "cmgr n/a", inputs, defs, "needs positive values at both ends")
                 continue
-            v = (end.value / start.value) ** (1 / months) - 1
+            try:
+                v = (end.value / start.value) ** (1 / months) - 1
+            except OverflowError:
+                v = math.inf
+            if not math.isfinite(v):
+                out[g] = P(None, "cmgr n/a", inputs, defs, OUT_OF_RANGE)
+                continue
             defs.append(f"compound monthly growth of {src} over {months} months: ({_fmt(end.value)} ({label_period(g)}) ÷ "
                         f"{_fmt(start.value)} ({label_period(q)}))^(1/{months}) − 1 = {_fmt(v, 'pct')}")
             out[g] = P(v, f"cmgr {_fmt(v, 'pct')}", inputs, defs, boxed=True)
@@ -613,6 +664,9 @@ class Evaluator:
                 out[g] = P(None, "rolling n/a", inputs, defs, "a value in the window is missing")
                 continue
             v = sum(p.value for p in ps) / n
+            if not math.isfinite(v):
+                out[g] = P(None, "rolling n/a", inputs, defs, OUT_OF_RANGE)
+                continue
             shown = ", ".join(_fmt(p.value, unit) for p in ps)
             defs.append(f"{n}-period average of {src}, {label_period(span[0])}–{label_period(span[-1])}: ({shown}) ÷ {n} = {_fmt(v, unit)}")
             out[g] = P(v, f"rolling avg {_fmt(v, unit)}", inputs, defs, boxed=True)
@@ -631,6 +685,9 @@ class Evaluator:
                 out[g] = P(None, "running total n/a", inputs, defs, "a value in the range is missing")
                 continue
             v = sum(p.value for p in ps)
+            if not math.isfinite(v):
+                out[g] = P(None, "running total n/a", inputs, defs, OUT_OF_RANGE)
+                continue
             shown = " + ".join(_fmt(p.value, unit) for p in ps) if len(ps) <= 12 else f"{len(ps)} values"
             defs.append(f"running total of {src}, {label_period(span[0])}–{label_period(g)}: {shown} = {_fmt(v, unit)}")
             out[g] = P(v, f"running total {_fmt(v, unit)}", inputs, defs, boxed=True)
@@ -717,6 +774,25 @@ def _is_metric(ref: str, ctx: TruthContext) -> bool:
     return ref in ctx.figures or ref in METRIC_IDS
 
 
+def _no_running_total_of_balances(node: Node) -> None:
+    """cumsum() over a period-end balance (cash, customers, headcount) adds up snapshots: refuse it."""
+    if isinstance(node, Call):
+        if node.fn == "cumsum":
+            stocks = [n.id for n in names(node.args[0])
+                      if isinstance(n, Name) and n.id in FIELDS and FIELDS[n.id].agg == "last"]
+            if stocks:
+                what = _lower(FIELDS[stocks[0]].label)
+                raise DSLError(f"cumsum() adds values up over time, but {what} is a balance at the end of each period, "
+                               f"so a running total of it has no meaning. Chart {stocks[0]} on its own instead.")
+        for a in node.args:
+            _no_running_total_of_balances(a)
+    elif isinstance(node, Bin):
+        _no_running_total_of_balances(node.left)
+        _no_running_total_of_balances(node.right)
+    elif isinstance(node, Neg):
+        _no_running_total_of_balances(node.operand)
+
+
 @dataclass
 class _Resolved:
     ref: str
@@ -746,6 +822,7 @@ def _resolve(s: SeriesSpec, ctx: TruthContext, frame: Frame, scalar: bool, title
         node = parse(expr)
     else:
         node = parse(ref)
+        _no_running_total_of_balances(node)
         label = s.label or (HELPER_LABELS.get(ref, "").capitalize() if ref in HELPERS else
                             FIELDS[ref].label if ref in FIELDS else ref if len(ref) <= 40 else title)
     missing = _missing_for(node, ctx, ref, label)
@@ -830,6 +907,9 @@ def _kpi_item(s: SeriesSpec, ctx: TruthContext, frame: Frame, ev: Evaluator, tit
     r = _resolve(s, ctx, frame, scalar=True, title=title)
     if r.missing:
         return KpiItem(id=r.missing.id, label=r.label, missing=r.missing)
+    if r.figure and not _finite(r.figure.value):
+        return KpiItem(id=r.figure.id, label=r.label, missing=MissingFigure(
+            id=r.figure.id, label=r.label, needs=[], reason=f"{r.label} is out of range, so it can't be shown"))
     if r.figure:
         f = r.figure
         inputs = [InputRef(figure_id=i.figure_id, field=i.column, period=i.period, value=i.value, dataset_id=i.dataset_id)
@@ -848,6 +928,11 @@ def _kpi_item(s: SeriesSpec, ctx: TruthContext, frame: Frame, ev: Evaluator, tit
                 id=_slug(r.ref), label=r.label, needs=[], reason=f"{r.label} has no values in the selected window"))
         g = avail[-1]
         p = v.pts[g]
+    if not _finite(p.value):
+        # "sum(revenue)/0", or a window with no data, has nothing to show: missing, never "n/a" as a value
+        why = f" ({p.note})" if p.note else ""
+        return KpiItem(id=_slug(r.ref), label=r.label, missing=MissingFigure(
+            id=_slug(r.ref), label=r.label, needs=[], reason=f"{r.label} has no value in the selected window{why}"))
     pt = _point(ctx, g, p, unit, isinstance(r.node, Name | Raw))
     if isinstance(v, CV):
         main = p.text if p.boxed or isinstance(r.node, Name | Raw) else f"{p.text} = {_fmt(p.value, unit)}"
@@ -901,26 +986,33 @@ def _cohort_series(spec: WidgetSpec, ctx: TruthContext, ref: str, out: Evaluated
 # ---------------------------------------------------------------- waterfall
 
 def _waterfall(base: EvaluatedSeries) -> list[EvaluatedSeries]:
+    """Each step is a bar from the running total before it to the running total after it.
+
+    The invisible base bar holds the running total before the step; the change v is split exactly into
+    up = max(v, 0) and down = min(v, 0) (v = up + down), and the chart stacks base, up and down with
+    `stackStrategy: "all"`, so the bars land on the running total after the step on either side of zero.
+    The change keeps its sign, so the tooltip, Table view and explain card show the change itself, never
+    a helper height. (Up and down are both defined for every step: ECharts stacks "all" onto the previous
+    series even when it is empty, so a gap there would hide the bar.)
+    """
     helper, up, down = [], [], []
     cum = 0.0
     for pt in base.points:
         v = pt.value
-        if v is None:
+        after = cum + v if v is not None else None
+        if v is None or not _finite(after):
+            note = f" ({OUT_OF_RANGE})" if v is not None else ""
             for lst in (helper, up, down):
-                lst.append(pt.model_copy(update={"value": None}))
+                lst.append(pt.model_copy(update={"value": None, "formula": pt.formula + note}))
             continue
-        before, after = cum, cum + v
-        cum = after
-        if before >= 0 and after >= 0:
-            b, bar = min(before, after), abs(v)
-        elif before <= 0 and after <= 0:
-            b, bar = max(before, after), -abs(v)
-        else:
-            b, bar = 0.0, after
+        before, cum = cum, after
         note = f" · running total {_fmt(before)} → {_fmt(after)}"
-        helper.append(pt.model_copy(update={"value": b, "formula": pt.formula + note}))
-        up.append(pt.model_copy(update={"value": bar if v >= 0 else None, "formula": pt.formula + note}))
-        down.append(pt.model_copy(update={"value": bar if v < 0 else None, "formula": pt.formula + note}))
+        helper.append(pt.model_copy(update={"value": before, "inputs": [], "source": None,
+                                            "formula": f"{pt.label}: running total before this step {_fmt(before)}"}))
+        up.append(pt.model_copy(update={"value": max(v, 0.0), "formula": pt.formula + note if v > 0 else
+                                        f"{pt.label}: no increase this step" + note}))
+        down.append(pt.model_copy(update={"value": min(v, 0.0), "formula": pt.formula + note if v < 0 else
+                                          f"{pt.label}: no decrease this step" + note}))
     common = {"ref": base.ref, "unit": base.unit, "axis": base.axis}
     return [
         EvaluatedSeries(label=f"{base.label} (base)", role="waterfall_base", points=helper, **common),
@@ -946,6 +1038,8 @@ def evaluate_widget(spec: WidgetSpec | dict[str, Any], ctx: TruthContext) -> Eva
         return _evaluate(spec, ctx, base)
     except DSLError as e:
         return base.model_copy(update={"status": "error", "error": e.message})
+    except ArithmeticError:  # an overflow the operator guards missed: one error tile, not a failed dashboard
+        return base.model_copy(update={"status": "error", "error": "A value in this widget is out of range."})
 
 
 def _evaluate(spec: WidgetSpec, ctx: TruthContext, out: EvaluatedWidget) -> EvaluatedWidget:
@@ -969,10 +1063,12 @@ def _evaluate(spec: WidgetSpec, ctx: TruthContext, out: EvaluatedWidget) -> Eval
     if not window:
         return out.model_copy(update={"status": "error", "error": "No periods in the selected window"})
 
+    if spec.template == "scatter" and len(spec.series) < 2:
+        return out.model_copy(update={"status": "error", "error": "A scatter needs two series: x then y"})
     resolved = [_resolve(s, ctx, frame, scalar=False, title=spec.title) for s in spec.series]
     present = [(s, r) for s, r in zip(spec.series, resolved, strict=True) if not r.missing]
     missing = [r.missing for r in resolved if r.missing]
-    if not present:
+    if not present or (spec.template == "scatter" and len(present) < 2):
         return out.model_copy(update={"status": "missing", "missing": missing[0], "missing_series": missing})
     for mf in missing:
         out.notes.append(f"Left out {mf.label or mf.id}: {mf.reason}")

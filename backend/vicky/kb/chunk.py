@@ -18,6 +18,8 @@ TARGET_CHARS = 1600   # ~400 tokens
 MAX_CHARS = 2400      # ~600 tokens
 OVERLAP_MAX = 400     # the previous block is carried over when it is at most this long
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
+HARD_HEADING = re.compile(r"^## (?:Page|Slide) \d+\b")  # what convert.py writes for PDF pages and PPTX slides
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 
 
 @dataclass
@@ -51,15 +53,46 @@ def _lines(content: str) -> list[tuple[int, int, str]]:
     return out
 
 
+class _Fence:
+    """Fenced-code tracking as CommonMark does it: a fence closes only on a line of the same character, at
+    least as long, with nothing after it (a ```` fence the converter writes isn't closed by ```)."""
+
+    def __init__(self) -> None:
+        self.open: tuple[str, int] | None = None
+
+    @property
+    def inside(self) -> bool:
+        return self.open is not None
+
+    def feed(self, line: str) -> bool:
+        """True when the line opens or closes a fence."""
+        m = FENCE.match(line)
+        if m is None:
+            return False
+        mark, rest = m.group(1), m.group(2)
+        if self.open is None:
+            if mark[0] == "`" and "`" in rest:
+                return False  # ``` followed by more backticks is inline code, not a fence
+            self.open = (mark[0], len(mark))
+            return True
+        if mark[0] == self.open[0] and len(mark) >= self.open[1] and not rest.strip():
+            self.open = None
+            return True
+        return False
+
+
 def _sections(content: str) -> list[tuple[str, int, int]]:
-    """(heading, start, end) spans; text before the first heading has heading ''."""
+    """(heading, start, end) spans; text before the first heading has heading ''. The converter's page and
+    slide headings always start a section, even inside a fence left open above them."""
     secs: list[tuple[str, int, int]] = []
     heading, start = "", 0
-    in_fence = False
+    fence = _Fence()
     for s, _e, line in _lines(content):
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
-        m = None if in_fence else HEADING.match(line)
+        if fence.inside and HARD_HEADING.match(line):
+            fence.open = None
+        elif fence.feed(line) or fence.inside:
+            continue
+        m = HEADING.match(line)
         if m:
             if s > start:
                 secs.append((heading, start, s))
@@ -73,7 +106,7 @@ def _blocks(content: str, start: int, end: int) -> list[_Block]:
     """Paragraphs, fenced blocks and tables inside [start, end), as spans without surrounding blank lines."""
     blocks: list[_Block] = []
     cur: list[tuple[int, int, str]] = []
-    in_fence = False
+    fence = _Fence()
 
     def flush() -> None:
         if cur:
@@ -83,13 +116,12 @@ def _blocks(content: str, start: int, end: int) -> list[_Block]:
 
     for s, e, line in _lines(content[start:end]):
         s, e = s + start, e + start
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
+        if fence.feed(line):
             cur.append((s, e, line))
-            if not in_fence:
+            if not fence.inside:
                 flush()
             continue
-        if in_fence:
+        if fence.inside:
             cur.append((s, e, line))
             continue
         if not line.strip():
@@ -114,7 +146,8 @@ def _split_long(content: str, b: _Block) -> list[tuple[int, int, str]]:
         first = lines[0][0]
         cur_start = first
         for i, (s, e, _ln) in enumerate(body):
-            if e - cur_start > TARGET_CHARS and s > cur_start:
+            # i > 0: the first piece keeps the header, rule and at least one row (body[i - 1] is a row before s)
+            if i > 0 and e - cur_start > TARGET_CHARS and s > cur_start:
                 pieces.append((cur_start, body[i - 1][1], "" if cur_start == first else header))
                 cur_start = s
         pieces.append((cur_start, b.end, "" if cur_start == first else header))

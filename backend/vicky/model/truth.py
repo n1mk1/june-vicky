@@ -11,7 +11,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from vicky.model.figures import CURRENCY_UNITS, Fact, Figure, MissingFigure, fmt_value
-from vicky.model.metrics import FACT_ALIASES
+from vicky.model.loader import parse_period, period_end_month
+from vicky.model.metrics import FACT_ALIASES, label_period
 from vicky.model.sources import cite_source
 
 ClaimStatus = Literal["matches", "contradicts", "unsupported", "forecast_as_fact"]
@@ -63,6 +64,13 @@ class AttackItem(BaseModel):
     source_id: str | None = None
     missing: bool = False
     quotes: list[str] = Field(default_factory=list)  # founder words the item quotes (allowed through the audit)
+
+
+def fact_metric(name: str) -> str:
+    """The metric a fact speaks to: forecasts are stored as `plan.<name>` (so they never overwrite a historical
+    metric), but `plan.mrr` is still a plan for MRR."""
+    base = re.sub(r"^(plan|forecast)[._]", "", name)
+    return FACT_ALIASES.get(base, base)
 
 
 def resolve_metric(metric: str) -> list[str]:
@@ -141,7 +149,7 @@ def check_claim(metric: str, value: float, unit: str, figures: dict[str, Figure 
             best = (diff, f)
     if facts and not is_forecast:
         for fact in facts:
-            if fact.kind == "forecast" and FACT_ALIASES.get(fact.name, fact.name) in ids:
+            if fact.kind == "forecast" and fact.status != "removed" and fact_metric(fact.name) in ids:
                 if abs(value - fact.value) <= _tolerance(value, fact.unit, rel_tolerance):
                     return ClaimCheck(status="forecast_as_fact", metric=metric, value=value, unit=unit,
                                       figure_id=ids[0], explanation=f"{fmt_value(fact.value, fact.unit)} is the plan, not an actual ({fact.source.ref}).")
@@ -160,6 +168,28 @@ def check_claim(metric: str, value: float, unit: str, figures: dict[str, Figure 
     return ClaimCheck(status="contradicts", metric=metric, value=value, unit=unit, figure=f.model_dump(mode="json"),
                       figure_id=f.id, delta=value - f.value,
                       explanation=f"Data says {f.label} is {f.display} ({f.formula}).")
+
+
+def _end_month(period: str | None) -> int | None:
+    """The last month of a period label ("2026-Q4", "2026-09", the end of "2025-10..2026-09"), else None."""
+    parsed = parse_period(period.split("..")[-1]) if period else None
+    return period_end_month(parsed[0]) if parsed else None
+
+
+PLAN_HORIZON_MONTHS = 12  # a plan further out than this is a long-range target, not the plan's next step
+
+
+def _nearest_plan(plans: list[Fact], hist_period: str | None) -> Fact | None:
+    """The plan for the first period after the latest history; an undated plan when no dated one is ahead of it.
+    A plan only for periods already in the history is stale, and one more than PLAN_HORIZON_MONTHS past it is a
+    long-range target ("$5.1M ARR by 2028"): neither is compared."""
+    after = _end_month(hist_period)
+    dated = [(m, f) for f in plans if (m := _end_month(f.period)) is not None]
+    if after is not None:
+        dated = [(m, f) for m, f in dated if after < m <= after + PLAN_HORIZON_MONTHS]
+    if dated:
+        return min(dated, key=lambda mf: mf[0])[1]
+    return next((f for f in plans if not f.period), None)
 
 
 def _src(topic: str, profile: dict) -> str | None:
@@ -234,26 +264,35 @@ def attack_list(figures: dict[str, Figure | MissingFigure], facts: list[Fact], p
     pb = F.get("cac_payback_months")
     if pb and pb.value > 12:
         add("payback", "unit_economics", "CAC payback", f"Payback is {pb.display}.", 0.35 + (pb.value - 12) / 24, ["cac_payback_months", "cac"], "cac_payback")
-    # product/tech: services share of revenue
-    rev = F.get("revenue")
-    mrr = F.get("mrr")
-    if rev and mrr and rev.value > 0:
-        services = 1 - mrr.value / rev.value
-        if services >= 0.12:
-            add("services_mix", "product_tech", "Services revenue in the mix",
-                f"About {services * 100:.0f}% of the latest month's revenue isn't recurring.", 0.3 + services, ["revenue", "mrr"])
-    # forecast vs history
+    # product/tech: services share of revenue (a figure, so the share is citable; both amounts from one period)
+    share = F.get("one_time_revenue_share")
+    if share and share.value >= 0.12:
+        add("services_mix", "product_tech", "Services revenue in the mix",
+            f"About {share.display} of the latest period's revenue ({label_period(share.period or '')}) isn't recurring.",
+            0.3 + share.value, ["one_time_revenue_share"])
+    # forecast vs history: one item per metric, against the NEAREST plan period after the latest history. A multi-year
+    # growth plan is meant to exceed today's numbers, so only the next step of the plan is a fair test of it.
+    plans: dict[str, list[Fact]] = {}
     for fact in facts:
         if fact.kind != "forecast" or fact.status == "removed":
             continue
-        key = FACT_ALIASES.get(fact.name, fact.name)
+        key = fact_metric(fact.name)
         hist = F.get(key)
         if hist and hist.value and hist.unit == fact.unit:
-            ratio = fact.value / hist.value
-            if ratio > 1.25 or ratio < 0.75:
-                add(f"gap_{key}", "forecast", f"Plan vs history: {hist.label}",
-                    f"The plan assumes {fmt_value(fact.value, fact.unit)}; history shows {hist.display}.",
-                    0.45 + min(abs(math.log(ratio)), 1.0) * 0.5, [hist.id])
+            plans.setdefault(key, []).append(fact)
+    for key, fs in plans.items():
+        hist = F[key]
+        fact = _nearest_plan(fs, hist.period)
+        if fact is None:
+            continue
+        ratio = fact.value / hist.value
+        if ratio <= 0 or ratio > 1.25 or ratio < 0.75:
+            # A plan of zero or of the opposite sign (burn planned while history is profitable) is the largest gap.
+            sev = 0.95 if ratio <= 0 else 0.45 + min(abs(math.log(ratio)), 1.0) * 0.5
+            parsed = parse_period(fact.period) if fact.period else None
+            when = f" for {label_period(parsed[0]) if parsed else fact.period}" if fact.period else ""
+            add(f"gap_{key}", "forecast", f"Plan vs history: {hist.label}",
+                f"The plan assumes {fmt_value(fact.value, fact.unit)}{when}; history shows {hist.display}.", sev, [hist.id])
     # deck claims that contradict the model
     for i, c in enumerate(deck_checks or []):
         if c.status in ("contradicts", "forecast_as_fact"):
@@ -362,8 +401,11 @@ def quick_claims(text: str) -> list[dict]:
             if key in seen:
                 continue
             seen.add(key)
-            is_forecast = bool(re.search(r"\b(will|plan|projected|forecast|expect|by 20\d\d|next year|target)\b", t))
-            out.append({"text": _clause(text, m.start(), m.end()), "metric": metric, "value": value,
+            clause = _clause(text, m.start(), m.end())
+            # Only the claim's own clause decides: "ARR is $3M today. Next year we will hire" is a fact, not a plan.
+            is_forecast = bool(re.search(r"\b(will|plan|projected|forecast|expect|by 20\d\d|next year|target)\b",
+                                         clause.lower()))
+            out.append({"text": clause, "metric": metric, "value": value,
                         "unit": unit, "period": period, "is_forecast": is_forecast})
     return out
 

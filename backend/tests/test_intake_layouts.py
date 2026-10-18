@@ -42,7 +42,8 @@ def test_parse_number_locales(raw, expected):
 def test_title_rows_and_thousands():
     ds = one("Acme Inc. Income statement\nAll figures in CAD thousands\n\nMonth,Revenue,Customers\nJan 2024,47,10\nFeb 2024,52,12\n")
     assert ds.table_kind == "series" and ds.period_axis == "Month"
-    assert ds.rows[0] == {"period": "2024-01", "Revenue": 47_000.0, "Customers": 10.0}  # counts aren't scaled
+    # counts aren't scaled; the row keeps its line in the file (title, title, blank, header, then line 5)
+    assert ds.rows[0] == {"period": "2024-01", "_src_rows": [5], "Revenue": 47_000.0, "Customers": 10.0}
     assert any("thousands" in n for n in ds.notes)
 
 

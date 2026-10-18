@@ -9,6 +9,8 @@ moved. Every change is published on `dashboard:{id}` so other tabs refresh.
 the spec is evaluated by code before it is added, and missing data answers with the reason.
 """
 
+import json
+import logging
 import re
 from typing import Any
 
@@ -19,55 +21,108 @@ from vicky.model.metrics import label_period
 from vicky.realtime import publish
 from vicky.services import engagements
 from vicky.viz import WidgetSpec, build_option, default_dashboard, evaluate_widget, spec_hash
-from vicky.viz.defaults import RESERVED
-from vicky.viz.evaluate import period_bounds
+from vicky.viz.defaults import GRID_COLUMNS, RESERVED
+from vicky.viz.evaluate import EvaluatedWidget, period_bounds
 from vicky.viz.phrases import _CHART_VERB, interpret, normalise
 from vicky.viz.spec import spec_json
 
 CURRENCY_LIST = [{"code": c, "name": n, "symbol": sym.strip()} for c, (n, sym) in CURRENCIES.items()]
 
 THEMES = ("vicky-dark", "vicky-light")
+log = logging.getLogger(__name__)
 
 
 class Conflict(Exception):
     pass
 
 
+def _is_default_role(role: str | None) -> bool:
+    return bool(role) and role != "custom"
+
+
 async def ensure_default(engagement_id: str, ctx: TruthContext) -> str:
-    """Create the default dashboard on first confirm; later confirms add newly unlocked defaults."""
+    """Create the default dashboard on first confirm; later confirms add newly unlocked defaults.
+
+    One widget per default role: a role already on the dashboard has its spec brought up to date in
+    place (the data may have changed it), and a role the founder removed (`dismissed_roles`) is never
+    added back.
+    """
     dash = await db.fetchrow("select * from dashboards where engagement_id = $1 and name = 'default'", engagement_id)
     d = default_dashboard(ctx)
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         if dash is None:
             did = await conn.fetchval("insert into dashboards (engagement_id) values ($1) returning id::text", engagement_id)
             layout_existing: list[dict] = []
+            dismissed: set[str] = set()
         else:
             did = str(dash["id"])
             layout_existing = list(dash["layout"] or [])
-        existing = {r["spec_hash"] for r in await conn.fetch("select spec_hash from widgets where dashboard_id = $1", did)}
-        layout = layout_existing
+            dismissed = set(dash.get("dismissed_roles") or [])
+        rows = await conn.fetch('select id::text as id, spec_hash, role, created_by from widgets where dashboard_id = $1 '
+                                'order by "order", created_at', did)
+        by_role: dict[str, list] = {}
+        for r in rows:
+            if _is_default_role(r["role"]):
+                by_role.setdefault(r["role"], []).append(r)
+        # Earlier confirms could insert a second widget for a role; only one per role is shown, so the
+        # hidden copies could never be removed. Keep the first.
+        extra = [r["id"] for rs in by_role.values() for r in rs[1:] if r["created_by"] == "system"]
+        if extra:
+            await conn.execute("delete from widgets where id::text = any($1::text[])", extra)
+        live = {r["id"] for r in rows} - set(extra)
+        hashes = {r["spec_hash"] for r in rows if r["id"] in live}
+        layout = [x for x in layout_existing if x.get("widget_id") in live]  # a copy, without stale entries
+        placed: list[tuple[str, Any]] = []
         for i, (spec, role) in enumerate(zip(d.widgets, d.roles, strict=True)):
             h = spec_hash(spec)
-            if h in existing:
+            if role in dismissed:
+                continue
+            current = by_role.get(role, [None])[0]
+            if current is not None:
+                if current["spec_hash"] != h and h not in hashes:
+                    await conn.execute("update widgets set spec = $2, spec_hash = $3 where id::text = $1",
+                                       current["id"], spec_json(spec), h)
+                    hashes.add(h)
+                continue
+            if h in hashes:  # the same chart is already there (added by the founder or by chat)
                 continue
             wid = await conn.fetchval(
                 """insert into widgets (dashboard_id, spec, spec_hash, created_by, "order", role)
                    values ($1, $2, $3, 'system', $4, $5) returning id::text""",
                 did, spec_json(spec), h, i, role)
+            hashes.add(h)
             li = next((x for x in d.layout if x.widget_index == i), None)
             if li is not None:
-                y_off = 0 if not layout_existing else max((x["y"] + x["h"] for x in layout_existing), default=0)
-                y = li.y if not layout_existing else max(li.y, y_off)
-                layout.append({"widget_id": wid, "x": li.x, "y": y, "w": li.w, "h": li.h})
+                placed.append((wid, li))
+        if placed:
+            # A new dashboard gets the default layout as designed. Widgets unlocked later keep their relative
+            # default arrangement, moved down below everything already there (and the reserved slots).
+            offset = 0
+            if dash is not None:
+                bottom = max([x["y"] + x["h"] for x in layout] + [r["y"] + r["h"] for r in RESERVED])
+                offset = max(0, bottom - min(li.y for _, li in placed))
+            layout += [{"widget_id": wid, "x": li.x, "y": li.y + offset, "w": li.w, "h": li.h} for wid, li in placed]
         await conn.execute("update dashboards set layout = $2, version = version + 1 where id = $1", did, layout)
     return did
 
 
 def _evaluated(spec: dict, ctx: TruthContext, theme: str) -> tuple[dict, dict | None]:
-    ws = WidgetSpec.model_validate(spec)
-    ev = evaluate_widget(ws, ctx)
-    option = build_option(ws, ev, theme)
-    return ev.model_dump(mode="json"), option
+    """One widget's evaluation and option. A widget that can't be evaluated becomes an error tile: one bad
+    stored spec must never fail the whole dashboard read."""
+    ws: WidgetSpec | None = None
+    try:
+        ws = WidgetSpec.model_validate(spec)
+        ev = evaluate_widget(ws, ctx)
+        option = build_option(ws, ev, theme)
+        json.dumps(option, allow_nan=False)  # the response must be strict JSON
+        return ev.model_dump(mode="json"), option
+    except Exception:
+        log.exception("dashboard widget failed to evaluate")
+        title = ws.title if ws else str((spec or {}).get("title") or "") if isinstance(spec, dict) else ""
+        ev = EvaluatedWidget(status="error", template=ws.template if ws else "", title=title,
+                             spec_hash=spec_hash(ws) if ws else "", currency=ctx.currency,
+                             error="This widget couldn't be computed from the current data.")
+        return ev.model_dump(mode="json"), build_option(ws, ev, theme) if ws else None
 
 
 async def _ctx_for_dashboard(dashboard_id: str, currency: str | None = None) -> tuple[dict, TruthContext]:
@@ -107,9 +162,9 @@ async def active(theme: str = "vicky-dark", currency: str | None = None) -> dict
 
 async def preview(dashboard_id: str, spec: dict, theme: str = "vicky-dark", currency: str | None = None) -> dict:
     _, ctx = await _ctx_for_dashboard(dashboard_id, currency)
-    ws = WidgetSpec.model_validate(spec)
-    ev = evaluate_widget(ws, ctx)
-    return {"evaluated": ev.model_dump(mode="json"), "option": build_option(ws, ev, theme)}
+    WidgetSpec.model_validate(spec)  # a malformed spec is a 422
+    evaluated, option = _evaluated(spec, ctx, theme)
+    return {"evaluated": evaluated, "option": option}
 
 
 async def _check_version(conn, dashboard_id: str, version: int | None) -> dict:
@@ -125,7 +180,13 @@ async def add_widget(dashboard_id: str, spec: dict, version: int | None, created
                      currency: str | None = None) -> dict:
     ws = WidgetSpec.model_validate(spec)
     h = spec_hash(ws)
-    async with db.pool().acquire() as conn, conn.transaction():
+    # Only a widget that evaluates now is stored: a spec with no value or an error would be a dead tile.
+    _, ctx = await _ctx_for_dashboard(dashboard_id, currency)
+    evaluated, _ = _evaluated(spec_json(ws), ctx, THEMES[0])
+    if evaluated["status"] != "ok":
+        why = (evaluated.get("missing") or {}).get("reason") or evaluated.get("error") or "it has no value to show"
+        raise engagements.Invalid(f"“{ws.title}” can't be added: {why}")
+    async with db.acquire() as conn, conn.transaction():
         dash = await _check_version(conn, dashboard_id, version)
         exists = await conn.fetchval("select id::text from widgets where dashboard_id = $1 and spec_hash = $2", dash["id"], h)
         if exists is None:
@@ -146,13 +207,17 @@ async def add_widget(dashboard_id: str, spec: dict, version: int | None, created
 
 
 async def remove_widget(dashboard_id: str, widget_id: str, currency: str | None = None) -> dict:
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         dash = await _check_version(conn, dashboard_id, None)
-        n = await conn.execute("delete from widgets where dashboard_id = $1 and id::text = $2", dash["id"], widget_id)
-        if n.endswith(" 0"):
+        role = await conn.fetchval("delete from widgets where dashboard_id = $1 and id::text = $2 returning role",
+                                   dash["id"], widget_id)
+        if role is None:
             raise engagements.NotFound("widget")
         layout = [x for x in (dash["layout"] or []) if x.get("widget_id") != widget_id]
         await conn.execute("update dashboards set layout = $2, version = version + 1 where id = $1", dash["id"], layout)
+        if _is_default_role(role):  # a removed default stays removed when the data is confirmed again
+            await conn.execute("update dashboards set dismissed_roles = array_append(dismissed_roles, $2) "
+                               "where id = $1 and not ($2 = any(dismissed_roles))", dash["id"], role)
     out = await get(dashboard_id, currency=currency)
     await publish(f"dashboard:{dashboard_id}", "widget.diff", {"version": out["version"], "op": "remove", "widget_id": widget_id})
     return out
@@ -161,13 +226,18 @@ async def remove_widget(dashboard_id: str, widget_id: str, currency: str | None 
 async def set_layout(dashboard_id: str, layout: list[dict[str, Any]], version: int | None,
                      currency: str | None = None) -> dict:
     clean = []
+    seen: set[str] = set()
     for li in layout:
         try:
-            clean.append({"widget_id": str(li["widget_id"]), "x": max(0, int(li["x"])), "y": max(0, int(li["y"])),
-                          "w": min(12, max(1, int(li["w"]))), "h": max(1, int(li["h"]))})
+            wid, w = str(li["widget_id"]), min(GRID_COLUMNS, max(1, int(li["w"])))
+            item = {"widget_id": wid, "x": min(GRID_COLUMNS - w, max(0, int(li["x"]))), "y": max(0, int(li["y"])),
+                    "w": w, "h": max(1, int(li["h"]))}
         except (KeyError, TypeError, ValueError) as e:
             raise engagements.Invalid("Each layout item needs widget_id, x, y, w, h") from e
-    async with db.pool().acquire() as conn, conn.transaction():
+        if wid not in seen:  # one position per widget: the first wins
+            seen.add(wid)
+            clean.append(item)
+    async with db.acquire() as conn, conn.transaction():
         dash = await _check_version(conn, dashboard_id, version)
         await conn.execute("update dashboards set layout = $2, version = version + 1 where id = $1", dash["id"], clean)
     out = await get(dashboard_id, currency=currency)
@@ -220,7 +290,7 @@ def resolve_time_range(tr: dict[str, Any] | None, ctx: TruthContext) -> dict[str
 async def set_time_range(dashboard_id: str, time_range: dict[str, Any] | None, version: int | None,
                          currency: str | None = None) -> dict:
     clean = clean_time_range(time_range)
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         dash = await _check_version(conn, dashboard_id, version)
         await conn.execute("update dashboards set time_range = $2, version = version + 1 where id = $1",
                            dash["id"], clean)

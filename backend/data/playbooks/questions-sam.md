@@ -1,9 +1,9 @@
 ---
 topics: [product_tech, claims, concentration, governance, top_customer_share]
-title: Question bank - Sam (technical diligence, hardest feature not slickest)
+title: Question bank - technical diligence archetype (hardest feature, not slickest)
 ---
 
-# Sam: question bank
+# Technical diligence (archetype): question bank
 
 Quiet and probing. Skips the best-looking screen and asks for the hardest thing the product
 does, who built it and who owns it. Uses the Product kit to find custom work sold as product.

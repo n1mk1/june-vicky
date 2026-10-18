@@ -7,6 +7,7 @@ that note, and that a round size's number is in those words; anything that fails
 """
 
 import asyncio
+import hashlib
 import logging
 import re
 from collections import Counter
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field
 from vicky import db, llm
 from vicky.kb.organize import scrub_numbers
 from vicky.kb.store import stem_of
+from vicky.model.currencies import currency_in
 from vicky.model.loader import parse_number, parse_upload
 from vicky.services import engagements
 from vicky.services.engagements import Invalid
@@ -274,6 +276,46 @@ async def propose_profile(notes: list[dict]) -> tuple[dict[str, tuple[object, st
     return found, "claude"
 
 
+# ---------------------------------------------------------------- round size currency
+
+_AMOUNT = re.compile(r"\d[\d,]*(?:\.\d+)?\s*(?:k|m|mm|bn|b|million|thousand|billion)?\b", flags=re.I)
+
+
+def round_currency(amount: float, quote: str, reporting: str) -> str:
+    """The currency a quoted round size is in: a marker next to the amount (€2M, US$2.5M, 2M EUR), else
+    the one currency the quote names, else the reporting currency (a bare $ reads as it)."""
+    for m in _AMOUNT.finditer(quote):
+        if number_in(amount, m.group(0)) is not None:
+            near = currency_in(quote[max(0, m.start() - 6):m.end() + 6])
+            if near:
+                return near
+    return currency_in(quote) or reporting
+
+
+async def round_in_reporting_currency(found: dict[str, tuple[object, str]], reporting: str) -> None:
+    """A round size quoted in another currency is converted at the Bank of Canada rate, with the rate in its
+    evidence; when no rate can be had it is left blank rather than stored as the wrong currency."""
+    if "round_size" not in found:
+        return
+    amount, why = found["round_size"]
+    m = re.search(r"“(.*)”", why, flags=re.S)
+    cur = round_currency(float(amount), m.group(1) if m else why, reporting)
+    if cur == reporting:
+        return
+    from vicky.services import fx
+
+    try:
+        rate = (await fx.load({cur})).rate(cur, reporting)
+    except Exception as e:
+        log.warning("profile autofill: no %s→%s rate for the round size: %s", cur, reporting, e)
+        rate = None
+    if rate is None:
+        del found["round_size"]
+        return
+    found["round_size"] = (round(float(amount) * rate.value),
+                           f"{why} Converted from {cur.upper()} {float(amount):,.0f}: {rate.note()}.")
+
+
 # ---------------------------------------------------------------- build the engagement
 
 async def _upload_for(n: dict) -> tuple[str, bytes, str] | None:
@@ -284,7 +326,14 @@ async def _upload_for(n: dict) -> tuple[str, bytes, str] | None:
     if n["kind"] == "hub" or not n["content"].strip():
         return None
     meta = n.get("meta") or {}
-    if n["file_id"] and not meta.get("ocr_pages") and not meta.get("unread_pages") and not meta.get("images_ocr"):
+    # The original only while the note is still what the converter made of it: a founder's edit (a
+    # correction, a removed paragraph) must reach the intake, so an edited note goes as its markdown.
+    # Notes imported before the digest was kept count as unedited until the founder saves them.
+    made = meta.get("converted_md5")
+    unedited = (made == hashlib.md5(n["content"].encode("utf-8")).hexdigest() if made
+                else (n.get("version") or 1) == 1)
+    if (n["file_id"] and unedited and not meta.get("ocr_pages") and not meta.get("unread_pages")
+            and not meta.get("images_ocr")):
         f = await db.fetchrow("select filename, kind, bytes, mime from kb_files where id = $1", n["file_id"])
         if f and f["kind"] in ("pdf", "docx"):
             # The original keeps page numbers for the fact citations.
@@ -312,8 +361,8 @@ async def _granularity_from_tables(eid: str, found: dict[str, tuple[object, str]
 
 
 async def autofill() -> dict:
-    notes = await db.fetch("select id::text, path, title, kind, format, content, meta, file_id::text, author "
-                           "from kb_notes where kind <> 'hub' order by path")
+    notes = await db.fetch("select id::text, path, title, kind, format, content, meta, file_id::text, author, "
+                           "version from kb_notes where kind <> 'hub' order by path")
     if not notes:
         raise Invalid("The knowledge base is empty. Import some files first.")
     # Fill means the founder is done adding knowledge: rebuild the search index from the vault as it is now,
@@ -322,6 +371,7 @@ async def autofill() -> dict:
 
     build = await index.start_build()
     found, by = await propose_profile(notes)
+    await round_in_reporting_currency(found, "cad")
     found["currency"] = ("CAD", "The default reporting currency; tables in another currency convert at Bank of Canada rates")
     profile = {f: v for f, (v, _) in found.items()}
     eid = await engagements.create_engagement(profile)

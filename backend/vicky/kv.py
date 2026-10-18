@@ -1,6 +1,7 @@
 """Redis/Valkey client for ephemeral state only (queue, pub/sub, caches, counters).
 
-Losing everything here is harmless: Postgres holds the durable state.
+Losing everything here is harmless: Postgres holds the durable state (the daily LLM spend is kept in both;
+see `add_spend`).
 """
 
 import json
@@ -47,13 +48,41 @@ def today() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
+# The daily LLM spend is the one counter that must survive Redis: the budget guard reads it before every
+# live call. Redis keeps the fast counter; the Postgres `spend` table keeps the same total and is read when
+# Redis can't be. Raises only when neither store can be written (or read).
+
+async def _db_add_spend(usd: float) -> float | None:
+    from vicky import db
+
+    try:
+        return float(await db.pool().fetchval(
+            """insert into spend (date, usd, calls) values ($1, $2, 1)
+               on conflict (date) do update set usd = spend.usd + excluded.usd, calls = spend.calls + 1
+               returning usd""", datetime.now(UTC).date(), usd))
+    except Exception:
+        return None
+
+
 async def add_spend(usd: float) -> float:
+    durable = await _db_add_spend(usd)
     key = f"vicky:spend:{today()}"
-    total = await client().incrbyfloat(key, usd)
-    await client().expire(key, 48 * 3600)
+    try:
+        total = await client().incrbyfloat(key, usd)
+        await client().expire(key, 48 * 3600)
+    except Exception:
+        if durable is None:
+            raise
+        return durable
     return float(total)
 
 
 async def spend_today() -> float:
-    raw = await client().get(f"vicky:spend:{today()}")
-    return float(raw or 0.0)
+    try:
+        raw = await client().get(f"vicky:spend:{today()}")
+        return float(raw or 0.0)
+    except Exception:  # Redis down: the durable total
+        from vicky import db
+
+        usd = await db.pool().fetchval("select usd from spend where date = $1", datetime.now(UTC).date())
+        return float(usd or 0.0)

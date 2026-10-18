@@ -6,7 +6,7 @@ country_programs: "government grants, tax credits or other public funding"
 
 # Generic: what a government-backed or mandate fund probes
 
-Used when the company's country has no dedicated playbook. Claire asks about any public
+Used when the company's country has no dedicated playbook. A mandate fund asks about any public
 funding the company relies on, without assuming local rules. Questions only; nothing here
 is tax, legal or accounting advice.
 

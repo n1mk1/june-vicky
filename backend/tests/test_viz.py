@@ -90,15 +90,14 @@ def test_cmgr_matches_engine_figure(tidewell, harbor):
         assert ev.series[0].points[0].value is not None
 
 
-def test_mrr_and_burn_match_frontend_sample(tidewell):
-    ts = REPO / "frontend" / "lib" / "tidewell.ts"
-    if not ts.exists():
-        pytest.skip("frontend not checked out")
-    rows = re.findall(r'\{ month: "(\d{4}-\d{2})", subscription: (-?\d+), services: -?\d+, cogs: -?\d+, cs: -?\d+, '
-                      r"opex: -?\d+, srred: (-?\d+), net: (-?\d+) \}", ts.read_text(encoding="utf-8"))
+def test_mrr_and_burn_match_sample_csv(tidewell):
+    # QA-1: this used to read a frontend copy of the sample that no longer exists (and always skipped);
+    # the source of truth is the sample's own CSV.
+    rows = [(r["month"], parse_number(r["subscription_revenue"]), parse_number(r["other_income_srred_credit"]),
+             parse_number(r["net_income"])) for r in _csv_rows("tidewell", "income_statement_monthly.csv")]
     assert len(rows) == 24
-    mrr = {m: float(sub) for m, sub, _, _ in rows}
-    burn = {m: -(float(net) - float(srred)) for m, _, srred, net in rows}
+    mrr = {m: sub for m, sub, _, _ in rows}
+    burn = {m: -(net - srred) for m, _, srred, net in rows}
 
     trend = next(w for w in default_widgets(tidewell) if w.template == "line")
     ev = evaluate_widget(trend, tidewell)

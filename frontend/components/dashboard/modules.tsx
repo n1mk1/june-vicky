@@ -34,6 +34,7 @@ export function AttackList({ items, loading, error }: { items: AttackItem[]; loa
       title="What they'll ask first"
       aside={shown.length ? <span className="label">{shown.length}</span> : null}
       bodyClassName="scroll-thin overflow-y-auto"
+      scrollLabel="What they'll ask first"
     >
       {loading && !items.length ? (
         <Loading label="Ranking weak spots" className="p-4" />
@@ -75,14 +76,15 @@ const DIMS: [keyof ReportDims, string][] = [
 ];
 
 /**
- * Pitch readiness: the orb with the latest score (0–100) in it, the five scores behind it (0–5,
- * the weakest in ember), and the change since the session before.
+ * Pitch readiness: the orb with the latest overall score in it, the five scores behind it (all 0–5,
+ * as the report shows them; the weakest in ember), and the change since the session before. The
+ * scores are the report's own; the browser only formats them, it doesn't rescale them.
  */
 export function Readiness({ reports, company }: { reports: ReportSummary[] | undefined; company: string }) {
   const mine = (reports ?? []).filter((r) => r.company === company && r.overall !== null);
   const latest = [...mine].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-  const score = latest?.overall != null ? Math.round(latest.overall * 20) : null;
-  const delta = latest?.delta != null ? Math.round(latest.delta * 20) : null;
+  const score = latest?.overall ?? null;
+  const delta = latest?.delta ?? null;
   const dims = DIMS.map(([k, label]) => ({ k, label, value: latest?.dims?.[k] ?? null })).filter((d) => d.value !== null);
   const weakest = dims.length ? dims.reduce((a, b) => (b.value! < a.value! ? b : a)).k : null;
   return (
@@ -98,16 +100,17 @@ export function Readiness({ reports, company }: { reports: ReportSummary[] | und
       className="min-h-[150px] lg:min-h-0"
     >
       <div
-        aria-label={score === null ? "No score yet" : `Readiness ${score} of 100`}
+        aria-label={score === null ? "No score yet" : `Readiness ${fmtScore(score)} of 5`}
         role="img"
         className="relative aspect-square h-full max-h-[min(200px,42vw)] min-h-[96px] lg:min-h-[56px] shrink-0"
       >
         <div className="absolute inset-0">
-          <OrbScene score={score ?? 0} />
+          {/* The ring fills by the share of the 5-point scale; it is drawing, not a figure. */}
+          <OrbScene score={score === null ? 0 : (Math.max(0, Math.min(5, score)) / 5) * 100} />
         </div>
         <span className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="display text-[clamp(28px,4.2vh,44px)] leading-none tabular-nums">{score ?? "—"}</span>
-          <span className="mt-1 font-mono text-[9px] uppercase tracking-[-0.04em] text-dim">of 100</span>
+          <span className="display text-[clamp(28px,4.2vh,44px)] leading-none tabular-nums">{score === null ? "—" : fmtScore(score)}</span>
+          <span className="mt-1 font-mono text-[9px] uppercase tracking-[-0.04em] text-dim">of 5</span>
         </span>
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -121,7 +124,7 @@ export function Readiness({ reports, company }: { reports: ReportSummary[] | und
                   <>
                     {" · "}
                     <span className={delta < 0 ? "text-ember" : "text-ink"}>
-                      {`${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${Math.abs(delta)} since last`}
+                      {`${delta > 0 ? "+" : delta < 0 ? "−" : "±"}${fmtScore(Math.abs(delta))} since last`}
                     </span>
                   </>
                 )}

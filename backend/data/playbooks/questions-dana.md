@@ -1,9 +1,9 @@
 ---
 topics: [runway, unit_economics, forecast, burn, runway_months, burn_multiple, cac_payback_months]
-title: Question bank - Dana (capital-efficiency hawk, live cash model)
+title: Question bank - capital-efficiency hawk archetype (live cash model)
 ---
 
-# Dana: question bank
+# Capital-efficiency hawk (archetype): question bank
 
 Dry and exacting. Rebuilds the cash model in front of the founder with the Cash kit: burn
 with and without credits, burn multiple, default-alive, fatal-pinch date. Treats

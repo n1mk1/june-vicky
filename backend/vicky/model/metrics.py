@@ -5,6 +5,10 @@ Each metric needs canonical fields; with the inputs present it returns a `Figure
 summaries, document facts, founder statements) fill gaps the datasets can't, and a figure is
 only as strong as its weakest input: anything resting on a founder statement is a
 `founder_claim`, anything resting on a summary keeps the summary as its source.
+
+Windows are calendar windows: "last 12 months" ends at the latest period with data and starts 12
+months earlier, whatever rows are missing in between; a window whose start has no data is missing
+rather than stretched. Money facts in a currency with no published rate stay missing.
 """
 
 from collections.abc import Callable
@@ -12,9 +16,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from vicky.model.canonical import OPEX_CATEGORIES
+from vicky.model.currencies import CURRENCY_CODES
 from vicky.model.figures import UNITS, Fact, Figure, FigureRef, MissingFigure, Source
 from vicky.model.financials import CanonicalModel
-from vicky.model.loader import period_sort_key
+from vicky.model.fx import SOURCE_NAME
+from vicky.model.loader import parse_period, period_end_month, period_sort_key, shift_period
 
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -91,12 +97,36 @@ def _weakest(primary: Source, inputs: list[Figure]) -> tuple[Source, str]:
     return primary, "historical"
 
 
-def _fact_figure(ctx: Ctx, metric_id: str, label: str, unit: str, group: str, why: str) -> Figure | None:
+def fact_unit(unit: str, currency: str) -> str | None:
+    """The figure unit a fact's unit means: "money" and "$" are the reporting currency, no unit is a count,
+    and None for a unit no figure has ("widgets")."""
+    u = (unit or "").strip().lower()
+    if u in ("money", "$"):
+        return currency
+    if not u:
+        return "count"
+    u = {"%": "pct", "percent": "pct", "month": "months", "mo": "months"}.get(u, u)
+    return u if u in UNITS else None
+
+
+def no_rate_reason(src: str, dst: str, period: str | None) -> str:
+    return (f"No {src.upper()}→{dst.upper()} rate published{f' for {period}' if period else ''} ({SOURCE_NAME}), "
+            f"so the amount in {src.upper()} is left out rather than shown in {dst.upper()}")
+
+
+def _fact_figure(ctx: Ctx, metric_id: str, label: str, unit: str, group: str, why: str) -> Figure | MissingFigure | None:
+    """The fact for a metric as a figure in `unit`; a MissingFigure when its unit can't be read, or it is money in
+    another currency that had no rate to convert at (relabelling it would show a number the engine never derived)."""
     fact = ctx.fact(metric_id)
     if fact is None:
         return None
+    own = fact_unit(fact.unit, ctx.unit)
+    if own is None:
+        return _missing(metric_id, label, [metric_id], f"The stated {label} is in an unknown unit ({fact.unit!r})", group)
+    if unit in CURRENCY_CODES and own in CURRENCY_CODES and own != unit:
+        return _missing(metric_id, label, [metric_id], no_rate_reason(own, unit, fact.period), group)
     kind = "founder_claim" if fact.source.kind == "founder_stated" else fact.kind
-    return Figure(id=metric_id, label=label, value=fact.value, unit=unit if unit else fact.unit,
+    return Figure(id=metric_id, label=label, value=fact.value, unit=unit if unit else own,
                   formula=why or (fact.label or fact.name), inputs=[], source=fact.source, kind=kind,
                   period=fact.period, group=group)
 
@@ -105,8 +135,30 @@ def _missing(fid: str, label: str, needs: list[str], reason: str, group: str) ->
     return MissingFigure(id=fid, label=label, needs=needs, reason=reason, group=group)
 
 
-def _window(model: CanonicalModel, fid: str, n: int) -> list[str]:
-    return model.periods_with(fid)[-n:]
+def _span(ctx: Ctx, periods: int) -> list[str]:
+    """`periods` consecutive calendar periods ending at the model's latest one."""
+    end = ctx.model.periods[-1]
+    return [shift_period(end, -k * ctx.mpp) for k in range(periods - 1, -1, -1)]
+
+
+def _window(ctx: Ctx, fid: str, periods: int) -> list[str]:
+    """The periods with `fid` data in the calendar window of `periods` periods ending at its latest one."""
+    m = ctx.model
+    end = m.latest(fid)
+    if end is None:
+        return []
+    start = period_end_month(shift_period(end, -(periods - 1) * ctx.mpp))
+    return [p for p in m.periods_with(fid) if period_end_month(p) >= start]
+
+
+def _full_window(ctx: Ctx, fid: str, periods: int) -> list[str] | None:
+    """The calendar window of `periods` periods ending at `fid`'s latest one, when every period in it has data."""
+    ps = _window(ctx, fid, periods)
+    return ps if len(ps) == periods else None
+
+
+def _months(a: str, b: str) -> int:
+    return period_end_month(b) - period_end_month(a)
 
 
 def _cmgr(start: float, end: float, months: float) -> float | None:
@@ -145,17 +197,25 @@ def m_arr(ctx: Ctx) -> Figure | MissingFigure:
 
 def _growth(ctx: Ctx, fid: str, label: str, months: int, field: str = "revenue.recurring") -> Figure | MissingFigure:
     m = ctx.model
+    what = field.split(".")[-1]
+    if ctx.mpp > months:
+        return _missing(fid, label, [field], f"The data is by {m.granularity}, so growth over {months} months can't be measured",
+                        "recurring")
     steps = max(1, months // ctx.mpp)
     ps = m.periods_with(field)
     if len(ps) < steps + 1:
-        return _missing(fid, label, [field], f"Needs at least {steps + 1} periods of {field.split('.')[-1]} revenue", "recurring")
-    start_p, end_p = ps[-steps - 1], ps[-1]
-    rate = _cmgr(m.value(field, start_p), m.value(field, end_p), steps * ctx.mpp)
+        return _missing(fid, label, [field], f"Needs at least {steps + 1} periods of {what} revenue", "recurring")
+    end_p = ps[-1]
+    start_p = shift_period(end_p, -steps * ctx.mpp)
+    if m.value(field, start_p) is None:
+        return _missing(fid, label, [field], f"No {what} revenue for {label_period(start_p)}, the start of the window", "recurring")
+    span = _months(start_p, end_p)
+    rate = _cmgr(m.value(field, start_p), m.value(field, end_p), span)
     if rate is None:
         return _missing(fid, label, [field], "Revenue must be positive at both ends of the window", "recurring")
     return Figure(id=fid, label=label, value=rate, unit="pct",
-                  formula=f"Compound monthly growth of {field.split('.')[-1]} revenue, {label_period(start_p)} → {label_period(end_p)} "
-                          f"(({m.value(field, end_p):,.0f} ÷ {m.value(field, start_p):,.0f})^(1/{steps * ctx.mpp}) − 1)",
+                  formula=f"Compound monthly growth of {what} revenue, {label_period(start_p)} → {label_period(end_p)} "
+                          f"(({m.value(field, end_p):,.0f} ÷ {m.value(field, start_p):,.0f})^(1/{span}) − 1)",
                   inputs=[FigureRef(column=field, period=start_p, value=m.value(field, start_p)),
                           FigureRef(column=field, period=end_p, value=m.value(field, end_p))],
                   source=_src(ctx, field, [start_p, end_p]), period=f"{start_p}..{end_p}", group="recurring")
@@ -172,12 +232,12 @@ def m_cmgr_recent(ctx: Ctx) -> Figure | MissingFigure:
 
 def m_net_new_arr(ctx: Ctx) -> Figure | MissingFigure:
     m = ctx.model
-    steps = 12 // ctx.mpp
-    ps = m.periods_with("revenue.recurring")
-    if len(ps) < steps + 1:
+    b = m.latest("revenue.recurring")
+    a = shift_period(b, -12) if b else None
+    if a is None or m.value("revenue.recurring", a) is None:
         return _missing("net_new_arr_l12m", "Net new ARR, last 12 months", ["revenue.recurring"],
-                        "Needs 13 months (or 5 quarters) of recurring revenue", "recurring")
-    a, b = ps[-steps - 1], ps[-1]
+                        "Needs recurring revenue for the latest period and the same period a year earlier "
+                        "(13 months or 5 quarters)", "recurring")
     v = (m.value("revenue.recurring", b) - m.value("revenue.recurring", a)) / ctx.mpp * 12
     return Figure(id="net_new_arr_l12m", label="Net new ARR, last 12 months", value=v, unit=ctx.unit,
                   formula=f"(MRR {label_period(b)} − MRR {label_period(a)}) × 12",
@@ -187,9 +247,8 @@ def m_net_new_arr(ctx: Ctx) -> Figure | MissingFigure:
 
 
 def _l12m_sum(ctx: Ctx, field: str) -> tuple[float, list[str]] | None:
-    steps = 12 // ctx.mpp
-    ps = _window(ctx.model, field, steps)
-    if len(ps) < steps:
+    ps = _full_window(ctx, field, 12 // ctx.mpp)
+    if ps is None:
         return None
     return sum(ctx.model.value(field, p) for p in ps), ps
 
@@ -200,26 +259,28 @@ def _burn_multiple(ctx: Ctx, fid: str, label: str, include_credits: bool) -> Fig
     if nna is None or ni is None:
         return _missing(fid, label, ["revenue.recurring", "net_income"], "Needs 12 months of net income and recurring revenue", "recurring")
     total, ps = ni
-    credits = 0.0
-    nd = _l12m_sum(ctx, "non_dilutive_income")
-    if not include_credits:
-        credits = nd[0] if nd else 0.0
+    # Credits arrive in a few months a year (SR&ED refunds, grant tranches): the months without any count as zero.
+    credits = 0.0 if include_credits else sum(ctx.model.value("non_dilutive_income", p) or 0.0 for p in ps)
     if nna.value <= 0:
         return _missing(fid, label, ["revenue.recurring"], "Net new ARR is not positive over the window, so the burn multiple is undefined", "recurring")
     note = "including" if include_credits else "excluding"
     # Burn multiple is a cash measure (Sacks): prefer cash-basis net burn (fall in cash excluding
     # equity raised) when the source of truth states it; the P&L net loss is the fallback.
     cash_burn = ctx.fact("net_burn_l12m")
-    if cash_burn is not None and cash_burn.value > 0:
-        burn = cash_burn.value + (nd[0] if nd and not include_credits else 0.0)
-        src, kind = _weakest(nna.source, [nna, _fact_figure(ctx, "net_burn_l12m", "Net burn, last 12 months", ctx.unit, "recurring", "")])
-        extra = f" + credits received ({nd[0]:,.0f})" if nd and not include_credits else ""
+    stated = _fact_figure(ctx, "net_burn_l12m", "Net burn, last 12 months", ctx.unit, "recurring", "")
+    if cash_burn is not None and isinstance(stated, Figure) and cash_burn.value > 0:
+        burn = cash_burn.value + credits
+        src, kind = _weakest(nna.source, [nna, stated])
+        extra = f" + credits received ({credits:,.0f})" if credits else ""
         return Figure(id=fid, label=label, value=burn / nna.value, unit="x",
                       formula=f"Cash net burn over the last 12 months ({cash_burn.value:,.0f}{extra}) ÷ net new ARR ({nna.value:,.0f})",
                       inputs=[FigureRef(figure_id="net_new_arr_l12m", value=nna.value),
                               FigureRef(figure_id="net_burn_l12m", value=cash_burn.value)],
                       source=src, kind=kind, period="L12M", group="recurring")
     burn = -(total - credits)
+    if burn <= 0:
+        return _missing(fid, label, ["net_income"], "Not burning cash over the window, so the burn multiple doesn't apply",
+                        "recurring")
     return Figure(id=fid, label=label, value=burn / nna.value, unit="x",
                   formula=f"Net loss {note} non-dilutive credits over the last 12 months ({burn:,.0f}) ÷ net new ARR ({nna.value:,.0f}); "
                           f"P&L basis because no cash-basis burn is in the data",
@@ -240,18 +301,22 @@ def m_burn_multiple_ex_credits(ctx: Ctx) -> Figure | MissingFigure:
 
 def _retention(ctx: Ctx, fid: str, label: str, gross: bool) -> Figure | MissingFigure:
     m = ctx.model
-    if m.cohort_mrr or m.customer_mrr:
-        table = m.cohort_mrr or {}
-        if not table and m.customer_mrr:
+    # Retention is a ratio: read it from the tables in their own currency, so exchange-rate moves between the
+    # two ends of the window don't show up as expansion or contraction.
+    cohorts = m.cohort_mrr_src or m.cohort_mrr
+    customers = m.customer_mrr_src or m.customer_mrr
+    if cohorts or customers:
+        table = cohorts or {}
+        if not table and customers:
             # pivot customer → period
             table = {}
-            for p, by_c in m.customer_mrr.items():
+            for p, by_c in customers.items():
                 for c, v in by_c.items():
                     table.setdefault(c, {})[p] = v
         periods = sorted({p for by_p in table.values() for p in by_p}, key=period_sort_key)
-        steps = 12 // max(1, 3 if periods and "-Q" in periods[-1] else 1)
-        if len(periods) > steps:
-            start, end = periods[-steps - 1], periods[-1]
+        end = periods[-1] if periods else None
+        start = shift_period(end, -12) if end else None
+        if start in periods:
             base = now = 0.0
             for by_p in table.values():
                 s = by_p.get(start)
@@ -298,9 +363,9 @@ def _count_fig(ctx: Ctx, fid: str) -> Figure | None:
 def m_cac(ctx: Ctx) -> Figure | MissingFigure:
     m = ctx.model
     steps = max(1, 12 // ctx.mpp)  # fully loaded, last 12 months
-    ps_new = _window(m, "customers.new", steps)
-    ps_sm = _window(m, "opex.s_and_m", steps)
-    if len(ps_new) == steps and ps_new == ps_sm:
+    ps_new = _full_window(ctx, "customers.new", steps)
+    ps_sm = _full_window(ctx, "opex.s_and_m", steps)
+    if ps_new and ps_new == ps_sm:
         new = sum(m.value("customers.new", p) for p in ps_new)
         sm = sum(m.value("opex.s_and_m", p) for p in ps_sm)
         if new > 0:
@@ -318,12 +383,11 @@ def m_cac_payback(ctx: Ctx) -> Figure | MissingFigure:
     cac, mrr = ctx.fig("cac"), ctx.fig("mrr")
     customers = _count_fig(ctx, "customers.count")
     gm = ctx.fig("gross_margin_incl_cs_l12m") or ctx.fig("gross_margin_incl_cs") or ctx.fig("gross_margin")
-    new_mrr = ctx.fact("new_customer_mrr_avg")
-    if cac and new_mrr and gm and new_mrr.value > 0 and gm.value > 0:
+    nm = _fact_figure(ctx, "new_customer_mrr_avg", "MRR a new customer brings", ctx.unit, "recurring", "")
+    if cac and isinstance(nm, Figure) and gm and nm.value > 0 and gm.value > 0:
         # Payback is earned on what a NEW customer pays, not on the average of the installed base.
-        nm = _fact_figure(ctx, "new_customer_mrr_avg", "MRR a new customer brings", ctx.unit, "recurring", "")
         src, kind = _weakest(cac.source, [cac, nm, gm])
-        return Figure(id="cac_payback_months", label="CAC payback", value=cac.value / (new_mrr.value * gm.value), unit="months",
+        return Figure(id="cac_payback_months", label="CAC payback", value=cac.value / (nm.value * gm.value), unit="months",
                       formula=f"CAC {cac.display} ÷ (MRR per new customer {nm.display} × gross margin incl. support {gm.display})",
                       inputs=[FigureRef(figure_id=f.id, value=f.value) for f in (cac, nm, gm)],
                       source=src, kind=kind, period=cac.period, group="recurring")
@@ -368,13 +432,12 @@ def m_revenue_churn(ctx: Ctx) -> Figure | MissingFigure:
 def m_magic_number(ctx: Ctx) -> Figure | MissingFigure:
     m = ctx.model
     q = 3 // ctx.mpp if ctx.mpp < 3 else 1
-    ps = m.periods_with("revenue.recurring")
-    sm = m.periods_with("opex.s_and_m")
-    if len(ps) >= 2 * q + 1 and len(sm) >= 2 * q:
-        end = ps[-1]
-        mid = ps[-1 - q]
-        prev_sm_periods = [p for p in sm if period_sort_key(p) <= period_sort_key(mid)][-q:]
-        if len(prev_sm_periods) == q:
+    end = m.latest("revenue.recurring")
+    if end is not None:
+        # The last quarter ends at the latest period; the prior quarter's spend is the q periods ending where it starts.
+        mid = shift_period(end, -q * ctx.mpp)
+        prev_sm_periods = [shift_period(mid, -k * ctx.mpp) for k in range(q - 1, -1, -1)]
+        if m.value("revenue.recurring", mid) is not None and all(m.value("opex.s_and_m", p) is not None for p in prev_sm_periods):
             delta_arr = (m.value("revenue.recurring", end) - m.value("revenue.recurring", mid)) / ctx.mpp * 12
             spend = sum(m.value("opex.s_and_m", p) for p in prev_sm_periods)
             if spend > 0:
@@ -383,6 +446,23 @@ def m_magic_number(ctx: Ctx) -> Figure | MissingFigure:
                               source=_src(ctx, "opex.s_and_m", prev_sm_periods), period=end, group="recurring")
     return _missing("magic_number", "Magic number", ["revenue.recurring", "opex.s_and_m"],
                     "Needs two quarters of recurring revenue and sales & marketing spend", "recurring")
+
+
+def m_one_time_share(ctx: Ctx) -> Figure | MissingFigure:
+    """The share of the latest period's revenue that isn't recurring, both amounts from that same period."""
+    m = ctx.model
+    fid, label = "one_time_revenue_share", "Non-recurring share of revenue"
+    p = m.latest("revenue.recurring")
+    rec = m.value("revenue.recurring", p) if p else None
+    tot = m.value("revenue.total", p) if p else None
+    if rec is None or tot is None or tot <= 0:
+        return _missing(fid, label, ["revenue.recurring", "revenue.total"],
+                        "Needs recurring and total revenue for the same period", "recurring")
+    return Figure(id=fid, label=f"{label}, {label_period(p)}", value=1 - rec / tot, unit="pct",
+                  formula=f"1 − recurring revenue ({rec:,.0f}) ÷ total revenue ({tot:,.0f}), {label_period(p)}",
+                  inputs=[FigureRef(column="revenue.recurring", period=p, value=rec),
+                          FigureRef(column="revenue.total", period=p, value=tot)],
+                  source=_src(ctx, "revenue.total", [p]), period=p, group="recurring")
 
 
 # ---------------------------------------------------------------- generic set
@@ -401,11 +481,15 @@ def m_revenue_growth(ctx: Ctx) -> Figure | MissingFigure:
     ps = m.periods_with("revenue.total")
     if len(ps) < 2:
         return _missing("revenue_growth", "Revenue growth", ["revenue.total"], "Needs at least two periods of revenue", "generic")
-    a, b = ps[-2], ps[-1]
+    b = ps[-1]
+    a = shift_period(b, -ctx.mpp)
     va, vb = m.value("revenue.total", a), m.value("revenue.total", b)
+    if va is None:
+        return _missing("revenue_growth", "Revenue growth", ["revenue.total"],
+                        f"No revenue for {label_period(a)}, the period before {label_period(b)}", "generic")
     if not va:
         return _missing("revenue_growth", "Revenue growth", ["revenue.total"], "Prior-period revenue is zero", "generic")
-    per = "quarter over quarter" if ctx.mpp == 3 else "month over month"
+    per = {3: "quarter over quarter", 12: "year over year"}.get(ctx.mpp, "month over month")
     return Figure(id="revenue_growth", label=f"Revenue growth, {per}", value=vb / va - 1, unit="pct",
                   formula=f"Total revenue {label_period(b)} ({vb:,.0f}) ÷ {label_period(a)} ({va:,.0f}) − 1",
                   source=_src(ctx, "revenue.total", [a, b]), period=b, group="generic")
@@ -413,11 +497,11 @@ def m_revenue_growth(ctx: Ctx) -> Figure | MissingFigure:
 
 def m_revenue_growth_yoy(ctx: Ctx) -> Figure | MissingFigure:
     m = ctx.model
-    steps = 12 // ctx.mpp
-    ps = m.periods_with("revenue.total")
-    if len(ps) < steps + 1:
-        return _missing("revenue_growth_yoy", "Revenue growth, year over year", ["revenue.total"], "Needs 13 months (or 5 quarters) of revenue", "generic")
-    a, b = ps[-steps - 1], ps[-1]
+    b = m.latest("revenue.total")
+    a = shift_period(b, -12) if b else None
+    if a is None or m.value("revenue.total", a) is None:
+        return _missing("revenue_growth_yoy", "Revenue growth, year over year", ["revenue.total"],
+                        "Needs revenue for the latest period and the same period a year earlier (13 months or 5 quarters)", "generic")
     va, vb = m.value("revenue.total", a), m.value("revenue.total", b)
     if not va:
         return _missing("revenue_growth_yoy", "Revenue growth, year over year", ["revenue.total"], "Year-ago revenue is zero", "generic")
@@ -435,9 +519,10 @@ def _margin(ctx: Ctx, fid: str, label: str, with_cs: bool, l12m: bool) -> Figure
     ps = [p for p in m.periods_with("revenue.total") if m.value("cogs", p) is not None]
     if with_cs:
         ps = [p for p in ps if m.value("opex.customer_success", p) is not None]
-    if len(ps) < steps:
-        return _missing(fid, label, needs, "Needs revenue and cost of revenue for the window", "generic")
-    ps = ps[-steps:]
+    window_ps = [shift_period(ps[-1], -k * ctx.mpp) for k in range(steps - 1, -1, -1)] if ps else []
+    if not ps or not set(window_ps) <= set(ps):
+        return _missing(fid, label, needs, "Needs revenue and cost of revenue for every period of the window", "generic")
+    ps = window_ps
     rev = sum(m.value("revenue.total", p) for p in ps)
     cost = sum(m.value("cogs", p) for p in ps) + (sum(m.value("opex.customer_success", p) for p in ps) if with_cs else 0)
     if rev <= 0:
@@ -465,7 +550,7 @@ def m_gross_margin_incl_cs_l12m(ctx: Ctx) -> Figure | MissingFigure:
 def _burn(ctx: Ctx, fid: str, label: str, exclude_credits: bool) -> Figure | MissingFigure:
     m = ctx.model
     steps = max(1, 6 // ctx.mpp)
-    ps = _window(m, "net_income", steps)
+    ps = _window(ctx, "net_income", steps)  # the months of the last six that have net income
     if not ps:
         return _missing(fid, label, ["net_income"], "Map net income (or revenue and costs) to unlock burn", "generic")
     burns = []
@@ -518,9 +603,10 @@ def m_runway(ctx: Ctx) -> Figure | MissingFigure:
 
 def m_top_customer(ctx: Ctx) -> Figure | MissingFigure:
     m = ctx.model
-    if m.customer_mrr:
-        p = sorted(m.customer_mrr, key=period_sort_key)[-1]
-        by_c = m.customer_mrr[p]
+    table = m.customer_mrr_src or m.customer_mrr  # a share: read in the table's own currency
+    if table:
+        p = sorted(table, key=period_sort_key)[-1]
+        by_c = table[p]
         total = sum(by_c.values())
         if total > 0:
             name, top = max(by_c.items(), key=lambda kv: kv[1])
@@ -540,7 +626,8 @@ def m_opex_mix(ctx: Ctx) -> list[Figure | MissingFigure]:
     present = [c for c in OPEX_CATEGORIES if m.has(c)]
     if not present:
         return [_missing("opex_mix", "Operating expense mix", OPEX_CATEGORIES, "Map expense lines to categories to see the mix", "generic")]
-    ps = m.periods[-steps:]
+    window = set(_span(ctx, steps))  # the last 12 calendar months of the model
+    ps = [p for p in m.periods if p in window]
     totals = {c: sum(m.value(c, p) or 0 for p in ps) for c in present}
     whole = sum(totals.values())
     if whole <= 0:
@@ -557,11 +644,20 @@ def m_opex_mix(ctx: Ctx) -> list[Figure | MissingFigure]:
 Metric = Callable[[Ctx], Figure | MissingFigure]
 
 RECURRING: list[Metric] = [m_mrr, m_arr, m_cmgr_12m, m_cmgr_recent, m_net_new_arr, m_burn_multiple, m_burn_multiple_ex_credits,
-                           m_nrr, m_grr, m_cac, m_logo_churn, m_revenue_churn, m_magic_number]
+                           m_nrr, m_grr, m_cac, m_logo_churn, m_revenue_churn, m_magic_number, m_one_time_share]
 GENERIC: list[Metric] = [m_revenue, m_revenue_growth, m_revenue_growth_yoy, m_gross_margin, m_gross_margin_incl_cs,
                          m_gross_margin_incl_cs_l12m, m_burn, m_burn_incl_credits, m_cash, m_runway, m_top_customer]
 RECURRING_IDS = ["mrr", "arr", "cmgr_12m", "cmgr_recent", "net_new_arr_l12m", "burn_multiple", "burn_multiple_ex_credits",
-                 "nrr", "grr", "cac", "cac_payback_months", "logo_churn_rate", "revenue_churn_rate", "magic_number"]
+                 "nrr", "grr", "cac", "cac_payback_months", "logo_churn_rate", "revenue_churn_rate", "magic_number",
+                 "one_time_revenue_share"]
+
+
+def _fact_rank(f: Fact) -> tuple:
+    """Later periods win (by date: FY2024 is older than 2026-09), a dated fact beats an undated one, confirmed
+    beats pending."""
+    parsed = parse_period(f.period) if f.period else None
+    when = period_sort_key(parsed[0]) if parsed else (0, 0)
+    return parsed is not None, when, f.status == "confirmed"
 
 
 def facts_by_metric(facts: list[Fact]) -> dict[str, Fact]:
@@ -571,7 +667,7 @@ def facts_by_metric(facts: list[Fact]) -> dict[str, Fact]:
             continue
         key = FACT_ALIASES.get(f.name, f.name)
         prev = out.get(key)
-        if prev is None or (f.period or "") >= (prev.period or ""):
+        if prev is None or _fact_rank(f) >= _fact_rank(prev):  # on a tie the later fact wins
             out[key] = f
     return out
 
@@ -596,23 +692,67 @@ def compute_metrics(model: CanonicalModel, facts: list[Fact], profile: dict[str,
         for mid in RECURRING_IDS:
             ctx.out[mid] = _missing(mid, mid, ["revenue.recurring"], reason, "recurring")
     _apply_fact_overrides(ctx)
+    _explain_fx_gaps(ctx)
     return ctx.out
 
 
+# A derived field is missing when any of its inputs is (revenue.total from recurring + one-time, …).
+_DERIVED_FROM: dict[str, list[str]] = {
+    "revenue.total": ["revenue.recurring", "revenue.one_time"],
+    "gross_profit": ["revenue.total", "cogs"],
+    "opex.total": [*OPEX_CATEGORIES, "depreciation"],
+    "operating_income": ["gross_profit", "opex.total"],
+    "net_income": ["operating_income", "non_dilutive_income"],
+    "cohort_mrr": ["customer_mrr"],
+}
+
+
+def _gaps_for(model: CanonicalModel, fid: str, seen: frozenset = frozenset()) -> list[tuple[str, str]]:
+    out = list(model.fx_gaps.get(fid, []))
+    for sub in _DERIVED_FROM.get(fid, []):
+        if sub not in seen:
+            out += _gaps_for(model, sub, seen | {fid})
+    return out
+
+
+def _explain_fx_gaps(ctx: Ctx) -> None:
+    """A figure missing because its cells had no exchange rate says so, not "map a revenue column"."""
+    if not ctx.model.fx_gaps:
+        return
+    for fid, f in ctx.out.items():
+        if not isinstance(f, MissingFigure) or "Recurring-revenue metric" in f.reason:
+            continue
+        gaps = [g for need in f.needs for g in _gaps_for(ctx.model, need)]
+        if not gaps:
+            continue
+        srcs = "/".join(sorted({s.upper() for s, _ in gaps}))
+        periods = sorted({p for _, p in gaps}, key=period_sort_key)
+        when = periods[0] if len(periods) == 1 else f"{periods[0]} to {periods[-1]}"
+        why = (f"No {srcs}→{ctx.unit.upper()} rate for {when} ({SOURCE_NAME}), so those amounts are left out rather "
+               f"than shown in the wrong currency")
+        # With nothing left of the inputs the rate is the whole story; otherwise the original reason still applies.
+        empty = not any(ctx.model.has(n) or (n in ("customer_mrr", "cohort_mrr") and getattr(ctx.model, n)) for n in f.needs)
+        ctx.out[fid] = f.model_copy(update={"reason": why if empty else f"{why}. {f.reason}"})
+
+
 def _apply_fact_overrides(ctx: Ctx) -> None:
-    """Facts for metrics the engine couldn't compute become figures (labelled with their source)."""
+    """Facts for metrics the engine couldn't compute become figures (labelled with their source). A fact in a unit
+    no figure has, or money in another currency with no rate, leaves the metric missing."""
     for key, fact in ctx.facts.items():
         current = ctx.out.get(key)
         if isinstance(current, MissingFigure) and "Recurring-revenue metric" not in current.reason:
-            unit = fact.unit if fact.unit else "count"
+            unit = fact_unit(fact.unit, ctx.unit)
+            if unit is None or (unit in CURRENCY_CODES and unit != ctx.unit):
+                continue
             kind = "founder_claim" if fact.source.kind == "founder_stated" else fact.kind
             ctx.out[key] = Figure(id=key, label=current.label or fact.label or key, value=fact.value, unit=unit,
                                   formula=fact.label or fact.name, source=fact.source, kind=kind, period=fact.period,
                                   group=current.group)
 
 
-def fact_figures(facts: list[Fact], exclude: set[str]) -> list[Figure]:
-    """Confirmed facts that are not metrics still become citable figures (e.g. round size, plan assumptions)."""
+def fact_figures(facts: list[Fact], exclude: set[str], currency: str | None = None) -> list[Figure]:
+    """Confirmed facts that are not metrics still become citable figures (e.g. round size, plan assumptions).
+    "money" and "$" are `currency` (the reporting currency); another unit no figure has reads as a count."""
     out = []
     for f in facts:
         if f.status == "removed":
@@ -620,7 +760,8 @@ def fact_figures(facts: list[Fact], exclude: set[str]) -> list[Figure]:
         fid = FACT_ALIASES.get(f.name, f.name)
         if fid in exclude:
             continue
-        unit = f.unit if f.unit in UNITS else "count"
+        unit = fact_unit(f.unit, currency) if currency else None
+        unit = unit if unit in UNITS else f.unit if f.unit in UNITS else "count"
         out.append(Figure(id=f"fact.{f.name}", label=f.label or f.name, value=f.value, unit=unit, formula=f.label or f.name,
                           source=f.source, kind="founder_claim" if f.source.kind == "founder_stated" else f.kind,
                           period=f.period, group="facts"))

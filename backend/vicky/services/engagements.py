@@ -6,6 +6,7 @@ Everything numeric is recomputed by code from the stored datasets and facts.
 """
 
 import hashlib
+import math
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -30,6 +31,11 @@ UPLOAD_KINDS = {".csv": "csv", ".xlsx": "xlsx", ".xlsm": "xlsx", ".pdf": "pdf", 
 DOC_KINDS = {"pdf", "docx", "md"}
 PROFILE_COLUMNS = ("name", "country", "currency", "fiscal_year_start_month", "stage", "round_type", "round_size",
                    "business_model", "granularity")
+MONEY_ALIASES = {"money", "$"}  # a typed fact in the reporting currency
+FACT_UNITS = UNITS | MONEY_ALIASES
+ROUND_SIZE_MAX = 1e12  # company_profiles.round_size is numeric(14, 2)
+# Below this a proposed mapping is a guess the founder must check (the mapping table marks it in ember).
+REVIEW_CONFIDENCE = 0.6
 
 
 class NotFound(Exception):
@@ -42,7 +48,19 @@ class Invalid(Exception):
 
 # ---------------------------------------------------------------- profile
 
+def _number(p: dict[str, Any], key: str) -> float:
+    try:
+        v = float(p[key])
+    except (TypeError, ValueError) as e:
+        raise Invalid(f"{key} must be a number, not {str(p[key])[:40]!r}") from e
+    if not math.isfinite(v):
+        raise Invalid(f"{key} must be a finite number")
+    return v
+
+
 def clean_profile(p: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(p, dict):
+        raise Invalid("The profile must be an object of fields")
     out: dict[str, Any] = {}
     if "name" in p:
         out["name"] = str(p["name"] or "").strip()[:200]
@@ -52,14 +70,16 @@ def clean_profile(p: dict[str, Any]) -> dict[str, Any]:
     if p.get("currency"):
         out["currency"] = norm_currency(p["currency"]).upper()
     if p.get("fiscal_year_start_month") is not None:
-        out["fiscal_year_start_month"] = min(12, max(1, int(p["fiscal_year_start_month"])))
+        out["fiscal_year_start_month"] = min(12, max(1, int(_number(p, "fiscal_year_start_month"))))
     if p.get("stage"):
         s = str(p["stage"]).strip().lower().replace("-", "_").replace(" ", "_")
         out["stage"] = s if s in STAGES else "other"
     if "round_type" in p:
         out["round_type"] = (str(p["round_type"]).strip() or None) if p["round_type"] is not None else None
     if "round_size" in p:
-        out["round_size"] = float(p["round_size"]) if p["round_size"] not in (None, "") else None
+        out["round_size"] = _number(p, "round_size") if p["round_size"] not in (None, "") else None
+        if out["round_size"] is not None and not 0 <= out["round_size"] < ROUND_SIZE_MAX:
+            raise Invalid("round_size must be between 0 and 1,000,000,000,000")
     if p.get("business_model"):
         out["business_model"] = "recurring" if str(p["business_model"]).lower() == "recurring" else "other"
     if p.get("granularity"):
@@ -110,7 +130,7 @@ def model_profile(profile: dict | None) -> dict:
 # ---------------------------------------------------------------- create / load
 
 async def create_engagement(profile: dict[str, Any] | None = None) -> str:
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         eid = await conn.fetchval("insert into engagements (name) values ($1) returning id::text",
                                   str((profile or {}).get("name") or "").strip())
         await conn.execute("insert into company_profiles (engagement_id) values ($1)", eid)
@@ -121,7 +141,7 @@ async def create_engagement(profile: dict[str, Any] | None = None) -> str:
 
 async def update_profile(engagement_id: str, profile: dict[str, Any]) -> None:
     await _require(engagement_id)
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         old = norm_currency(await conn.fetchval("select currency from company_profiles where engagement_id = $1",
                                                 engagement_id))
         await _upsert_profile(conn, engagement_id, profile)
@@ -238,7 +258,7 @@ async def add_upload(engagement_id: str | None, filename: str, data: bytes, mime
         fresh = [ds for ds in parsed if not await db.fetchval(
             "select 1 from dataset_mappings where fingerprint = $1 and confirmed is not null limit 1", ds.fingerprint)]
         refined = await mapper.propose_all(fresh, currency)
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         uid = await conn.fetchval(
             """insert into uploads (engagement_id, filename, mime, bytes, size, sha256, kind, status, kb_note_id)
                values ($1,$2,$3,$4,$5,$6,$7::upload_kind,$8::upload_status,$9::uuid) returning id::text""",
@@ -260,7 +280,7 @@ async def add_extracted_facts(upload_id: str, facts: list[Fact]) -> int:
     eid = await db.fetchval("select engagement_id::text from uploads where id::text = $1", upload_id)
     if eid is None:
         raise NotFound("upload")
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         pack = await conn.fetchrow("select * from truthpacks where engagement_id = $1 order by created_at desc limit 1 "
                                    "for update", eid)
         if pack is None:
@@ -345,7 +365,7 @@ async def put_mapping(dataset_id: str, mapping: list[dict]) -> dict:
     for cm in chosen:
         cm.unit = _clean_unit(cm, profiles.get(cm.source_column), currency)
         cleaned.append(cm.model_dump())
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         if reread is not None:
             await conn.execute(
                 """update datasets set columns = $2, rows = $3, period_axis = $4, granularity = $5::period_granularity,
@@ -391,15 +411,23 @@ async def add_fact(engagement_id: str, body: dict) -> None:
         value = float(body["value"])
     except (KeyError, TypeError, ValueError) as e:
         raise Invalid("A fact needs a numeric value") from e
+    if not math.isfinite(value):
+        raise Invalid("A fact's value must be a finite number")
     name = str(body.get("name") or "").strip().lower().replace(" ", "_")
     if not name:
         raise Invalid("A fact needs a name")
+    unit = str(body.get("unit") or "count").strip().lower()
+    if unit in MONEY_ALIASES:  # "$" or "money": the reporting currency, never a count
+        unit = norm_currency(await db.fetchval("select currency from company_profiles where engagement_id = $1",
+                                               engagement_id))
+    if unit not in UNITS:
+        raise Invalid(f"Unknown unit {unit!r}; use a currency code, money, pct, months, count, ratio or x")
     fact = Fact(id=f"typed-{uuid.uuid4().hex[:8]}", name=name, label=str(body.get("label") or name)[:120], value=value,
-                unit=str(body.get("unit") or "count").lower(), period=body.get("period") or None,
+                unit=unit, period=body.get("period") or None,
                 kind=body.get("kind") if body.get("kind") in ("historical", "forecast") else "historical",
                 source=Source(kind="founder_stated", ref=f"typed by the founder, {datetime.now(UTC):%Y-%m-%d}"),
                 status="pending", note=body.get("note"))
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         pack = await _pack(conn, engagement_id)
         facts = [*pack["facts"], fact.model_dump(mode="json")]
         await conn.execute("update truthpacks set facts = $2, version = version + 1 where id = $1", pack["id"], facts)
@@ -407,7 +435,7 @@ async def add_fact(engagement_id: str, body: dict) -> None:
 
 async def remove_fact(engagement_id: str, fact_id: str) -> None:
     await _require(engagement_id)
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         pack = await _pack(conn, engagement_id)
         facts = [({**f, "status": "removed"} if f["id"] == fact_id else f) for f in pack["facts"]]
         if facts == pack["facts"]:
@@ -489,16 +517,35 @@ async def context(engagement_id: str, currency: str | None = None) -> TruthConte
 
 # ---------------------------------------------------------------- confirm
 
+def needs_review(proposed: list[dict], proposer: str | None) -> list[str]:
+    """Columns of an unreviewed proposal that confirm must not take as they are: mapped to a field with
+    confidence under REVIEW_CONFIDENCE. A mapping reused from one the founder confirmed before is theirs."""
+    if proposer == "reused":
+        return []
+    return [str(m.get("source_column")) for m in proposed or []
+            if m.get("canonical_field") and float(m.get("confidence") or 0) < REVIEW_CONFIDENCE]
+
+
 async def confirm(engagement_id: str) -> None:
     from vicky.services import dashboards  # local import: dashboards imports this module
 
     eng = await _require(engagement_id)
     datasets = await db.fetch("select d.id from datasets d where d.engagement_id = $1", engagement_id)
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         pack = await _pack(conn, engagement_id)
         if not datasets and not [f for f in pack["facts"] if f.get("status") != "removed"]:
             raise Invalid("Add a file or at least one figure before confirming")
-        # Unconfirmed proposals are accepted as shown in the confirm step.
+        unreviewed = await conn.fetch(
+            """select d.name, m.proposed, m.proposer from datasets d join dataset_mappings m on m.dataset_id = d.id
+               where d.engagement_id = $1 and m.confirmed is null order by d.created_at""", engagement_id)
+        guesses = [f"{', '.join(cols)} ({r['name']})" for r in unreviewed
+                   if (cols := needs_review(r["proposed"], r["proposer"]))]
+        if guesses:
+            # A low-confidence guess could put a column's numbers on the wrong line of the source of truth.
+            raise Invalid(f"Check the mapping before confirming. Matched with low confidence: {'; '.join(guesses)}. "
+                          "Review them in step 2 (Mapping) and save.")
+        # Unconfirmed proposals the founder didn't change are accepted as shown in the confirm step
+        # (none of them is a low-confidence guess: those stop the confirm above).
         await conn.execute(
             """update dataset_mappings set confirmed = proposed, confirmed_at = now()
                where confirmed is null and dataset_id in (select id from datasets where engagement_id = $1)""",
@@ -507,7 +554,7 @@ async def confirm(engagement_id: str) -> None:
         await conn.execute("update truthpacks set facts = $2, version = version + 1 where id = $1", pack["id"], facts)
     ctx = await context(engagement_id)
     figures = [figure_dict(f) for f in ctx.figures.values()]
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         await conn.execute(
             """update truthpacks set figures = $2, coverage = $3, attack_list = $4, confirmed_at = now()
                where id = $1""",

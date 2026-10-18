@@ -7,6 +7,7 @@ text layer and marks the pages it could not read.
 import functools
 import io
 import logging
+import math
 from collections.abc import Iterator
 from typing import Any
 
@@ -72,8 +73,17 @@ def bytes_text(data: bytes, *, sparse: bool = False) -> str:
         return ""
 
 
+def render_scale(width_pt: float, height_pt: float, scale: float = 2.0, max_pixels: int = MAX_PIXELS) -> float:
+    """The render scale for a page of this size: `scale`, lowered so the bitmap stays within `max_pixels`.
+    A PDF a few KB long can declare a page metres wide; rendering it at full scale would exhaust memory."""
+    area = float(width_pt) * float(height_pt)
+    if not area > 0:
+        return scale
+    return min(scale, math.sqrt(max_pixels / area))
+
+
 def pdf_pages_as_images(data: bytes, pages: list[int], scale: float = 2.0) -> Iterator[tuple[int, Any]]:
-    """(page number 1-based, PIL image) for each requested page."""
+    """(page number 1-based, PIL image) for each requested page, never larger than MAX_PIXELS."""
     import pypdfium2 as pdfium
 
     pdf = pdfium.PdfDocument(data)
@@ -82,7 +92,8 @@ def pdf_pages_as_images(data: bytes, pages: list[int], scale: float = 2.0) -> It
             if 1 <= n <= len(pdf):
                 page = pdf[n - 1]
                 try:
-                    yield n, page.render(scale=scale).to_pil()
+                    w, h = page.get_size()
+                    yield n, page.render(scale=render_scale(w, h, scale)).to_pil()
                 finally:
                     page.close()
     finally:

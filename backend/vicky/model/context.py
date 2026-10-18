@@ -45,12 +45,16 @@ class TruthContext:
         return self.profile.get("name") or "the company"
 
 
-def convert_facts(facts: list[Fact], currency: str, fx: Rates | None) -> list[Fact]:
+def convert_facts(facts: list[Fact], currency: str, fx: Rates | None, reporting: str | None = None) -> list[Fact]:
     """Facts in another currency, converted at the rate for their period (the latest rate when they
-    have none). A fact with no published rate keeps its own currency."""
+    have none). A fact with no published rate keeps its own currency (and stays out of the metrics).
+    "money" and "$" mean the reporting currency, so they become that code first."""
     out = []
     for f in facts:
-        src = f.unit.lower()
+        src = f.unit.strip().lower()
+        if src in ("money", "$"):
+            src = reporting or currency
+            f = f.model_copy(update={"unit": src})
         if src in CURRENCY_CODES and src != currency and fx is not None:
             period = f.period if f.period and period_range(f.period) else None
             r = fx.rate(src, currency, period, "avg")
@@ -81,12 +85,12 @@ def build_context(datasets: list[DatasetInput], facts: list[Fact], profile: dict
     """`currency` is the one every money figure comes out in: the profile's (the reporting currency)
     unless a view asks for another. Anything in a different currency converts at `fx` rates."""
     target = norm_currency(currency or profile.get("currency"))
-    facts = convert_facts(facts, target, fx)
     reporting = norm_currency(profile.get("currency"))
+    facts = convert_facts(facts, target, fx, reporting)
     profile = {**convert_profile(profile, target, fx), "currency": target, "reporting_currency": reporting}
     model = build_model(datasets, target, profile.get("granularity"), fx=fx)
     figures = compute_metrics(model, facts, profile)
-    for f in fact_figures([x for x in facts if x.status == "confirmed"], exclude=set(figures)):
+    for f in fact_figures([x for x in facts if x.status == "confirmed"], exclude=set(figures), currency=target):
         figures.setdefault(f.id, f)
     attack = attack_list(figures, facts, profile, deck_checks)
     return TruthContext(profile=profile, model=model, figures=figures, facts=facts, attack=attack, version=version,

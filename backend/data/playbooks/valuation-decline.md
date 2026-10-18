@@ -65,8 +65,8 @@ Which preference does it carry, how is the pool sized, and who gets board seats?
 I'll run the waterfall at a modest exit and a large one so you can see what each term
 costs."
 
-**Founder (in Simulation, to Victor):** "What valuation do you think is fair?"
-**Victor:** "That's not something I'll tell you. What I want to know is whether you can
+**Founder (in Simulation, to an investor):** "What valuation do you think is fair?"
+**Investor:** "That's not something I'll tell you. What I want to know is whether you can
 do the arithmetic: what do you own after this round if your SAFEs convert at their caps?"
 
 ## If the founder pushes

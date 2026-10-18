@@ -29,7 +29,7 @@ export default function AccessPage() {
           <AccessGate />
         </Suspense>
       </section>
-      <p className="text-[11px] text-white/35">No investment advice.</p>
+      <p className="text-[11px] text-white/50">No investment advice.</p>
     </main>
   );
 }

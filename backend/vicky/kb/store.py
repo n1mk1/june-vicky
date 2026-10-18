@@ -15,11 +15,16 @@ from typing import Any
 import yaml
 
 from vicky import db
-from vicky.kb.convert import Draft, clean_segment
+from vicky.kb.convert import Draft, clean_segment, safe_name, strip_nul
 
 INBOX = "inbox"
 KINDS = {"table", "document", "note", "hub"}
 WIKILINK = re.compile(r"\[\[([^\[\]|#\n]+?)(?:#[^\[\]|\n]*)?(?:\|[^\[\]\n]*)?\]\]")
+# The document full-text search reads. It matches the kb_notes_fts expression index (migration 0008) exactly,
+# and is capped so its tsvector stays under Postgres's 1 MB limit (a huge table would fail every search, or
+# with the index, its own insert); words past the cap are still found through the title and path.
+FTS_CHARS = 200_000
+FTS_DOC = f"to_tsvector('simple', left(title || ' ' || summary || ' ' || content, {FTS_CHARS}))"
 LIST_COLS = """id::text, path, title, kind, format, tags, summary, links, meta, author, file_id::text,
                length(content) as size, version, organized_at, created_at, updated_at"""
 
@@ -122,23 +127,30 @@ async def get_note(nid: str) -> dict:
     if row is None:
         raise NoteNotFound("note")
     out = _row(row)
-    everything = await db.fetch("select id::text, path, title, format, links, "
-                                "case when format = 'md' then content else '' end as content from kb_notes")
+    # Names and titles of the whole vault resolve links the way the graph does; only notes that could link
+    # here (they list this path, or their text contains its name or title) are read in full.
+    everything = await db.fetch("select id::text, path, title from kb_notes")
     res = Resolver(everything)
     me = out["path"]
+    names = [f"%{like_escape(x)}%" for x in {stem_of(me), (out["title"] or "").strip()} if x]
+    candidates = await db.fetch(
+        "select id::text, path, title, links, case when format = 'md' then content else '' end as content "
+        "from kb_notes where path <> $1 and ($1 = any(links) or (format = 'md' and content ilike any($2::text[])))",
+        me, names)
     out["backlinks"] = [
-        {"id": n["id"], "path": n["path"], "title": n["title"]} for n in everything
-        if n["path"] != me and (me in (n["links"] or []) or any(res.resolve(t) == me for t in wikilinks(n["content"])))
+        {"id": n["id"], "path": n["path"], "title": n["title"]} for n in candidates
+        if me in (n["links"] or []) or any(res.resolve(t) == me for t in wikilinks(n["content"]))
     ]
+    by_path = {n["path"]: n for n in everything}
     out["outlinks"] = []
     seen = set()
     for t in [*wikilinks(out["content"] if out["format"] == "md" else ""), *(out["links"] or [])]:
-        p = res.resolve(t) if t not in res.by_path.values() else t
+        p = t if t in by_path else res.resolve(t)
         key = p or f"missing:{t.lower()}"
         if key in seen:
             continue
         seen.add(key)
-        hit = next((n for n in everything if n["path"] == p), None)
+        hit = by_path.get(p) if p else None
         out["outlinks"].append({"id": hit["id"] if hit else None, "path": p, "title": hit["title"] if hit else t})
     if out["file_id"]:
         f = await db.fetchrow("select id::text, filename, kind, size, status from kb_files where id = $1",
@@ -180,19 +192,31 @@ async def graph() -> dict:
     return {"nodes": nodes, "links": [{"source": a, "target": b, "type": t} for (a, b), t in edges.items()]}
 
 
+def like_escape(s: str) -> str:
+    """`s` as a literal inside a LIKE pattern (backslash is the escape character)."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# Matches come from the full-text index or the title and path (short columns: the note text is never read for
+# them); a union rather than an OR, so the text match can use the index. Only matched notes are ranked.
+SEARCH_SQL = f"""
+    with hits as (
+        select id from kb_notes where {FTS_DOC} @@ plainto_tsquery('simple', $1)
+        union
+        select id from kb_notes where title ilike '%' || $3 || '%' escape '\\' or path ilike '%' || $3 || '%' escape '\\'
+    )
+    select {LIST_COLS},
+           ts_rank({FTS_DOC}, plainto_tsquery('simple', $1)) as rank,
+           substring(content from greatest(1, position(lower($1) in lower(content)) - 80) for 240) as snippet
+    from kb_notes where id in (select id from hits)
+    order by rank desc, updated_at desc limit $2"""
+
+
 async def search(q: str, limit: int = 20) -> list[dict]:
-    q = q.strip()
+    q = strip_nul(q).strip()
     if not q:
         return []
-    rows = await db.fetch(
-        f"""select {LIST_COLS},
-                   ts_rank(to_tsvector('simple', title || ' ' || summary || ' ' || content),
-                           plainto_tsquery('simple', $1)) as rank,
-                   substring(content from greatest(1, position(lower($1) in lower(content)) - 80) for 240) as snippet
-            from kb_notes
-            where to_tsvector('simple', title || ' ' || summary || ' ' || content) @@ plainto_tsquery('simple', $1)
-               or title ilike '%' || $1 || '%' or path ilike '%' || $1 || '%'
-            order by rank desc, updated_at desc limit $2""", q, limit)
+    rows = await db.fetch(SEARCH_SQL, q, limit, like_escape(q))
     return [_row(r) for r in rows]
 
 
@@ -206,10 +230,9 @@ async def keyword_search(terms: list[str], limit: int = 20) -> list[dict]:
     tsq = " | ".join(f"{t}:*" if len(t) >= 4 else t for t in terms)
     rows = await db.fetch(
         f"""select {LIST_COLS},
-                   ts_rank(to_tsvector('simple', title || ' ' || summary || ' ' || content),
-                           to_tsquery('simple', $1)) as rank
+                   ts_rank({FTS_DOC}, to_tsquery('simple', $1)) as rank
             from kb_notes
-            where to_tsvector('simple', title || ' ' || summary || ' ' || content) @@ to_tsquery('simple', $1)
+            where {FTS_DOC} @@ to_tsquery('simple', $1)
             order by rank desc, updated_at desc limit $2""", tsq, limit)
     return [_row(r) for r in rows]
 
@@ -258,6 +281,7 @@ def clean_tags(tags: list[Any]) -> list[str]:
 
 
 async def create_note(body: dict, author: str = "founder") -> dict:
+    body = strip_nul(body)  # Postgres text can't hold U+0000
     fmt = "csv" if body.get("format") == "csv" else "md"
     title = str(body.get("title") or "").strip()[:200]
     path = str(body.get("path") or "").strip() or title or "Untitled"
@@ -265,7 +289,7 @@ async def create_note(body: dict, author: str = "founder") -> dict:
     d = Draft(name="", title=title or stem_of(clean_path(path, fmt)), kind=kind, format=fmt,
               content=str(body.get("content") or ""), tags=list(body.get("tags") or []),
               summary=str(body.get("summary") or ""))
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         nid = await insert_draft(conn, d, path=path, file_id=None, author=author,
                                  links=[str(x) for x in body.get("links") or []])
     return await get_note(nid)
@@ -273,7 +297,8 @@ async def create_note(body: dict, author: str = "founder") -> dict:
 
 async def update_note(nid: str, body: dict, author: str = "founder") -> dict:
     nid = _uuid(nid)
-    async with db.pool().acquire() as conn, conn.transaction():
+    body = strip_nul(body)  # Postgres text can't hold U+0000
+    async with db.acquire() as conn, conn.transaction():
         row = await conn.fetchrow("select * from kb_notes where id = $1 for update", nid)
         if row is None:
             raise NoteNotFound("note")
@@ -312,8 +337,8 @@ async def move_links(conn, old: str, new: str) -> None:
 
 async def delete_note(nid: str) -> None:
     nid = _uuid(nid)
-    async with db.pool().acquire() as conn, conn.transaction():
-        gone = await conn.fetchrow("delete from kb_notes where id = $1 returning path, title", nid)
+    async with db.acquire() as conn, conn.transaction():
+        gone = await conn.fetchrow("delete from kb_notes where id = $1 returning path, title, file_id", nid)
         if gone is None:
             raise NoteNotFound("note")
         path = gone["path"]
@@ -326,9 +351,11 @@ async def delete_note(nid: str) -> None:
             kept = [ln for ln in lines if not any(res.resolve(t) == path for t in wikilinks(ln))]
             if len(kept) != len(lines):
                 await conn.execute("update kb_notes set content = $2 where id = $1", hub["id"], "\n".join(kept))
-        # An original with no notes left is dropped too (its text lives nowhere else).
-        await conn.execute("delete from kb_files f where not exists (select 1 from kb_notes n where n.file_id = f.id) "
-                           "and f.status <> 'stored'")
+        # Its original goes too once no note is made from it (its text lives nowhere else). Other files, such as
+        # failed imports the status page lists, are not this note's to drop.
+        if gone["file_id"] is not None:
+            await conn.execute("delete from kb_files f where f.id = $1 and f.status <> 'stored' and not exists "
+                               "(select 1 from kb_notes n where n.file_id = f.id)", gone["file_id"])
 
 
 # ---------------------------------------------------------------- export
@@ -360,12 +387,13 @@ async def export_zip(originals: bool = False) -> bytes:
         if originals:
             used: set[str] = set()
             for f in await db.fetch("select filename, bytes from kb_files order by created_at"):
-                name = f"_originals/{f['filename']}"
+                filename = safe_name(f["filename"])  # rows stored before names were cleaned may hold "../"
+                name = f"_originals/{filename}"
                 k = 1
                 while name in used:
                     k += 1
-                    stem, dot, ext = f["filename"].rpartition(".")
-                    name = f"_originals/{stem or f['filename']} {k}{dot}{ext if stem else ''}"
+                    stem, dot, ext = filename.rpartition(".")
+                    name = f"_originals/{stem or filename} {k}{dot}{ext if stem else ''}"
                 used.add(name)
                 z.writestr(name, bytes(f["bytes"]))
         z.writestr(".vicky/meta.json", json.dumps(meta, indent=2, default=str))

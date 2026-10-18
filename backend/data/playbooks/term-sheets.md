@@ -140,7 +140,7 @@ sell) is common and different from a ROFR on *selling the whole company*.
 
 ## How the panel uses this
 
-- Victor and Kenji float terms; the founder should compute the outcome with the Terms
+- Xenophon (and any investor on the panel) floats terms; the founder should compute the outcome with the Terms
   kit and name the question to ask their lawyer.
 - No agent says whether a term is acceptable, what it should be, or what the company is
   worth. See `valuation-decline.md`.

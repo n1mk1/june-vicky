@@ -147,6 +147,18 @@ async def _add_turn(conn, sid: str, speaker: str, kind: str, text: str, ctx: Tru
     return {"id": row["id"], "seq": row["seq"]}
 
 
+async def _lock_unchanged(conn, session_id: Any, version: int) -> None:
+    """Lock the session row for the write and check nothing was stored since `version` was read: the
+    turn being stored was computed from that state (LLM calls run before the transaction)."""
+    row = await conn.fetchrow("select status::text, version from sessions where id = $1 for update", session_id)
+    if row is None:
+        raise engagements.NotFound("session")
+    if row["status"] != "live":
+        raise CourtError("This session has ended")
+    if row["version"] != version:
+        raise CourtError("That question was already answered")
+
+
 def _hyp(state: dict, hyp_id: str | None) -> tuple[str | None, dict | None]:
     for vc, s in state["vcs"].items():
         for h in s["hyps"]:
@@ -206,7 +218,7 @@ async def start(panel_ids: list[str] | None, question_cap: int | None, coaching:
     if (dc := memory.agenda_candidate(state, ranked, weak=False)) is not None:  # a drilled question opens
         ranked.insert(0, dc)
     line = await _next_line(state, {p.id: p for p in panel}, ctx, ranked, question_count=0, cap=cap, build=build)
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         sid = await conn.fetchval(
             """insert into sessions (engagement_id, truthpack_id, mode, panel, settings, agenda, state, status)
                values ($1, $2, 'prepare', $3, $4, $5, $6, 'live') returning id::text""",
@@ -300,24 +312,26 @@ async def _next_line(state: dict, panel: dict[str, VCPersona], ctx: TruthContext
     _, hyp = _hyp(state, top.target_hyp)
     if hyp is None:
         hyp = vs["hyps"][0]
-    follow_up = top.intent == "follow_up" and bool((state.get("thread") or {}).get("hyp"))
+    # A follow-up digs into the thread being followed; one aimed at another hypothesis opens a new thread.
+    follow_up = top.intent == "follow_up" and (state.get("thread") or {}).get("hyp") == hyp["id"]
+    intent = top.intent if follow_up or top.intent != "follow_up" else "new_topic"
     # The hypothesis's own passages count only while the build they came from is still the active one.
     hyp_kb = hyp.get("kb") if build and state.get("kb_build") == build else None
     line_kb = _merge_kb(kb, hyp_kb)
     notes = await _notes_for(line_kb)
-    spoken = await agents.speak(p, hyp, ctx, top.intent, asked, answer=answer, question=question, checks=checks,
+    spoken = await agents.speak(p, hyp, ctx, intent, asked, answer=answer, question=question, checks=checks,
                                 follow_up=follow_up, kb=line_kb, notes=notes)
     prior = [q["text"] for q in state.get("asked_lines", [])]
-    first = await agents.review_line(p, spoken.text, intent=top.intent, about=hyp["claim"], asked=prior)
+    first = await agents.review_line(p, spoken.text, intent=intent, about=hyp["claim"], asked=prior)
     revised, final = False, None
     if first["verdict"] == "revise" and spoken.source == "llm":
-        again = await agents.speak(p, hyp, ctx, top.intent, asked, answer=answer, question=question, checks=checks,
+        again = await agents.speak(p, hyp, ctx, intent, asked, answer=answer, question=question, checks=checks,
                                    follow_up=follow_up, kb=line_kb, notes=notes, review={**first, "draft": spoken.text})
-        final = code_review.review(again.text, asked=prior, intent=top.intent)
+        final = code_review.review(again.text, asked=prior, intent=intent)
         # Keep the rewrite unless it fails code's checks where the first draft didn't.
-        if final["verdict"] == "approve" or code_review.review(spoken.text, asked=prior, intent=top.intent)["issues"]:
+        if final["verdict"] == "approve" or code_review.review(spoken.text, asked=prior, intent=intent)["issues"]:
             spoken, revised = again, True
-    state.setdefault("asked_lines", []).append({"text": spoken.text, "intent": top.intent})
+    state.setdefault("asked_lines", []).append({"text": spoken.text, "intent": intent})
     if follow_up:
         state["thread"]["depth"] += 1
     else:
@@ -330,7 +344,7 @@ async def _next_line(state: dict, panel: dict[str, VCPersona], ctx: TruthContext
             discussed.append(key)
     vs["last_spoke"] = state["turn_no"]
     quotes = [*(hyp.get("quotes") or []), *([answer] if answer else [])]
-    return _Line(pick, p.id, hyp, top.intent, spoken.text, spoken.regenerated or revised, quotes, notes,
+    return _Line(pick, p.id, hyp, intent, spoken.text, spoken.regenerated or revised, quotes, notes,
                  _reviewed(first, final, revised), hyp["id"])
 
 
@@ -372,6 +386,7 @@ async def answer(sid: str, text: str) -> None:
         raise engagements.NotFound("session")
     if sess["status"] != "live":
         raise CourtError("This session has ended")
+    version = sess["version"]  # the state this answer is computed from; checked again before it is stored
     ctx = await engagements.context(str(sess["engagement_id"]))
     panel = {p.id: p for p in await registry.panel(sess["panel"], strict=False)}
     if set(panel) != set(sess["state"]["vcs"]):  # an investor was removed (or renamed) since the session started
@@ -403,7 +418,8 @@ async def answer(sid: str, text: str) -> None:
     for c in claims:
         r = check_claim(c["metric"], c["value"], c["unit"], ctx.figures, period=c.get("period"),
                         is_forecast=c.get("is_forecast", False), facts=ctx.facts)
-        checks.append({**r.model_dump(mode="json"), "text": c["text"]})
+        checks.append({**r.model_dump(mode="json"), "text": c["text"], "period": c.get("period"),
+                       "is_forecast": bool(c.get("is_forecast", False))})
     # Vicky's score and every VC's belief update run in parallel; the VCs get code's weak/adequate call.
     weak_hint = minds.is_weak(minds.judge(text, hyp, checks, ctx, question))
     state["turn_no"] += 1
@@ -414,7 +430,9 @@ async def answer(sid: str, text: str) -> None:
         if pr is not None:
             kc = await agents.verify_knowledge(pr, question, text, turn_kb, ctx, turn_notes)
             kc = _checked(kc, pr, text, ctx, turn_notes)
-        return kc, await agents.judge(text, hyp, checks, ctx, question, kb=turn_kb, notes=turn_notes, check=kc)
+        # The score shows the note's answer key as the strong answer, so the verdict carries it.
+        return kc, await agents.judge(text, hyp, checks, ctx, question, kb=turn_kb, notes=turn_notes,
+                                      check={**kc, "expected": pr["expected"]} if kc is not None else None)
 
     results = await asyncio.gather(
         scored(),
@@ -462,13 +480,15 @@ async def answer(sid: str, text: str) -> None:
             line = await _next_line(state, panel, ctx, ranked, answer=text, checks=checks, weak=weak, question=question,
                                     question_count=count, cap=cap, kb=turn_kb, build=kb_build)
 
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
+        await _lock_unchanged(conn, sess["id"], version)
         turn = await _add_turn(conn, sid, "founder", "answer", text, ctx, audit_text=False)
         for c in checks:
             await conn.execute(
                 """insert into claims (session_id, turn_id, text, metric, value, unit, period, is_forecast, status, figure_id,
                      figure, severity) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::claim_status,$10,$11,$12)""",
-                sess["id"], turn["id"], c["text"], c["metric"], c["value"], c["unit"], None, False, c["status"],
+                sess["id"], turn["id"], c["text"], c["metric"], c["value"], c["unit"], c["period"], c["is_forecast"],
+                c["status"],
                 c.get("figure_id"), c.get("figure"), 0.85 if c["status"] == "contradicts" else 0.3)
         await conn.execute(
             "insert into scores (turn_id, question_turn_id, accuracy, dims, rationale) values ($1, $2, $3, $4, $5)",
@@ -491,10 +511,10 @@ async def answer(sid: str, text: str) -> None:
         line_turn = None
         if line is not None:
             line_turn = await _store_line(conn, sid, line, ctx, ranked, after_seq=turn["seq"])
-            await conn.execute("update sessions set state = $2, question_count = question_count + 1 where id = $1",
-                               sess["id"], state)
+            await conn.execute("update sessions set state = $2, question_count = question_count + 1, "
+                               "version = version + 1 where id = $1", sess["id"], state)
         else:
-            await conn.execute("update sessions set state = $2 where id = $1", sess["id"], state)
+            await conn.execute("update sessions set state = $2, version = version + 1 where id = $1", sess["id"], state)
     if settings.get("coaching") == "coached":
         await publish(f"session:{sid}", "score.ready", {"turn_seq": turn["seq"]})
     if coach and hyp is not None:
@@ -518,12 +538,17 @@ async def end(sid: str) -> str:
         return existing
     ctx = await engagements.context(str(sess["engagement_id"]))
     panel = {p.id: p for p in await registry.panel(sess["panel"], strict=False)}
-    async with db.pool().acquire() as conn, conn.transaction():
-        await _add_turn(conn, sid, "vicky", "debrief",
-                        "That's time. Your report is ready: every question, how each answer scored, the strong answer "
-                        "with its sources, and what to drill next.", ctx)
-        await conn.execute("update sessions set status = 'ended', ended_at = now() where id = $1", sess["id"])
-    rid = await report.build(sid, ctx, panel)
+    async with db.acquire() as conn, conn.transaction():
+        # Locked, so a second End (a double click, or the automatic end after the last answer) waits here and
+        # then finds the session ended; an answer in flight finds it ended too and stores nothing.
+        status = await conn.fetchval("select status::text from sessions where id = $1 for update", sess["id"])
+        if status != "ended":
+            await _add_turn(conn, sid, "vicky", "debrief",
+                            "That's time. Your report is ready: every question, how each answer scored, the strong "
+                            "answer with its sources, and what to drill next.", ctx)
+            await conn.execute("update sessions set status = 'ended', ended_at = now(), version = version + 1 "
+                               "where id = $1", sess["id"])
+    rid = await report.build(sid, ctx, panel)  # one report per session, however many ends race
     await publish(f"session:{sid}", "session.ended", {"report_id": rid})
     return rid
 

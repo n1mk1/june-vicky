@@ -414,7 +414,9 @@ def _claim_sentences(text: str) -> list[tuple[int, int, str]]:
 
 
 def _norm_quote(s: str) -> str:
-    """Case, curly quotes, markdown marks and whitespace don't matter when matching a note quote."""
+    """Case, curly quotes, markdown marks and whitespace don't matter when matching a note quote.
+    Passages reach the model with `<` and `>` escaped, so a faithful quote may carry the entities."""
+    s = s.replace("&lt;", "<").replace("&gt;", ">")
     s = s.lower().replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
     s = re.sub(r"[*_`#|>]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()

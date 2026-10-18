@@ -219,7 +219,13 @@ export function KnowledgeView() {
     if (stored) await kick();
   };
 
+  // One create at a time: a double-click (or a ghost-link click) while one is in flight is ignored.
+  const creatingRef = useRef(false);
+  const [creating, setCreating] = useState(false);
   const newNote = async (title = "Untitled") => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
     try {
       const n = await apiPost<KbNoteDetail>("kb/notes", { title, content: `# ${title}\n\n` });
       reloadNotes();
@@ -227,6 +233,9 @@ export function KnowledgeView() {
       open(n.id, true);
     } catch (err) {
       if (!guard(err)) setError(errorText(err));
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   };
 
@@ -332,7 +341,12 @@ export function KnowledgeView() {
             onClick={() => folderInput.current?.click()}
             className="hidden sm:inline-flex"
           />
-          <PillButton label="New note" icon={<FilePlus2 className="size-3.5" strokeWidth={1.5} />} onClick={() => void newNote()} />
+          <PillButton
+            label="New note"
+            icon={<FilePlus2 className="size-3.5" strokeWidth={1.5} />}
+            onClick={() => void newNote()}
+            disabled={creating}
+          />
           <PillButton
             label="Organize"
             icon={<Sparkles className="size-3.5" strokeWidth={1.5} />}
@@ -408,13 +422,14 @@ export function KnowledgeView() {
       ) : (
         <div
           className={cn(
-            "grid min-h-0 flex-1 gap-3",
+            // One column below lg, and min-w-0 on each child, so a wide table scrolls inside its panel, not the page.
+            "grid min-h-0 flex-1 grid-cols-1 gap-3",
             selected
               ? "lg:grid-cols-[240px_minmax(0,0.9fr)_minmax(0,1.1fr)]"
               : "lg:grid-cols-[260px_minmax(0,1fr)]",
           )}
         >
-          <Panel title="Vault" className="max-h-[320px] lg:max-h-none" bodyClassName="min-h-0">
+          <Panel title="Vault" className="max-h-[320px] min-w-0 lg:max-h-none" bodyClassName="min-h-0">
             <NoteTree
               notes={list}
               selected={selected}
@@ -427,7 +442,7 @@ export function KnowledgeView() {
           <Panel
             title="Graph"
             aside={<span className="label">{graph.data ? `${graph.data.nodes.length} nodes · ${graph.data.links.length} links` : ""}</span>}
-            className="h-[380px] lg:h-auto"
+            className="h-[380px] min-w-0 lg:h-auto"
             bodyClassName="relative flex min-h-0 flex-col"
           >
             {graph.data ? (
@@ -447,7 +462,7 @@ export function KnowledgeView() {
             )}
           </Panel>
           {selected && (
-            <section className="glass relative min-h-[480px] rounded-[4px] lg:min-h-0">
+            <section className="glass relative min-h-[480px] min-w-0 rounded-[4px] lg:min-h-0">
               <CornerMarks />
               <NoteEditor
                 key={selected}

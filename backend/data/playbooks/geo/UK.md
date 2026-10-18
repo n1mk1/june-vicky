@@ -28,7 +28,7 @@ can change.
 - EIS shares must be paid up in full in cash, full-risk ordinary shares that are not redeemable and carry no special rights to assets; the money must be spent within 2 years and the rules followed for at least 3 years. Source: https://www.gov.uk/guidance/venture-capital-schemes-apply-for-the-enterprise-investment-scheme (verify with an advisor)
 - HMRC advance assurance on whether a share issue is likely to qualify is optional. Source: https://www.gov.uk/guidance/venture-capital-schemes-apply-for-the-enterprise-investment-scheme (verify with an advisor)
 
-## What Claire probes
+## What a mandate fund probes
 
 - How much of runway depends on R&D relief, and what happens if a claim is reduced or
   paid late? Does the company still meet the ERIS intensity condition after the hiring plan?

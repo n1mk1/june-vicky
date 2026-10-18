@@ -294,7 +294,8 @@ export function AreopagusView() {
 
   return (
     <div data-scroll-area className="scroll-thin -mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-4">
-      <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-5">
+      {/* The builder is modal: the page behind it is out of reach (focus, clicks, screen readers) while it's open. */}
+      <div inert={building} className="mx-auto flex w-full max-w-[1480px] flex-col gap-5">
         <header className="flex flex-col gap-x-8 gap-y-2 pt-1 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-col gap-1">
             <span className="label">

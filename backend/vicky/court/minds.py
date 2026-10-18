@@ -9,12 +9,13 @@ Every sentence that carries a number is audited against the engine's Figures bef
 import re
 from typing import Any
 
+from vicky.areopagus.registry import canonical
 from vicky.areopagus.schema import LENS_LABELS, VCPersona
 from vicky.audit import audit_text
 from vicky.model.context import TruthContext
 from vicky.model.figures import Figure
 from vicky.model.truth import AttackItem, _lc
-from vicky.playbooks import BankQuestion, bank_ids, fill, question_bank
+from vicky.playbooks import BankQuestion, bank_ids, country_programs, fill, question_bank
 
 MAX_HYPS = 4
 SHARE_SEVERITY = 0.8
@@ -104,7 +105,7 @@ def _bank_match(p: VCPersona, hyp: dict, asked: set[str]) -> list[tuple[int, Ban
     """Unasked bank questions for a hypothesis with a relevance score (≥ 2 means it names the evidence)."""
     words = LENS_WORDS.get(hyp["lens"], [])
     scored = []
-    for q in question_bank(p.id):
+    for q in question_bank(canonical(p.id)):  # a session under an old id asks from the new investor's bank
         if f"{p.id}#{q.n}" in asked:
             continue
         t = q.text.lower()
@@ -144,6 +145,15 @@ TONE_OPENERS = {
 }
 
 
+def fill_extra(ctx: TruthContext, voice: str = "your") -> dict[str, str]:
+    """Bank placeholders that aren't figures: the largest customer (in the speaker's voice) and the country's
+    public programmes from the geo playbook (Plato's mandate questions)."""
+    out = {"top_customer": f"{voice} largest customer"}
+    if programs := country_programs(ctx.profile.get("country")):
+        out["country_programs"] = programs
+    return out
+
+
 def question_for(p: VCPersona, hyp: dict, ctx: TruthContext, asked: set[str], company_extra: dict | None = None) -> str:
     """The VC's question on a hypothesis: the evidence line, then a question in their voice.
 
@@ -151,7 +161,7 @@ def question_for(p: VCPersona, hyp: dict, ctx: TruthContext, asked: set[str], co
     evidence line gets the lens probe, so the two halves never talk past each other.
     """
     figs = _figs(ctx)
-    extra = {"top_customer": "your largest customer", **(company_extra or {})}
+    extra = {**fill_extra(ctx), **(company_extra or {})}
     quotes = hyp.get("quotes") or []
     lead = hyp["detail"] if hyp.get("detail") and passes(hyp["detail"], ctx, quotes) else ""
     for score, q in _bank_match(p, hyp, asked):
@@ -187,7 +197,7 @@ def follow_up_for(p: VCPersona, hyp: dict, ctx: TruthContext, checks: list[dict]
         return "That's a story, not evidence. What would you show me to prove it?"
     for _, q in _bank_match(p, hyp, asked):
         if "so what" in q.text.lower() or not q.placeholders:
-            text = fill(q.text, _figs(ctx), ctx.company, {"top_customer": "your largest customer"})
+            text = fill(q.text, _figs(ctx), ctx.company, fill_extra(ctx))
             if text and passes(text, ctx):
                 asked.add(f"{p.id}#{q.n}")
                 return text
@@ -289,7 +299,7 @@ def strong_answer(hyp: dict, ctx: TruthContext) -> str:
             # only a first-person, spoken answer can be handed to the founder as a rewrite.
             if not re.match(r"^(\{|\d|we\b|our\b|i\b|it's|they're|nothing\b|over\b|in\b|since\b)", q.strong.strip().lower()):
                 continue
-            text = fill(q.strong, figs, ctx.company, {"top_customer": "our largest customer"})
+            text = fill(q.strong, figs, ctx.company, fill_extra(ctx, "our"))
             if text and passes(text, ctx):
                 return text
     f = next((ctx.figure(e) for e in hyp["evidence"] if ctx.figure(e)), None)

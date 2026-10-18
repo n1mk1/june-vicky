@@ -53,7 +53,7 @@ async def save_drills(sid: str, items: list[dict]) -> list[dict]:
         sess["id"], list(marks))
     state = sess["state"] or {"vcs": {}}
     out = []
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         for t in turns:
             mark = marks[t["seq"]]
             _, h = _hyp_of(state, t["hypothesis_id"])

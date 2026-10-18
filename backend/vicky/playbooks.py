@@ -16,7 +16,7 @@ from vicky import DATA_DIR
 from vicky.model.figures import Figure
 
 PLAYBOOKS = DATA_DIR / "playbooks"
-GEO = {"CA": "CA", "US": "US", "GB": "UK", "UK": "UK"}
+GEO = {"CA": "CA", "CAN": "CA", "US": "US", "USA": "US", "GB": "UK", "UK": "UK", "GBR": "UK"}
 PLACEHOLDER = re.compile(r"\{([a-z0-9_.]+)\}")
 
 
@@ -26,6 +26,7 @@ class Playbook:
     title: str
     topics: list[str]
     body: str
+    meta: dict = field(default_factory=dict)  # the front matter
 
 
 @dataclass
@@ -46,7 +47,7 @@ def _parse(path) -> Playbook:
         _, fm, body = raw.split("---", 2)
         meta = yaml.safe_load(fm) or {}
     return Playbook(id=path.stem, title=str(meta.get("title") or path.stem), topics=[str(t) for t in meta.get("topics") or []],
-                    body=body.strip())
+                    body=body.strip(), meta=meta)
 
 
 @lru_cache
@@ -60,6 +61,15 @@ def geo_playbook(country: str | None) -> Playbook | None:
     if not path.exists():
         path = PLAYBOOKS / "geo" / "generic.md"
     return _parse(path) if path.exists() else None
+
+
+@lru_cache
+def country_programs(country: str | None) -> str | None:
+    """The public programmes a mandate fund asks about in this country (`country_programs` in the geo
+    playbook's front matter, e.g. "SR&ED tax credits and IRAP funding" for CA); the generic wording otherwise."""
+    g = geo_playbook(str(country or "").strip())
+    v = str((g.meta if g else {}).get("country_programs") or "").strip()
+    return v or None
 
 
 def read_playbook(topic: str, country: str | None = None) -> list[Playbook]:

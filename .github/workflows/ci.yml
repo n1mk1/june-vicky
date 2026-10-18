@@ -20,7 +20,8 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:17
+        # pgvector, as in docker-compose.yml and on Render: the vector search path runs in CI too.
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: vicky
           POSTGRES_PASSWORD: vicky
@@ -58,6 +59,8 @@ jobs:
         run: uv sync --frozen
       - name: Ruff
         run: uv run ruff check .
+      - name: Ruff format
+        run: uv run ruff format --check .
       - name: Pytest
         run: uv run pytest -q
 
@@ -87,6 +90,115 @@ jobs:
         run: npm run lint
       - name: Build
         run: npm run build
+
+  # The Playwright suite against a real stack: Postgres + Valkey services, the API (inline jobs,
+  # offline agents) and the production web build. global-setup signs in with ACCESS_CODE and fills a
+  # dashboard from a sample's files when none is confirmed.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: vicky
+          POSTGRES_PASSWORD: vicky
+          POSTGRES_DB: vicky
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vicky -d vicky"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      # api
+      DATABASE_URL: postgresql://vicky:vicky@localhost:5432/vicky
+      REDIS_URL: redis://localhost:6379
+      JOBS_MODE: inline
+      LLM_MODE: offline
+      ACCESS_CODE: ci-e2e-access-code
+      COOKIE_SECRET: ci-e2e-cookie-secret
+      WEB_ORIGIN: http://127.0.0.1:3000
+      # Every browser request reaches the API from one address; don't let the per-IP limit flake the run.
+      RATE_LIMIT_PER_MIN: "100000"
+      # web
+      API_INTERNAL_URL: http://127.0.0.1:8000
+      API_PUBLIC_WS_URL: ws://127.0.0.1:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+      # playwright (global-setup reads ACCESS_CODE too)
+      BASE_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.11.33"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Use npm 11
+        run: npm install -g npm@11.6.2
+      - name: Install api
+        working-directory: backend
+        run: uv sync --frozen
+      - name: Install web
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm ci --no-audit --no-fund
+      - name: Build web
+        working-directory: frontend
+        # output: "standalone": serve it like the image does, with its static files beside it.
+        run: |
+          npm run build
+          cp -r public .next/standalone/public
+          cp -r .next/static .next/standalone/.next/static
+      - name: Start api
+        working-directory: backend
+        run: nohup uv run uvicorn vicky.api:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
+      - name: Start web
+        working-directory: frontend
+        run: PORT=3000 HOSTNAME=127.0.0.1 nohup node .next/standalone/server.js > "$RUNNER_TEMP/web.log" 2>&1 &
+      - name: Wait for the stack
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/healthz && curl -fsS http://127.0.0.1:3000/api/health; then exit 0; fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/api.log" "$RUNNER_TEMP/web.log"
+          exit 1
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Playwright
+        working-directory: frontend
+        run: npx playwright test
+      - name: Server logs
+        if: failure()
+        run: cat "$RUNNER_TEMP/api.log" "$RUNNER_TEMP/web.log"
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
 
   docker-build:
     runs-on: ubuntu-latest

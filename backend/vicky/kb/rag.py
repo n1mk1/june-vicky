@@ -106,6 +106,7 @@ class _Index:
     bm25: BM25
     pos: dict[str, int]
     by_note: dict[str, list[int]]
+    vectors: bool = False  # the build stored embeddings (an index built without a Voyage key has none)
 
 
 _INDEX: _Index | None = None
@@ -132,7 +133,9 @@ async def _index(build_id: str) -> _Index:
         by_note: dict[str, list[int]] = {}
         for i, r in enumerate(rows):
             by_note.setdefault(r["note_id"], []).append(i)
-        _INDEX = _Index(build_id, rows, BM25(docs), {r["id"]: i for i, r in enumerate(rows)}, by_note)
+        vectors = bool(await db.fetchval("select embed_model is not null from kb_index_builds where id = $1::uuid",
+                                         build_id))
+        _INDEX = _Index(build_id, rows, BM25(docs), {r["id"]: i for i, r in enumerate(rows)}, by_note, vectors)
         log.info("kb BM25 index loaded for build %s: %d chunks", build_id, len(rows))
         return _INDEX
 
@@ -212,7 +215,7 @@ async def query_vector(text: str) -> list[float] | None:
 async def _vector_hits(build_id: str, vec: list[float] | None, limit: int) -> list[tuple[str, float]]:
     if vec is None:
         return []
-    async with db.pool().acquire() as conn, conn.transaction():
+    async with db.acquire() as conn, conn.transaction():
         await conn.execute(f"set local hnsw.ef_search = {max(100, limit * 2)}")
         rows = await conn.fetch(
             "select id::text, 1 - (embedding <=> $1::halfvec) as sim from kb_chunks "
@@ -305,7 +308,8 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
     if mode == "recover":
         queries = [(query, 0.5), (query, 1.0), *((e, 0.5) for e in extra)]
     vec_texts = list(dict.fromkeys([query, *(extra if mode == "recover" else [])]))
-    vecs = await asyncio.gather(*(query_vector(t) for t in vec_texts))
+    # A build without embeddings has nothing to search by vector: don't embed the question for it.
+    vecs = await asyncio.gather(*(query_vector(t) for t in vec_texts)) if idx.vectors else [None] * len(vec_texts)
     vec_lists = await asyncio.gather(*(_vector_hits(build_id, v, cfg["lists"]) for v in vecs))
     lists: list[list[str]] = []
     bm25_top: list[str] = []
@@ -379,7 +383,7 @@ async def retrieve(query: str, *, mode: Mode = "ask", k: int | None = None,
         kept.append(c)
         if len(kept) >= k:
             break
-    with_vec = any(vecs)
+    with_vec = any(vec_lists)  # vector hits came back, not merely a query vector
     signals: dict[str, Any] = {"vectors": with_vec, "reranked": bool(rr)}
     if kept:
         top = kept[0]

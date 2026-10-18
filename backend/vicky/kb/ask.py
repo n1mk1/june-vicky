@@ -74,11 +74,23 @@ def _key(build: str, kbv: int, ctx: TruthContext, question: str) -> str:
             f"{rag._sha(rag.normalize(question))}")
 
 
+def _attr(s: Any, n: int = 300) -> str:
+    """A tag attribute value: no angle brackets or double quotes, so it can't end the attribute or the tag."""
+    return re.sub(r'[<>"]', "", str(s or ""))[:n]
+
+
+def _body(s: Any) -> str:
+    """Note text inside a tag, its angle brackets escaped so it can't close the tag or open another (the same
+    rule as llm/minds.py). "&" is kept as written, so "SR&ED" still quotes word for word."""
+    return str(s or "").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _chunk_block(chunks: list[dict]) -> str:
     out = []
     for c in chunks:
-        ctx_lines = "".join(f"\n<context>{t}</context>" for t in c.get("context") or [])
-        out.append(f'<passage cite="{c["cite"]}" note="{c["path"]}" heading="{c["heading"]}">\n{c["text"]}{ctx_lines}\n</passage>')
+        ctx_lines = "".join(f"\n<context>{_body(t)}</context>" for t in c.get("context") or [])
+        out.append(f'<passage cite="{_attr(c["cite"])}" note="{_attr(c["path"])}" heading="{_attr(c["heading"])}">'
+                   f'\n{_body(c["text"])}{ctx_lines}\n</passage>')
     return "<passages>\n" + "\n".join(out) + "\n</passages>"
 
 
@@ -265,7 +277,8 @@ async def _snapshot(recovered: rag.Retrieval | None) -> tuple[str, list[dict]]:
             out.append(n)
             size += len(n["content"])
         notes = sorted(out, key=lambda n: n["path"])
-    body = "\n".join(f'<note path="{n["path"]}" title="{n["title"]}">\n{n["content"]}\n</note>' for n in notes)
+    body = "\n".join(f'<note path="{_attr(n["path"])}" title="{_attr(n["title"])}">\n{_body(n["content"])}\n</note>'
+                     for n in notes)
     return f"<vault>\n{body}\n</vault>", notes
 
 

@@ -96,6 +96,7 @@ class Answer:
     suggestions: list[str] = field(default_factory=list)
     chart: str | None = None  # a chat request that would chart what was asked about
     topic: str = "answer"
+    chart_key: str | None = None  # the figure id or series key `chart` draws (default: `topic`)
 
 
 def norm(text: str) -> str:
@@ -104,6 +105,7 @@ def norm(text: str) -> str:
     t = t.replace("%", " pct ")
     t = re.sub(r"[-_/]", " ", t)
     t = re.sub(r"[^\w\s.$']", " ", t)
+    t = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", t)  # "burn incl. credits" reads as "burn incl credits"; keeps "1.5"
     return re.sub(r"\s+", " ", t).strip()
 
 
@@ -245,11 +247,58 @@ def vocabulary(ctx: TruthContext, series: dict[str, Series]) -> dict[str, Target
     for phrase in list(vocab):
         if phrase.endswith(" costs"):
             vocab.setdefault(phrase[:-1], vocab[phrase])  # "hosting costs" → "hosting cost"
+    _figure_variants(ctx, add, vocab)
     # The headline field and metric of the same name answer together ("revenue" → series + figure).
     if "revenue" in ctx.figures and norm("revenue") in vocab:
         ids = vocab[norm("revenue")].figure_ids
         ids[:] = ["revenue", *(i for i in ids if i != "revenue")]
     return vocab
+
+
+# How founders name a figure the engine labels differently. Only phrases nothing else claims are added.
+QA_ALIASES: dict[str, list[str]] = {
+    "net new arr": ["net_new_arr_l12m"], "net new annual recurring revenue": ["net_new_arr_l12m"],
+    "new arr": ["net_new_arr_l12m"], "arr added": ["net_new_arr_l12m"],
+    "burn excluding credits": ["burn"], "burn before credits": ["burn"], "burn net of credits": ["burn_incl_credits"],
+    "burn after credits": ["burn_incl_credits"],
+}
+_QUALIFIERS = {
+    "incl": ("incl", "including", "with", "inc"), "including": ("incl", "including", "with", "inc"),
+    "with": ("incl", "including", "with", "inc"),
+    "excl": ("excl", "excluding", "ex", "without"), "excluding": ("excl", "excluding", "ex", "without"),
+    "ex": ("excl", "excluding", "ex", "without"), "without": ("excl", "excluding", "ex", "without"),
+}
+
+
+def _figure_variants(ctx: TruthContext, add, vocab: dict[str, Target]) -> None:
+    """Extra names for computed figures, added only where no other phrase already claims them:
+
+    - the label before its qualifier: "Net new ARR, last 12 months" → "net new arr";
+    - every way of saying incl./excl.: "Average monthly burn incl. credits" → "burn including credits",
+      "burn with credits", "monthly burn incl credits", …
+    """
+    def new(phrase: str, fid: str) -> None:
+        if norm(phrase) not in vocab:
+            add(phrase, figure=fid)
+
+    for phrase, ids in QA_ALIASES.items():
+        fid = next((i for i in ids if i in ctx.figures), None)
+        if fid:
+            new(phrase, fid)
+    for fid, f in ctx.figures.items():
+        if fid.startswith("fact.") or not f.label:
+            continue
+        label = norm(f.label.split(",")[0])
+        if label != norm(f.label):
+            new(label, fid)
+        words = label.split()
+        at = next((i for i, w in enumerate(words) if w in _QUALIFIERS and 0 < i < len(words) - 1), None)
+        if at is None:
+            continue
+        head, tail = words[:at], " ".join(words[at + 1:])
+        for start in range(len(head)):
+            for q in _QUALIFIERS[words[at]]:
+                new(f"{' '.join(head[start:])} {q} {tail}", fid)
 
 
 def find_targets(t: str, vocab: dict[str, Target]) -> list[Target]:
@@ -455,14 +504,15 @@ def answer(question: str, ctx: TruthContext) -> dict[str, Any]:
         # Never show an unchecked number: fall back to the figures we built, stated plainly.
         safe = "Here is what your data says: " + "; ".join(f"{f.label}: {f.display}" for f in a.figures[:6]) + "." \
             if a.figures else "I couldn't answer that reliably from your data."
-        a = Answer(reply=safe, figures=a.figures, suggestions=a.suggestions, chart=a.chart, topic=a.topic)
+        a = Answer(reply=safe, figures=a.figures, suggestions=a.suggestions, chart=a.chart, topic=a.topic,
+                   chart_key=a.chart_key)
         res = audit_text(a.reply, ctx.available() + a.figures)
         if not res.passed:  # not even the plain figures check out: say so rather than show them uncited
             a = Answer(reply="I couldn't answer that reliably from your data.", suggestions=a.suggestions,
-                       chart=a.chart, topic=a.topic)
+                       chart=a.chart, topic=a.topic, chart_key=a.chart_key)
             res = audit_text(a.reply, [])
     return {"kind": "answer", "reply": a.reply, "citations": [c.model_dump(mode="json") for c in res.citations],
-            "suggestions": a.suggestions[:4], "chart": drawable(a.chart, ctx), "topic": a.topic,
+            "suggestions": a.suggestions[:4], "chart": drawable(a.chart, ctx, a.chart_key or a.topic), "topic": a.topic,
             "audit": {"passed": res.passed, "findings": [f.model_dump() for f in res.findings]}}
 
 
@@ -503,9 +553,11 @@ def _answer(question: str, ctx: TruthContext) -> Answer:
     parts = [p for p in parts if p is not None]
     if not parts:
         return _not_found(raw, vocab, ctx)
+    drawn = next((p for p in parts if p.chart), None)
     out = Answer(" ".join(p.reply for p in parts), [f for p in parts for f in p.figures],
                  [v for p in parts for v in p.allowed], suggestions=[s for p in parts for s in p.suggestions],
-                 chart=next((p.chart for p in parts if p.chart), None), topic=parts[0].topic)
+                 chart=drawn.chart if drawn else None, topic=parts[0].topic,
+                 chart_key=(drawn.chart_key or drawn.topic) if drawn else None)
     return out
 
 
@@ -527,7 +579,8 @@ def _answer_target(tg: Target, op: Op, when: When, ctx: TruthContext, series: di
             if s is not None and isinstance(fig, Figure) and TREND_WORDS.search(tg.phrase + " " + _LAST_RAW[0]):
                 trend = _series_answer(s, "change", When(last=6, label="the last 6 months"), None)
                 return Answer(f"{trend.reply} {base.reply}", trend.figures, base.allowed + trend.allowed,
-                              chart=trend.chart or base.chart, topic=base.topic)
+                              chart=trend.chart or base.chart, topic=base.topic,
+                              chart_key=trend.topic if trend.chart else base.topic)
             return base
         if s is not None:
             return _explain_series(s, when)
@@ -700,19 +753,39 @@ def _agg_reply(s: Series, f: Figure, how: str, span: str) -> str:
     return f"{s.label} was {f.display} at the end of {pl(f.period.split('..')[-1]) if f.period else span} (it's a balance, so it isn't summed)."
 
 
-def drawable(chart: str | None, ctx: TruthContext) -> str | None:
+def _chart_refs(key: str, ctx: TruthContext) -> set[str]:
+    """Widget series refs that draw the figure or series `key` (a figure id, a canonical field or a qa series)."""
+    from vicky.viz.evaluate import metric_series_expr
+
+    refs = {key, key.removeprefix("fact.")}
+    if key in ("revenue", "revenue.total"):
+        refs |= {"revenue", "revenue.total"}
+    if key == "burn":  # the qa series and the engine figure both exclude credits when there are any
+        refs.add("burn_ex_non_dilutive" if ctx.model.has("non_dilutive_income") else "burn")
+    months = {"quarter": 3, "year": 12}.get(ctx.model.granularity, 1)
+    expr = metric_series_expr(key, ctx, months)
+    if expr:
+        refs.add(expr)
+    return refs
+
+
+def drawable(chart: str | None, ctx: TruthContext, key: str | None = None) -> str | None:
     """The "Chart it" request, only if the dashboard's phrase mapper turns it into one chart of one measure
-    that the data can draw. Labels such as "Burn (net loss excluding credits)" or "Gross margin, as booked"
-    name other measures, so the label is also tried without its parenthesis and qualifier."""
+    that the data can draw, and (given `key`, the figure id or series key the answer was about) that measure
+    is the one asked about: "one-time revenue" must never be offered as a total-revenue chart. Labels such
+    as "Burn (net loss excluding credits)" or "Gross margin, as booked" name other measures, so the label is
+    also tried without its parenthesis and qualifier."""
     from vicky.viz import evaluate_widget
     from vicky.viz.phrases import interpret
 
     if not chart:
         return None
+    wanted = _chart_refs(key, ctx) if key else None
     short = re.sub(r"\s*\([^)]*\)", "", chart).split(",")[0].strip()
     for text in dict.fromkeys((chart, short)):
         it = interpret(text, ctx)
         if it.kind == "widget" and it.spec is not None and len(it.spec.series) == 1 \
+                and (wanted is None or it.spec.series[0].ref.strip() in wanted) \
                 and evaluate_widget(it.spec, ctx).status == "ok":
             return text
     return None

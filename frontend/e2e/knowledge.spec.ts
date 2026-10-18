@@ -107,7 +107,7 @@ test("import converts, files and links the notes", async ({ page, request }) => 
   const notes = await runNotes(request);
   expect(notes.map((n) => n.kind).sort()).toEqual(["document", "document", "note", "table", "table"]);
   expect(notes.every((n) => !n.path.startsWith("inbox/"))).toBeTruthy(); // the organizer filed them
-  for (const n of notes) await expect(page.getByRole("navigation", { name: "Notes" }).getByRole("button", { name: n.title })).toBeVisible();
+  for (const n of notes) await expect(page.getByRole("navigation", { name: "Notes" }).getByRole("button", { name: n.title, exact: true })).toBeVisible();
   await expect(page.locator("main canvas").first()).toBeVisible();
   await expect(page.getByText(/\d+ nodes · \d+ links/)).toBeVisible();
 
@@ -127,6 +127,15 @@ test("reading: wikilinks open notes, tables render, backlinks show", async ({ pa
   await expect(page.getByRole("columnheader", { name: /subscription revenue/i })).toBeVisible();
   await expect(page.getByRole("cell", { name: "45500" })).toBeVisible();
   await expect(page.getByText(/Linked from · \d/)).toBeVisible();
+
+  // On a phone the page never scrolls sideways: the wide table scrolls inside its panel.
+  const sideways = () => page.evaluate(() => document.scrollingElement!.scrollWidth - document.scrollingElement!.clientWidth);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByRole("cell", { name: "45500" })).toBeAttached();
+  expect(await sideways(), "sideways scroll with a table open").toBeLessThanOrEqual(0);
+  await page.getByRole("button", { name: "Close note" }).click();
+  await expect(page.getByLabel("Note title")).toHaveCount(0);
+  expect(await sideways(), "sideways scroll on the vault").toBeLessThanOrEqual(0);
 });
 
 test("editing autosaves, survives a reload and adds a graph link", async ({ page }) => {
@@ -152,7 +161,7 @@ test("rename, tags and a ghost link that creates its note", async ({ page, reque
   const title = page.getByLabel("Note title");
   await title.fill(`${RUN} fundraising plan`);
   await title.press("Enter");
-  await expect(page.getByRole("navigation", { name: "Notes" }).getByRole("button", { name: `${RUN} fundraising plan` })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Notes" }).getByRole("button", { name: `${RUN} fundraising plan`, exact: true })).toBeVisible();
 
   const tag = page.getByLabel("Add a tag");
   await tag.fill("Board Prep");
@@ -168,12 +177,34 @@ test("rename, tags and a ghost link that creates its note", async ({ page, reque
   expect((await runNotes(request)).some((n) => n.title === `${RUN} interviews`)).toBeTruthy();
 });
 
+test("double-clicking New note makes one note", async ({ page, request }) => {
+  const creates = (r: { method: () => string; url: () => string }) => r.method() === "POST" && new URL(r.url()).pathname === "/api/v1/kb/notes";
+  let sent = 0;
+  const made: string[] = [];
+  page.on("request", (r) => {
+    if (creates(r)) sent++;
+  });
+  page.on("response", async (r) => {
+    if (creates(r.request()) && r.ok()) made.push(((await r.json()) as Note).id);
+  });
+  try {
+    await page.goto("/knowledge");
+    await expect(page.getByRole("navigation", { name: "Notes" })).toBeVisible();
+    await page.getByRole("button", { name: "New note", exact: true }).dblclick();
+    await expect(page.getByLabel("Note title")).toHaveValue("Untitled");
+    await page.waitForTimeout(1000); // a second create, if one went out, has answered by now
+    expect(sent).toBe(1);
+  } finally {
+    for (const id of made) await request.delete(`/api/v1/kb/notes/${id}`);
+  }
+});
+
 test("search filters titles and finds words inside notes", async ({ page }) => {
   await page.goto("/knowledge");
   const search = page.getByLabel("Search notes");
   await search.fill(`${RUN} memo`);
   const tree = page.getByRole("navigation", { name: "Notes" });
-  await expect(tree.getByRole("button", { name: new RegExp(`${RUN} memo`, "i") })).toBeVisible();
+  await expect(tree.getByRole("button", { name: new RegExp(`^${RUN} memo`, "i") })).toBeVisible();
   await expect(tree.getByRole("button", { name: new RegExp(`${RUN} pnl`, "i") })).toHaveCount(0);
   await search.fill("crowded");
   await expect(page.getByText("In note contents")).toBeVisible({ timeout: 10_000 });

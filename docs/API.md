@@ -1,6 +1,6 @@
 # Vicky — REST API contract (as implemented)
 
-Companion to [02-TRD §8](02-TRD.md). Base path `/api/v1` (the web app reaches it through the same-origin proxy `frontend/app/api/v1/[...path]`). Every route needs the access cookie except `GET /healthz` (also at `/healthz`) and `/auth/*`; without it the API returns **401** `{detail}`. JSON everywhere; errors are `{detail: string}`.
+Companion to [02-TRD §8](02-TRD.md). Base path `/api/v1` (the web app reaches it through the same-origin proxy `frontend/app/api/v1/[...path]`). Every route needs the access cookie except `GET /healthz` (also at `/healthz`) and `/auth/*`; without it the API returns **401** `{detail}`. JSON everywhere; errors are `{detail: string}`. A request body over `REQUEST_MAX_BYTES` is **413** before it is read; `NaN`/`Infinity` in a numeric field is **422**.
 
 Shapes below use TypeScript notation. `Figure` / `MissingFigure` / `Fact` are as in [05-Backend schema §4](05-BACKEND-SCHEMA.md).
 
@@ -8,8 +8,8 @@ Shapes below use TypeScript notation. `Figure` / `MissingFigure` / `Fact` are as
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| GET | `/healthz` | — | `{db: "ok"\|"error", kv: "ok"\|"error"}` |
-| POST | `/auth/access` | `{code}` | `{ok: true}` + `Set-Cookie`; 401 wrong code; 429 after 5 tries/min |
+| GET | `/healthz` | — | 200 `{db: "ok", kv: "ok"\|"error"}`; **503** with the same body when `db` is `"error"` (`kv` is informational) |
+| POST | `/auth/access` | `{code}` | `{ok: true}` + `Set-Cookie`; 401 wrong code; 429 after 5 tries/min per IP, or for everyone after `ACCESS_FAILURES_PER_MIN` (60) wrong codes/min across all IPs |
 | GET | `/auth/session` | — | `{ok: boolean}` |
 | POST | `/auth/logout` | — | `{ok: true}` |
 
@@ -125,7 +125,7 @@ type Session = { id: string; status: "live"|"ended"; mode: "prepare"; panel: Per
 ```
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| POST | `/court/start` | `{panel?: string[] (≤5, default james/alex/mark), question_cap?: 6–20 (default 8), coaching?: "coached"\|"realistic", focus?: string, drills?: string[] (founder_memory drill ids; default every pending drill)}` | `Session` (Vicky intro + first question; drilled questions open the agenda, the last 3 reports' weak spots start with raised severity; `carried[]` lists what came back and where it was asked); 409 without a confirmed TruthPack |
+| POST | `/court/start` | `{panel?: string[] (≤5, default aristotle/thales/xenophon/plato/socrates), question_cap?: 4–20 (default 8), coaching?: "coached"\|"realistic", focus?: string, drills?: string[] (founder_memory drill ids; default every pending drill)}` | `Session` (Vicky intro + first question; drilled questions open the agenda, the last 3 reports' weak spots start with raised severity; `carried[]` lists what came back and where it was asked); 409 without a confirmed TruthPack |
 | GET | `/court/{id}` | — | `Session` |
 | POST | `/court/{id}/answer` | `{text}` | `Session` (founder answer, claim checks, score, chair pick, next VC question or coach card; ends at the cap) |
 | POST | `/court/{id}/drills` | `{items: [{seq, mark: "repeat"\|"study"}]}` (1–20) | `{drills: [{id, seq, mark, topic, lens}]}` saved to `founder_memory` (kind `drill`); 422 when none of the seqs is a question of that session |
@@ -217,7 +217,9 @@ type DocFact = Fact & { status: "pending"; kind: "historical"|"forecast";   // f
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/jobs/{id}` | `{id, kind, status, error, result, enqueued_at, finished_at}` |
-| POST | `/jobs/{id}/retry` | `{ok: true}` (re-runs a failed or stale job) |
+| GET | `/jobs/{id}` | `{id, kind, status, error, result, enqueued_at, finished_at}`; 404 unknown id |
+| POST | `/jobs/{id}/retry` | `{ok: true}`: re-queues a `failed` or `stale` job; **404** unknown or malformed id; **409** when the job is `queued`, `running` or `done` |
+
+A job cancelled mid-run (worker `job_timeout`, redeploy, instance sleep) ends `failed` with `error: "interrupted"`. The sweeper marks `stale` a job `queued` for over 15 min or `running` for over 15 min (job timeout 600 s + 5 min margin).
 
 Mapping `proposer` gains `"claude"` (Claude's proposal merged with the heuristic). Memos stored for a session carry `source: "llm"` when Claude wrote them.

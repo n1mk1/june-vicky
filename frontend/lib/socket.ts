@@ -51,7 +51,6 @@ class RealtimeSocket {
   private attempt = 0;
   private opened = 0;
   private retry: number | null = null;
-  private ping: number | null = null;
   private idle: number | null = null;
   private connecting = false;
   private wired = false;
@@ -138,21 +137,40 @@ class RealtimeSocket {
     this.connecting = false;
     if (!this.subs.size) return;
 
+    // Another path opened a socket while this one fetched its token: keep that one, never two.
+    if (this.ws) {
+      if (this.ws.readyState === WebSocket.OPEN) this.setStatus("open");
+      return;
+    }
+
     const ws = new WebSocket(url);
     this.ws = ws;
+    // Each socket owns its ping timer, so a stale socket closing late can't stop the live one's.
+    let ping: number | null = null;
     ws.onopen = () => {
+      if (this.ws !== ws) {
+        ws.close();
+        return;
+      }
       this.attempt = 0;
       this.setStatus("open");
       // Channels added while the socket was opening are not in the URL.
       const inUrl = new Set(new URL(url).searchParams.get("channels")?.split(",") ?? []);
       for (const c of this.subs.keys()) if (!inUrl.has(c)) this.send({ type: "subscribe", channel: c });
-      this.ping = window.setInterval(() => this.send({ type: "ping" }), PING_MS);
+      ping = window.setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+      }, PING_MS);
     };
-    ws.onmessage = (m) => this.receive(m.data);
+    ws.onmessage = (m) => {
+      if (this.ws === ws) this.receive(m.data);
+    };
     ws.onclose = () => {
-      if (this.ping !== null) window.clearInterval(this.ping);
-      this.ping = null;
-      if (this.ws === ws) this.ws = null;
+      if (ping !== null) window.clearInterval(ping);
+      ping = null;
+      // A socket already replaced or closed on purpose (close() cleared this.ws): whatever happens
+      // next is the current socket's business, so don't schedule a reconnect that would open a second.
+      if (this.ws !== ws) return;
+      this.ws = null;
       if (this.subs.size) this.scheduleReconnect();
       else this.setStatus("idle");
     };

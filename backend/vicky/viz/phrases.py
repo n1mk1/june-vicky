@@ -30,6 +30,7 @@ _NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "sev
             "ten": 10, "eleven": 11, "twelve": 12, "eighteen": 18, "twenty four": 24, "thirty six": 36}
 _UNIT_MONTHS = {"month": 1, "quarter": 3, "year": 12}
 _GRAN_MONTHS = {"month": 1, "quarter": 3, "year": 12}
+_PERIOD_WORDS = r"(?:months?|quarters?|years?|periods?)\b"
 _CREDITS = r"(?:the )?(?:non dilutive(?: income)?|(?:tax |r and d |rd )?credits?|grants?|sr and ed|sred|subsid\w*)"
 
 
@@ -64,9 +65,12 @@ def normalise(text: str) -> str:
     t = t.replace("%", " pct ").replace("percentage", "pct").replace("percent", "pct")
     t = re.sub(r"[-_/]", " ", t)
     t = re.sub(r"[^\w\s.?']", " ", t)
+    t = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", t)  # "incl." / "ex." / a closing full stop; keeps "1.5"
     t = re.sub(r"\s+", " ", t).strip()
+    # Number words only where they count periods ("last six months", "three month rolling"):
+    # "one-time revenue" must stay a measure, not become "1 time revenue".
     for word, n in sorted(_NUMBERS.items(), key=lambda kv: -len(kv[0])):
-        t = re.sub(rf"\b{word}\b", str(n), t)
+        t = re.sub(rf"\b{word}\b(?= {_PERIOD_WORDS})", str(n), t)
     return t
 
 
@@ -99,10 +103,12 @@ def _vocabulary(ctx: TruthContext) -> list[tuple[str, Measure]]:
         (r"\b(?:cash |net )?burn(?: rate)? (?:including|incl|with|after) " + _CREDITS, Measure("burn", "Burn incl. credits", "money")),
         (r"\b(?:cash |net )?burn(?: rate)?\b", burn),
         # revenue family
+        (r"\bnet new (?:arr|annual(?:ised|ized)? recurring revenue)\b",
+         Measure("net_new_arr_l12m", "Net new ARR, last 12 months", "money", True)),
         (r"\barr\b|annual(?:ised|ized)? recurring revenue", Measure("arr", "ARR", "money")),
         (r"\bmrr\b|monthly recurring revenue", Measure("mrr", "MRR", "money")),
-        (r"\b(?:recurring|subscription) revenue\b", Measure("revenue.recurring", "Recurring revenue", "money")),
         (r"\b(?:one time|non recurring|services?|onboarding) revenue\b", Measure("revenue.one_time", "One-time revenue", "money")),
+        (r"(?<!non )\b(?:recurring|subscription) revenue\b", Measure("revenue.recurring", "Recurring revenue", "money")),
         # margins and costs
         (r"\bgross margin (?:incl|including|with|after|net of) (?:customer success|cs|support)\b",
          Measure("gross_margin_incl_cs", "Gross margin incl. customer success", "pct")),
@@ -113,6 +119,8 @@ def _vocabulary(ctx: TruthContext) -> list[tuple[str, Measure]]:
         (r"\b(?:s and m|sales and marketing|marketing(?: spend)?)\b", Measure("opex.s_and_m", "Sales & marketing", "money")),
         (r"\b(?:g and a|general and admin\w*|overheads?)\b", Measure("opex.g_and_a", "G&A", "money")),
         (r"\bcustomer success\b|\bsupport (?:cost|spend)s?\b", Measure("opex.customer_success", "Customer success", "money")),
+        (r"\bother (?:opex|op ex|operating (?:expenses|costs)|expenses|costs|spend)\b|\bopex other\b",
+         Measure("opex.other", "Other opex", "money")),
         (r"\b(?:total )?(?:operating expenses|opex|op ex|operating costs|spend)\b", Measure("opex.total", "Operating expenses", "money")),
         (r"\boperating (?:income|loss|profit)\b|\bebit\b", Measure("operating_income", "Operating income", "money")),
         (r"\bnet (?:income|loss|profit)\b|\bbottom line\b|\bprofit\b", Measure("net_income", "Net income", "money")),
@@ -264,9 +272,36 @@ def interpret(text: str, ctx: TruthContext) -> Intent:
     return Intent(kind="widget", spec=spec, summary=spec.title)
 
 
+def _rolling(t: str, group_by: str | None, native: str) -> tuple[int, str, str | None] | None:
+    """(periods, period word, group_by) for "3 month rolling average", or None.
+
+    The average spans the months asked for: "3 month rolling average by quarter" can't be a whole number
+    of quarters of two or more, so it is averaged by month (rolling(x, 3)), never stretched to 2 quarters.
+    """
+    roll = _ROLLING.search(t)
+    if not roll:
+        return None
+    n, unit = int(roll.group(1) or roll.group(3)), roll.group(2) or roll.group(4)
+    target = group_by or native
+    if _GRAN_MONTHS[target] < _GRAN_MONTHS[native]:
+        target = native
+    if unit == "period":
+        return max(2, n), target, group_by
+    months = n * _UNIT_MONTHS[unit]
+    per = _GRAN_MONTHS[target]
+    if (months % per or months // per < 2) and _GRAN_MONTHS[unit] >= _GRAN_MONTHS[native]:
+        target = unit  # average at the window's own granularity
+        group_by = None if unit == native else unit
+        per = _GRAN_MONTHS[target]
+    return max(2, math.ceil(months / per)), target, group_by
+
+
 def _build_spec(t: str, hits: list[_Hit], months: int | None, ctx: TruthContext) -> WidgetSpec:
     group_by = _group_by(t)
     native = ctx.model.granularity if ctx.model.granularity in _GRAN_MONTHS else "month"
+    roll = _rolling(t, group_by, native)
+    if roll:
+        group_by = roll[2]
     target = group_by or native
     if _GRAN_MONTHS[target] < _GRAN_MONTHS[native]:
         target = native  # the evaluator explains this in a note
@@ -304,12 +339,9 @@ def _build_spec(t: str, hits: list[_Hit], months: int | None, ctx: TruthContext)
         series = [(m.ref, m.label, m.unit) for m in measures]
 
     # transforms
-    roll = _ROLLING.search(t)
     if roll:
-        n, unit = int(roll.group(1) or roll.group(3)), roll.group(2) or roll.group(4)
-        span = n if unit == "period" else math.ceil(n * _UNIT_MONTHS[unit] / _GRAN_MONTHS[target])
-        n = max(2, span)
-        series = [(f"rolling({r}, {n})", f"{lbl}, {n}-period average", u) for r, lbl, u in series]
+        n = roll[0]
+        series = [(f"rolling({r}, {n})", f"{lbl}, {n}-{roll[1]} average", u) for r, lbl, u in series]
     elif _CUMULATIVE.search(t):
         series = [(f"cumsum({r})", f"Cumulative {_lower(lbl)}", u) for r, lbl, u in series]
     elif _GROWTH.search(t) and all(u != "pct" for _, _, u in series):

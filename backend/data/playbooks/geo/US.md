@@ -29,7 +29,7 @@ qualified advisor for the company's facts. Rules were checked on the cited pages
 - For stock acquired after July 4, 2025, the exclusion is 50% after at least 3 years, 75% after 4 years and 100% after 5 or more years, and the corporation's aggregate gross assets must not exceed $75 million before and immediately after the issuance. Source: https://www.law.cornell.edu/uscode/text/26/1202 (verify with an advisor)
 - At least 80% of assets (by value) must be used in a qualified active business; fields such as health, law, accounting, consulting, financial services, banking, farming, extraction and hotels or restaurants are excluded. Source: https://www.law.cornell.edu/uscode/text/26/1202 (verify with an advisor)
 
-## What Claire probes
+## What a mandate fund probes
 
 - How much of runway depends on the R&D credit payroll offset or SBIR/STTR awards, and
   what happens if an award is delayed or a solicitation is paused?

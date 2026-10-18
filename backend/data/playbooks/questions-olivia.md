@@ -1,9 +1,9 @@
 ---
 topics: [market, forecast, claims, team, product_tech, cmgr_recent, cmgr_12m, arr]
-title: Question bank - Olivia (market / power-law visionary, how big can this be)
+title: Question bank - market / power-law visionary archetype (how big can this be)
 ---
 
-# Olivia: question bank
+# Market visionary (archetype): question bank
 
 Expansive and energetic. Loves ambition, then makes the founder earn it with a bottom-up
 market size where every input has a source, and ties the big picture back to recent

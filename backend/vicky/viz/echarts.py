@@ -165,7 +165,10 @@ def _linear(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[
         if stacked and s.role == "value":
             item["stack"] = "total"
         if t == "waterfall":
+            # base (running total before) + signed change = running total after, on either side of zero;
+            # ECharts' default "samesign" would stack a change on the wrong bar once the total crosses zero
             item["stack"] = "waterfall"
+            item["stackStrategy"] = "all"
             if s.role == "waterfall_base":
                 item["itemStyle"] = {"color": "transparent", "borderColor": "transparent"}
                 item["emphasis"] = {"disabled": True}
@@ -194,11 +197,12 @@ def _linear(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[
 # ---------------------------------------------------------------- other templates
 
 def _scatter(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict[str, Any]:
-    if len(ev.series) < 2:
+    values = [s for s in ev.series if s.role == "value"]  # a comparison series is never an axis
+    if len(values) < 2:
         opt["_meta"]["status"] = "error"
         opt["_meta"]["error"] = "A scatter needs two series: x then y"
         return opt
-    x, y = ev.series[0], ev.series[1]
+    x, y = values[0], values[1]
     source: list[list[Any]] = [["period", "x", "y"]]
     keep = [i for i in range(len(ev.periods)) if x.points[i].value is not None and y.points[i].value is not None]
     for i in keep:
@@ -213,6 +217,7 @@ def _scatter(spec: WidgetSpec, ev: EvaluatedWidget, opt: dict[str, Any]) -> dict
     _interaction(opt, "rect")
     opt["_meta"]["periods"] = [ev.periods[i] for i in keep]
     opt["_meta"]["units"] = {"x": x.unit, "y": y.unit}
+    opt["_meta"]["labels"] = {"x": x.label, "y": y.label}
     opt["_provenance"] = {"0": {ev.periods[i]: {"x": _prov(x.points[i]), "y": _prov(y.points[i])} for i in keep}}
     return opt
 

@@ -17,7 +17,7 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
 
 from vicky import kv
-from vicky.auth import Gate
+from vicky.auth import Gate, code_tag, token_ok
 from vicky.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -97,7 +97,8 @@ async def publish(channel: str, type_: str, payload: dict[str, Any] | None = Non
 
 
 def _ws_signer() -> TimestampSigner:
-    return TimestampSigner(get_settings().cookie_secret, salt="vicky-ws")
+    # Salted with the access code's tag: like the cookie, a socket token dies with the code it was issued under.
+    return TimestampSigner(get_settings().cookie_secret, salt=f"vicky-ws.{code_tag().decode()}")
 
 
 @router.get("/realtime/token", dependencies=[Gate])
@@ -108,9 +109,6 @@ async def realtime_token(request: Request) -> dict:
 @router.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     token = ws.query_params.get("token")
-    cookie_ok = False
-    from vicky.auth import token_ok
-
     cookie_ok = token_ok(ws.cookies.get(get_settings().cookie_name))
     token_valid = False
     if token:

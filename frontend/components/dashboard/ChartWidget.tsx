@@ -45,6 +45,9 @@ function prepare(raw: EChartsOptionJson, range: TimeRange | null, compact = fals
   }
 
   const template = meta.template;
+  // Series the backend keeps out of the tooltip (the invisible base bars of a waterfall).
+  const series = Array.isArray(opt.series) ? (opt.series as { tooltip?: { show?: boolean } }[]) : [];
+  const silent = new Set(series.flatMap((s, i) => (s.tooltip?.show === false ? [i] : [])));
   if (template === "heatmap") {
     opt.tooltip = {
       ...((opt.tooltip as object) ?? {}),
@@ -53,18 +56,34 @@ function prepare(raw: EChartsOptionJson, range: TimeRange | null, compact = fals
         return `${esc(row[1])} · ${esc(row[0])}<br/><b>${esc(fmtValue(row[2] as number, units.value, currency))}</b>`;
       },
     };
+  } else if (template === "scatter") {
+    // Rows are [period, x, y]; each axis has its own unit and name.
+    const labels = (meta.labels ?? {}) as { x?: string; y?: string };
+    opt.tooltip = {
+      ...((opt.tooltip as object) ?? {}),
+      formatter: (p: TipParam) => {
+        const row = Array.isArray(p.value) ? p.value : [];
+        const line = (name: string | undefined, v: unknown, unit: string | null | undefined) =>
+          `${esc(name ?? "")} <b style="float:right;margin-left:16px">${esc(fmtValue(v as number | null, unit, currency))}</b>`;
+        return `<span style="opacity:.6">${esc(row[0])}</span><br/>${line(labels.x, row[1], units.x)}<br/>${line(labels.y, row[2], units.y)}<br/><span style="opacity:.5;font-size:10px">Click a point to explain</span>`;
+      },
+    };
   } else if (opt.tooltip && template !== "gauge_ring") {
     opt.tooltip = {
       ...(opt.tooltip as object),
       formatter: (ps: TipParam | TipParam[]) => {
-        const arr = Array.isArray(ps) ? ps : [ps];
+        const arr = (Array.isArray(ps) ? ps : [ps]).filter((p) => !silent.has(p.seriesIndex));
         const head = arr[0]?.name ?? "";
-        const lines = arr.map((p) => {
+        const lines = arr.flatMap((p) => {
           const idx = p.encode?.y?.[0];
           const v = Array.isArray(p.value) && idx !== undefined ? p.value[idx] : p.value;
-          return `${p.marker}${esc(p.seriesName)} <b style="float:right;margin-left:16px">${esc(
-            fmtValue(v as number | null, units[String(p.seriesIndex)], currency),
-          )}</b>`;
+          // A waterfall step is up or down: the other half of its split is 0 and says nothing.
+          if (template === "waterfall" && v === 0) return [];
+          return [
+            `${p.marker}${esc(p.seriesName)} <b style="float:right;margin-left:16px">${esc(
+              fmtValue(v as number | null, units[String(p.seriesIndex)], currency),
+            )}</b>`,
+          ];
         });
         return `<span style="opacity:.6">${esc(head)}</span><br/>${lines.join("<br/>")}<br/><span style="opacity:.5;font-size:10px">Click a point to explain</span>`;
       },
@@ -123,6 +142,23 @@ function explainFrom(raw: EChartsOptionJson, widget: Widget, click: ChartClick):
     p = prov[String(r)]?.[period];
     unit = units.value;
     name = String(row[1] ?? "");
+  } else if (meta.template === "scatter") {
+    // One point is two numbers: provenance is {x, y} per period.
+    const period = meta.periods?.[click.dataIndex];
+    const xy = (period ? prov["0"]?.[period] : undefined) as unknown as { x?: Provenance; y?: Provenance } | undefined;
+    if (!xy?.x || !xy.y) return null;
+    const labels = (meta.labels ?? {}) as { x?: string; y?: string };
+    const x = xy.x;
+    const y = xy.y;
+    return {
+      label: `${labels.y ?? "y"} vs ${labels.x ?? "x"} · ${y.label}`,
+      value: y.value,
+      unit: units.y,
+      currency: meta.currency,
+      formula: `${labels.x ?? "x"} ${fmtValue(x.value, units.x, meta.currency)}: ${x.formula} · ${labels.y ?? "y"}: ${y.formula}`,
+      inputs: [...x.inputs, ...y.inputs],
+      source: y.source ?? x.source,
+    };
   } else {
     const period = meta.periods?.[click.dataIndex];
     p = period ? prov[String(click.seriesIndex)]?.[period] : undefined;
@@ -156,10 +192,21 @@ export function ChartWidget({
 }) {
   const raw = widget.option;
   const [explain, setExplain] = useState<Explanation | null>(null);
-  const [table, setTable] = useState(false);
+  // A table widget has no chart to draw: it opens on its Table view.
+  const [table, setTable] = useState(widget.spec.template === "table");
   const [box, compact] = useShort(230);
   const option = useMemo(() => (raw ? prepare(raw, timeRange, compact) : null), [raw, timeRange, compact]);
   const ev = widget.evaluated;
+  // Table rows follow the option's order (a sorted table stays sorted); a waterfall's invisible base
+  // bars are chart scaffolding, not figures, so they get no column.
+  const rows = useMemo(() => {
+    const at = new Map(ev.periods.map((p, j) => [p, j]));
+    const order = (raw?._meta?.periods ?? []).filter((p) => at.has(p));
+    return (order.length === ev.periods.length ? order : ev.periods).map((p) => at.get(p)!);
+  }, [ev.periods, raw]);
+  const columns = ev.series.filter((s) => s.role !== "waterfall_base");
+  // Each waterfall step is either up or down; the 0 in the other column is the split, not a figure.
+  const waterfall = widget.spec.template === "waterfall";
   const currency = raw?._meta?.currency ?? ev.currency;
   const notes = [...(ev.notes ?? []), ...(raw?._meta?.notes ?? [])].filter((n, i, a) => a.indexOf(n) === i);
 
@@ -197,7 +244,7 @@ export function ChartWidget({
             <thead>
               <tr className="border-b border-line">
                 <th className="label px-2 py-1.5 text-left font-normal">Period</th>
-                {ev.series.map((s, i) => (
+                {columns.map((s, i) => (
                   <th key={i} className="label px-2 py-1.5 text-right font-normal">
                     {s.label}
                   </th>
@@ -205,14 +252,14 @@ export function ChartWidget({
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {ev.periods.map((period, j) => (
-                <tr key={period}>
-                  <td className="px-2 py-1 font-mono text-[10.5px] text-ink-2">{ev.period_labels[j] ?? period}</td>
-                  {ev.series.map((s, i) => {
+              {rows.map((j) => (
+                <tr key={ev.periods[j]}>
+                  <td className="px-2 py-1 font-mono text-[10.5px] text-ink-2">{ev.period_labels[j] ?? ev.periods[j]}</td>
+                  {columns.map((s, i) => {
                     const pt = s.points[j];
                     return (
                       <td key={i} className="px-2 py-1 text-right tabular-nums">
-                        {pt && pt.value !== null ? (
+                        {pt && pt.value !== null && !(waterfall && pt.value === 0) ? (
                           <button
                             type="button"
                             className="hover:text-ember"

@@ -20,6 +20,7 @@ import json
 import logging
 import re
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from html.parser import HTMLParser
@@ -88,9 +89,43 @@ def clean_segment(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip(" .")[:120]
 
 
+def safe_name(name: str) -> str:
+    """A stored or exported file name: forward slashes, no control characters, and no empty, `.` or `..`
+    segment, so it can never point outside the folder it is unzipped into."""
+    name = re.sub(r"[\x00-\x1f\x7f]+", "", str(name or "").replace("\\", "/"))
+    return "/".join(p for p in name.split("/") if p.strip() not in ("", ".", "..")) or "upload"
+
+
+def strip_nul(value: Any) -> Any:
+    """Postgres text and jsonb can't hold U+0000: drop it from strings, recursively."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, list):
+        return [strip_nul(v) for v in value]
+    if isinstance(value, dict):
+        return {strip_nul(k): strip_nul(v) for k, v in value.items()}
+    return value
+
+
+def _utf16_without_bom(data: bytes) -> str | None:
+    """utf-16-le or utf-16-be when NULs fill alternate bytes of the first 1 KB (UTF-16 of mostly-ASCII text)."""
+    head = data[:1024]
+    if len(head) < 8:
+        return None
+    even, odd = head[0::2], head[1::2]
+    if odd.count(0) >= 0.4 * len(odd) and even.count(0) <= 0.05 * len(even):
+        return "utf-16-le"
+    if even.count(0) >= 0.4 * len(even) and odd.count(0) <= 0.05 * len(odd):
+        return "utf-16-be"
+    return None
+
+
 def decode(data: bytes) -> str:
     if data.startswith((b"\xff\xfe", b"\xfe\xff")):
         return data.decode("utf-16", errors="replace")
+    enc = _utf16_without_bom(data)
+    if enc:
+        return data.decode(enc, errors="replace")
     try:
         return data.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -642,11 +677,26 @@ def expand(filename: str, data: bytes) -> list[tuple[str, bytes]]:
                 out.append((name, z.read(info)))
     except zipfile.BadZipFile as e:
         raise Unreadable(f"{filename} is not a valid zip") from e
+    except RuntimeError as e:  # zipfile's "is encrypted, password required"
+        raise Unreadable(f"{filename} is encrypted; export it without a password") from e
+    except NotImplementedError as e:  # Deflate64, LZMA variants zipfile can't read
+        raise Unreadable(f"{filename} uses a compression method that can't be read; re-zip it") from e
+    except (zlib.error, EOFError, ValueError, OSError) as e:
+        raise Unreadable(f"{filename} is damaged ({e})") from e
     return out
 
 
 def convert(filename: str, data: bytes) -> list[Draft]:
     """Notes made from one file (not a zip: `expand` first). Raises Unreadable."""
+    drafts = _convert(filename, data)
+    for d in drafts:  # one NUL anywhere would fail the whole insert
+        d.name, d.title, d.content, d.folder = (strip_nul(d.name), strip_nul(d.title), strip_nul(d.content),
+                                                strip_nul(d.folder))
+        d.summary, d.tags, d.meta = strip_nul(d.summary), strip_nul(d.tags), strip_nul(d.meta)
+    return drafts
+
+
+def _convert(filename: str, data: bytes) -> list[Draft]:
     folder, stem = split_name(filename)
     source = PurePosixPath(filename.replace("\\", "/")).name
     kind = file_kind(filename)

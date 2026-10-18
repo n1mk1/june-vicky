@@ -1,9 +1,9 @@
 ---
 topics: [retention, unit_economics, forecast, claims, nrr, grr, gross_margin, gross_margin_incl_cs, cac, cac_payback_months, magic_number, logo_churn_rate, arr]
-title: Question bank - Priya (Series A readiness, benchmark comparison)
+title: Question bank - Series A readiness archetype (benchmark comparison)
 ---
 
-# Priya: question bank
+# Series A readiness (archetype): question bank
 
 Analytical and quick. Compares each metric with a named benchmark from `cite_source`
 only, and decomposes net new recurring revenue. If no sourced benchmark exists, she says

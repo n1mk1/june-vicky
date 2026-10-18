@@ -9,7 +9,11 @@ export const ATTACH_ACCEPT = ".csv,.xlsx,.pdf,.docx,.md";
 interface PromptBarProps {
   placeholder: string;
   label: string;
-  onSubmit: (text: string) => void;
+  /**
+   * Called with the trimmed text. The bar clears at once; if this returns (or resolves to) `false`,
+   * the send failed and the text comes back into the bar, unless something new was typed meanwhile.
+   */
+  onSubmit: (text: string) => void | boolean | Promise<void | boolean>;
   /** Called with the picked file; the attach button only appears when this is set (or `leading` replaces it). */
   onAttach?: (file: File) => void;
   /** Replaces the attach button on the left, e.g. a microphone. */
@@ -36,8 +40,11 @@ export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hin
         e.preventDefault();
         const text = value.trim();
         if (!text || disabled) return;
-        onSubmit(text);
         setValue("");
+        void Promise.resolve(onSubmit(text)).then(
+          (ok) => ok === false && setValue((cur) => cur || text),
+          () => setValue((cur) => cur || text),
+        );
       }}
     >
       <div className="flex items-center gap-2 rounded-[4px] border border-line bg-surface-solid/60 p-1.5">
