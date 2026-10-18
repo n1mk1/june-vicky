@@ -2,7 +2,7 @@
 
 import { Download, FilePlus2, FolderUp, LayoutDashboard, Sparkles, Upload } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CornerMarks, Panel } from "@/components/ui/Panel";
 import { PillButton } from "@/components/ui/Pill";
 import { ErrorNote, Loading } from "@/components/ui/States";
@@ -118,6 +118,16 @@ export function KnowledgeView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filling, setFilling] = useState(false);
+  const fillTimer = useRef(0);
+  // Next keeps this page alive but hidden (Activity) while the confirm page shows; "Filling" must
+  // not come back with it.
+  useLayoutEffect(
+    () => () => {
+      window.clearTimeout(fillTimer.current);
+      setFilling(false);
+    },
+    [],
+  );
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
@@ -247,7 +257,11 @@ export function KnowledgeView() {
     setError(null);
     try {
       const out = await apiPost<KbAutofill>("kb/autofill");
-      router.push(confirmHref(out.engagement.id, 1));
+      const href = confirmHref(out.engagement.id, 1);
+      router.push(href);
+      // A client navigation can be lost (another navigation wins, or the dev server restarted under
+      // the page); if this view is still up, load the confirm page directly.
+      fillTimer.current = window.setTimeout(() => window.location.assign(href), 5000);
     } catch (err) {
       setFilling(false);
       if (!guard(err)) setError(errorText(err));
