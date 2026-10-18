@@ -187,6 +187,8 @@ export function KbGraph({ graph, selected, query, onOpen, onCreate, className }:
 
   /** Draw the graph; `keep` continues from where the nodes are, otherwise the layout starts fresh. */
   const draw = useRef((inst: echarts.ECharts, keep: boolean) => {
+    const dom = inst.getDom();
+    if (!dom.clientWidth || !dom.clientHeight) return;
     const { graph: g, selected: sel } = current.current;
     const prev = keep ? positions(inst, ids.current) : new Map();
     ids.current = g.nodes.map((n) => n.id);
@@ -211,14 +213,17 @@ export function KbGraph({ graph, selected, query, onOpen, onCreate, className }:
     let size = { w: node.clientWidth, h: node.clientHeight };
     let timer = 0;
     const ro = new ResizeObserver(() => {
+      // A collapsed or hidden panel has no area, and ECharts throws laying a graph out in it.
+      if (!node.clientWidth || !node.clientHeight) return;
       inst.resize();
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         const w = node.clientWidth;
         const h = node.clientHeight;
-        if (Math.abs(w - size.w) > 40 || Math.abs(h - size.h) > 40) {
+        // Also draw if nothing is drawn yet: the first draw is skipped while the panel has no area.
+        if (!ids.current.length || Math.abs(w - size.w) > 40 || Math.abs(h - size.h) > 40) {
           size = { w, h };
-          if (ids.current.length) draw.current(inst, false);
+          draw.current(inst, false);
         }
       }, 200);
     });
