@@ -139,7 +139,7 @@ test("import converts, files and links the notes", async ({ page, request }) => 
 
   // The same files again are skipped as duplicates.
   await page.getByLabel("Import files").setInputFiles([{ name: `${RUN} pnl copy.csv`, mimeType: "text/csv", buffer: Buffer.from(CSV) }]);
-  await expect(page.getByText(/1 skipped (duplicate)/)).toBeVisible({ timeout: JOB_MS });
+  await expect(page.getByText(/1 skipped \(duplicate\)/)).toBeVisible({ timeout: JOB_MS });
 });
 
 test("reading: wikilinks open notes, tables render, backlinks show", async ({ page }) => {
