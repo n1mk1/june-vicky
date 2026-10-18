@@ -222,6 +222,8 @@ test("organize re-files everything and export downloads the vault", async ({ pag
 
 test("drag-and-drop imports, delete removes a note", async ({ page, request }) => {
   await page.goto("/knowledge");
+  // A production build streams the page in: wait for the vault UI (and its drop handlers) first.
+  await expect(page.getByRole("button", { name: "New note", exact: true })).toBeEnabled();
   await page.evaluate(async (run) => {
     const dt = new DataTransfer();
     dt.items.add(new File([`# ${run} dropped\n\nDropped onto the page.`], `${run} dropped.md`, { type: "text/markdown" }));

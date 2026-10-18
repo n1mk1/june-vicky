@@ -59,13 +59,14 @@ test.describe("Dashboard chat QA", () => {
   test("sending the same chart request twice quickly adds one widget", async ({ page, request }) => {
     await openDashboard(page);
     const input = chatInput(page);
+    // Opex is mapped in every sample company (depreciation isn't in the harbor-labs one CI seeds).
     for (let i = 0; i < 2; i++) {
-      await input.fill("show depreciation by quarter");
+      await input.fill("show opex by quarter");
       await input.press("Enter");
     }
     await expect(page.getByTestId("chat-reply")).not.toContainText("Working it out", { timeout: 15_000 });
     await expect(page.getByTestId("chat-exchange").first()).not.toContainText("Working it out", { timeout: 15_000 });
     const d = await dashboard(request);
-    expect(d.widgets.filter((w) => w.spec.title === "Depreciation by quarter")).toHaveLength(1);
+    expect(d.widgets.filter((w) => w.spec.title === "Operating expenses by quarter")).toHaveLength(1);
   });
 });
