@@ -1,4 +1,6 @@
-# JUNE × VICKY
+# JUNE × VICKY 
+
+(Access Code: vicky-atlas-58d8cc)
 
 **Vicky is an AI venture capitalist that gets founders ready to raise.** A founder brings their own financials and documents. Vicky computes every metric in code, builds a dashboard where every figure has a source, and lists what investors will ask about first. A panel of AI investors then questions the founder in a text court and in a spoken pitch room, scores every answer and writes it up as a report.
 
