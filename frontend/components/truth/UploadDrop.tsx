@@ -66,7 +66,7 @@ export function UploadDrop({ engagementId, onUploaded, compact, className }: Upl
         }}
         disabled={!!busy}
         className={cn(
-          "relative flex w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-[16px] border border-dashed text-center transition-colors",
+          "relative flex w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-[4px] border border-dashed text-center transition-colors",
           compact ? "px-4 py-4" : "min-h-[180px] px-6 py-8",
           over ? "border-ink bg-surface-solid/60" : "border-line-strong hover:border-ink",
         )}

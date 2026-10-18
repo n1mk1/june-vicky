@@ -37,7 +37,7 @@ export function Footnote({ citation, className }: { citation: Citation; classNam
         <span
           id={id}
           role="tooltip"
-          className="absolute bottom-full left-1/2 z-40 border border-line-strong bg-surface-solid/95 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md mb-2 flex w-64 -translate-x-1/2 flex-col gap-1.5 rounded-[12px] p-3 text-left font-sans text-[12px] leading-snug tracking-normal text-ink-2 normal-case"
+          className="absolute bottom-full left-1/2 z-40 border border-line-strong bg-surface-solid/95 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md mb-2 flex w-64 -translate-x-1/2 flex-col gap-1.5 rounded-[4px] p-3 text-left font-sans text-[12px] leading-snug tracking-normal text-ink-2 normal-case"
         >
           <span className="flex items-baseline justify-between gap-2">
             <span className="text-ink">{citation.label}</span>

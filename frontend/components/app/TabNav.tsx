@@ -5,7 +5,11 @@ import { usePathname } from "next/navigation";
 import { RollLabel } from "@/components/ui/RollLabel";
 import { cn } from "@/lib/utils";
 
-/** `flagship` tabs (the dashboard, the prep court and the simulator) are the product: they wear the ember accent. */
+/**
+ * `flagship` tabs (the dashboard, the prep court and the simulator) are the product. In black and
+ * white they stand out by contrast: a full-ink outline, a bright label and a square marker, against
+ * the dim outlines of the rest. The open tab is filled, like the landing's button.
+ */
 export const TABS = [
   { href: "/knowledge", label: "Knowledge base", flagship: false },
   { href: "/dashboard", label: "Dashboard", flagship: true },
@@ -37,24 +41,22 @@ function Tabs({ pathname }: { pathname: string }) {
             aria-current={active ? "page" : undefined}
             data-flagship={tab.flagship || undefined}
             className={cn(
-              "group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3.5 font-display text-[12.5px] uppercase tracking-[-0.02em] transition-colors duration-300",
-              tab.flagship
-                ? active
-                  ? "border-ember bg-ember text-white"
-                  : "border-ember/55 bg-ember/10 text-ink hover:border-ember hover:bg-ember/20"
-                : active
-                  ? "border-invert-bg bg-invert-bg text-invert-ink"
-                  : "border-line-strong text-ink-2 hover:border-ink hover:text-ink",
+              "group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[3px] border px-3.5 font-mono text-[11px] uppercase tracking-[0.02em] transition-colors duration-300",
+              active
+                ? "border-invert-bg bg-invert-bg text-invert-ink"
+                : tab.flagship
+                  ? "border-ink text-ink hover:bg-ink/10"
+                  : "border-line-strong text-dim hover:border-ink-2 hover:text-ink-2",
             )}
           >
             {tab.flagship && (
-              <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", active ? "bg-white" : "bg-ember")} />
+              <span aria-hidden className={cn("size-1.5 shrink-0", active ? "bg-invert-ink" : "bg-ink")} />
             )}
             <RollLabel text={tab.label} />
             {active && (
               <span
                 aria-hidden
-                className={cn("absolute -bottom-[11px] left-1/2 h-px w-6 -translate-x-1/2", tab.flagship ? "bg-ink" : "bg-ember")}
+                className="absolute -bottom-[11px] left-1/2 h-px w-6 -translate-x-1/2 bg-ink"
               />
             )}
           </Link>

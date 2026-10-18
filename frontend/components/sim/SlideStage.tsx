@@ -12,7 +12,7 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
   const slide = deck[index];
   return (
     <div className="flex h-full flex-col gap-4 p-4 md:p-5">
-      <div className="relative mx-auto aspect-video w-full max-w-[880px] overflow-hidden rounded-[14px] border border-line bg-[#f2f2f2] text-[#111214]">
+      <div className="relative mx-auto aspect-video w-full max-w-[880px] overflow-hidden rounded-[4px] border border-line bg-[#f2f2f2] text-[#111214]">
         <CornerMarks className="[&_span]:text-[#111214]/40" />
         <div className="absolute inset-0 flex flex-col justify-between p-[5%]">
           <div className="flex items-center justify-between text-[clamp(9px,1vw,12px)] text-[#434343]">
@@ -38,7 +38,7 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
             type="button"
             onClick={() => onIndex(Math.max(0, index - 1))}
             disabled={index === 0}
-            className="flex size-9 items-center justify-center rounded-[10px] border border-line-strong text-ink disabled:opacity-30"
+            className="flex size-9 items-center justify-center rounded-[3px] border border-line-strong text-ink disabled:opacity-30"
             aria-label="Previous slide"
           >
             <ChevronLeft className="size-4" strokeWidth={1.5} />
@@ -47,7 +47,7 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
             type="button"
             onClick={() => onIndex(Math.min(deck.length - 1, index + 1))}
             disabled={index === deck.length - 1}
-            className="flex size-9 items-center justify-center rounded-[10px] border border-line-strong text-ink disabled:opacity-30"
+            className="flex size-9 items-center justify-center rounded-[3px] border border-line-strong text-ink disabled:opacity-30"
             aria-label="Next slide"
           >
             <ChevronRight className="size-4" strokeWidth={1.5} />
@@ -71,7 +71,7 @@ export function SlideStage({ index, onIndex }: { index: number; onIndex: (i: num
               type="button"
               onClick={() => onIndex(i)}
               aria-current={i === index ? "true" : undefined}
-              className={`flex w-full flex-col gap-1 rounded-[10px] border p-2 text-left transition-colors ${
+              className={`flex w-full flex-col gap-1 rounded-[3px] border p-2 text-left transition-colors ${
                 i === index ? "border-ink" : "border-line hover:border-line-strong"
               }`}
             >

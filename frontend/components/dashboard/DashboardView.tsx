@@ -54,7 +54,7 @@ function LiveDot() {
 
 function RangeChip({ range, onReset }: { range: TimeRange; onReset: () => void }) {
   return (
-    <span className="inline-flex h-7 items-center gap-2 rounded-full border border-line px-3 text-[11.5px] text-ink-2">
+    <span className="inline-flex h-7 items-center gap-2 rounded-[3px] border border-line px-3 text-[11.5px] text-ink-2">
       <span className="text-ink">{range.label}</span>
       <button type="button" onClick={onReset} className="text-ink underline underline-offset-2 hover:text-ember">
         Reset

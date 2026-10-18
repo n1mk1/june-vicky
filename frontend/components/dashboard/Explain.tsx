@@ -25,7 +25,7 @@ export function ExplainCard({ x, onClose, className }: { x: Explanation; onClose
   const shown = x.display || fmtValue(x.value, x.unit, x.currency);
   const url = (x.source as Source | null | undefined)?.url;
   return (
-    <div className={cn("flex w-72 border border-line-strong bg-surface-solid/95 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md max-w-[calc(100vw-48px)] flex-col gap-2 rounded-[14px] p-3.5 text-[12px] leading-snug text-ink-2", className)}>
+    <div className={cn("flex w-72 border border-line-strong bg-surface-solid/95 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md max-w-[calc(100vw-48px)] flex-col gap-2 rounded-[4px] p-3.5 text-[12px] leading-snug text-ink-2", className)}>
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0">
           <span className="block text-ink">{x.label}</span>
@@ -34,14 +34,14 @@ export function ExplainCard({ x, onClose, className }: { x: Explanation; onClose
         <span className="flex items-start gap-1.5">
           <span className="font-display text-[20px] leading-none tracking-[-0.04em] text-ink tabular-nums">{shown}</span>
           {onClose && (
-            <button type="button" onClick={onClose} aria-label="Close" className="-mt-0.5 rounded-full p-0.5 text-ink-2 hover:text-ink">
+            <button type="button" onClick={onClose} aria-label="Close" className="-mt-0.5 rounded-[3px] p-0.5 text-ink-2 hover:text-ink">
               <X className="size-3.5" strokeWidth={1.75} />
             </button>
           )}
         </span>
       </div>
       {x.kind && x.kind !== "historical" && (
-        <span className="self-start rounded-full border border-dashed border-line-strong px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em]">
+        <span className="self-start rounded-[3px] border border-dashed border-line-strong px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em]">
           {x.kind.replace("_", " ")}
         </span>
       )}

@@ -143,7 +143,7 @@ function PersonaForm({
                 title={humanize(g)}
                 onClick={() => set("glyph", g)}
                 className={cn(
-                  "flex size-9 items-center justify-center rounded-[10px] border transition-colors",
+                  "flex size-9 items-center justify-center rounded-[3px] border transition-colors",
                   f.glyph === g ? "border-ink bg-surface-solid" : "border-line hover:border-line-strong",
                 )}
               >
@@ -291,7 +291,7 @@ export function PersonaBuilder({
         onSave={(s) => void save(s)}
         onCancel={onClose}
         top={
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] border border-line px-3 py-2" data-testid="draft-source">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[4px] border border-line px-3 py-2" data-testid="draft-source">
             <span className="text-[11.5px] text-ink-2">
               {draft.source === "claude" ? "Drafted by Claude from your description." : "Drafted from keywords; Claude is offline. Check every field."}
             </span>

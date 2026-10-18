@@ -32,12 +32,12 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
   const people = locked ? (personas ?? []).filter((p) => selected.includes(p.id)) : (personas ?? []);
 
   return (
-    <aside className={cn("glass flex min-h-0 flex-col rounded-[20px] p-3", collapsed && "lg:w-[64px]")}>
+    <aside className={cn("glass flex min-h-0 flex-col rounded-[4px] p-3", collapsed && "lg:w-[64px]")}>
       <div className="flex items-center justify-between pb-3">
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
-          className="flex h-7 w-10 items-center justify-center rounded-[8px] border border-line text-ink-2 hover:border-line-strong hover:text-ink"
+          className="flex h-7 w-10 items-center justify-center rounded-[3px] border border-line text-ink-2 hover:border-line-strong hover:text-ink"
           aria-label={collapsed ? "Expand panel" : "Collapse panel"}
           aria-expanded={!collapsed}
         >
@@ -55,7 +55,7 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
         <li className="w-[200px] shrink-0 lg:w-auto">
           <div
             title={collapsed ? "Vicky, chair" : undefined}
-            className="flex w-full items-center gap-3 rounded-[14px] border border-dashed border-line-strong p-2.5"
+            className="flex w-full items-center gap-3 rounded-[4px] border border-dashed border-line-strong p-2.5"
           >
             <VcGlyph glyph="vicky" className="text-ember" />
             {!collapsed && (
@@ -94,7 +94,7 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
                 onClick={() => onToggle(p.id)}
                 title={collapsed ? `${p.name}, ${p.firm}` : !on && full ? `The panel holds ${MAX_PANEL} investors` : undefined}
                 className={cn(
-                  "group relative flex w-full items-center gap-3 rounded-[14px] border p-2.5 text-left transition-colors duration-300",
+                  "group relative flex w-full items-center gap-3 rounded-[4px] border p-2.5 text-left transition-colors duration-300",
                   on ? "border-line-strong bg-surface-solid/70" : "border-line opacity-60 hover:opacity-100",
                   blocked && !on && "hover:opacity-60",
                   locked && "cursor-default",

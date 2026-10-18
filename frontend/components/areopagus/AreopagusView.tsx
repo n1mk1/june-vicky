@@ -95,7 +95,7 @@ function PersonaCard({
         style={room ? { maxHeight: room } : undefined}
         aria-label={`${p.name}, ${p.firm}. ${p.signature_move}`}
         className={cn(
-          "glass scroll-thin absolute inset-x-0 flex min-h-full flex-col overflow-hidden rounded-[20px] p-4 outline-none [&>*]:shrink-0 group-focus-within/card:overflow-y-auto group-hover/card:overflow-y-auto transition-[box-shadow,background-color,border-color] duration-300",
+          "glass scroll-thin absolute inset-x-0 flex min-h-full flex-col overflow-hidden rounded-[4px] p-4 outline-none [&>*]:shrink-0 group-focus-within/card:overflow-y-auto group-hover/card:overflow-y-auto transition-[box-shadow,background-color,border-color] duration-300",
           "group-hover/card:border-line-strong group-hover/card:bg-surface-solid group-hover/card:shadow-[0_24px_60px_-20px_rgba(0,0,0,0.55)]",
           "group-focus-within/card:border-line-strong group-focus-within/card:bg-surface-solid group-focus-within/card:shadow-[0_24px_60px_-20px_rgba(0,0,0,0.55)]",
           "focus-visible:ring-1 focus-visible:ring-ink-2",
@@ -167,7 +167,7 @@ function PersonaCard({
             <footer className="flex flex-wrap items-center justify-between gap-2 pb-0.5">
               <ul className="flex flex-wrap gap-1">
                 {(p.kits ?? []).map((k) => (
-                  <li key={k} className="rounded-full border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2">
+                  <li key={k} className="rounded-[3px] border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2">
                     {k}
                   </li>
                 ))}

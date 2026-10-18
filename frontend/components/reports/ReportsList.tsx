@@ -75,7 +75,7 @@ export function ReportsList() {
               aside={
                 <span className="flex items-center gap-3">
                   <Sparkline values={trend} />
-                  {company === activeName && <span className="rounded-full bg-invert-bg px-2 py-0.5 font-mono text-[9.5px] uppercase text-invert-ink">Active</span>}
+                  {company === activeName && <span className="rounded-[3px] bg-invert-bg px-2 py-0.5 font-mono text-[9.5px] uppercase text-invert-ink">Active</span>}
                 </span>
               }
             >
@@ -86,7 +86,7 @@ export function ReportsList() {
                       href={`/reports/${encodeURIComponent(r.id)}`}
                       className="group grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-3 transition-colors hover:bg-surface-solid/40 sm:grid-cols-[auto_1fr_auto_auto_auto]"
                     >
-                      <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] justify-self-start text-ink-2">
+                      <span className="rounded-[3px] border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] justify-self-start text-ink-2">
                         Prepare
                       </span>
                       <span className="col-span-2 text-[12.5px] text-ink-2 sm:col-span-1">

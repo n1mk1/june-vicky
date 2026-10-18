@@ -82,7 +82,7 @@ function MappingEditor({ data, currency, onSaved }: EditorProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="scroll-thin overflow-x-auto rounded-[14px] border border-line">
+      <div className="scroll-thin overflow-x-auto rounded-[4px] border border-line">
         <table className="w-full min-w-[640px] border-collapse text-left text-[12.5px]">
           <thead>
             <tr className="border-b border-line">
@@ -191,7 +191,7 @@ export function MappingTable({
   const d = res.data?.dataset ?? dataset;
 
   return (
-    <section className="flex flex-col gap-3 rounded-[16px] border border-line p-3.5 md:p-4">
+    <section className="flex flex-col gap-3 rounded-[4px] border border-line p-3.5 md:p-4">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate font-display text-[18px] tracking-[-0.04em]">{d.name}</h3>
@@ -211,7 +211,7 @@ export function MappingTable({
           ) : null}
         </div>
         {d.mapping_confirmed && (
-          <span className="inline-flex h-6 items-center gap-1 rounded-full border border-line-strong px-2 text-[11px] text-ink">
+          <span className="inline-flex h-6 items-center gap-1 rounded-[3px] border border-line-strong px-2 text-[11px] text-ink">
             <Check className="size-3" strokeWidth={2} /> Confirmed
           </span>
         )}

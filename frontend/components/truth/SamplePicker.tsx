@@ -41,7 +41,7 @@ export function SamplePicker({ onLoaded }: { onLoaded: (e: Engagement) => void }
               onClick={() => void load(s.id)}
               disabled={!!busy}
               className={cn(
-                "group flex w-full items-start gap-3 rounded-[14px] border p-3.5 text-left transition-colors disabled:opacity-60",
+                "group flex w-full items-start gap-3 rounded-[4px] border p-3.5 text-left transition-colors disabled:opacity-60",
                 busy === s.id ? "border-ink bg-surface-solid/70" : "border-line hover:border-line-strong hover:bg-surface-solid/40",
               )}
             >

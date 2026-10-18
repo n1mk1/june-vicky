@@ -151,15 +151,21 @@ export function KnowledgeView() {
   }, [running, reloadNotes, reloadGraph, reloadStatus]);
   /** After starting a job: read the status now, so polling starts (or, if it already finished, reload). */
   const kick = async () => {
-    try {
-      const st = await apiGet<KbStatus>("kb/status");
-      setStatus(st);
-      if (!st.running) {
-        reloadNotes();
-        reloadGraph();
+    // Retried with backoff: if this one read fails (a busy or rate-limited API), nothing else would
+    // notice the job and the new notes would never appear.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const st = await apiGet<KbStatus>("kb/status");
+        setStatus(st);
+        if (!st.running) {
+          reloadNotes();
+          reloadGraph();
+        }
+        return;
+      } catch (err) {
+        if (guard(err)) return;
+        await new Promise((r) => window.setTimeout(r, 1500 * (attempt + 1)));
       }
-    } catch (err) {
-      guard(err);
     }
   };
 
@@ -324,7 +330,7 @@ export function KnowledgeView() {
       </div>
 
       {(uploading || running || filling) && (
-        <div className="relative flex items-center gap-2 overflow-hidden rounded-full border border-line px-3 py-1.5 text-[12px] text-ink-2" role="status">
+        <div className="relative flex items-center gap-2 overflow-hidden rounded-[3px] border border-line px-3 py-1.5 text-[12px] text-ink-2" role="status">
           <span className="size-1.5 shrink-0 animate-[pulse-dot_1.2s_ease-in-out_infinite] rounded-full bg-ember" aria-hidden />
           {filling
             ? "Filling the profile, mapping every table and reading every document. This takes a minute."
@@ -405,7 +411,7 @@ export function KnowledgeView() {
             )}
           </Panel>
           {selected && (
-            <section className="glass relative min-h-[480px] rounded-[20px] lg:min-h-0">
+            <section className="glass relative min-h-[480px] rounded-[4px] lg:min-h-0">
               <CornerMarks />
               <NoteEditor
                 key={selected}
@@ -457,7 +463,7 @@ export function KnowledgeView() {
       />
 
       {dragging && (
-        <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-[20px] border border-dashed border-ink bg-bg/70 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-[4px] border border-dashed border-ink bg-bg/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 text-center">
             <Upload className="size-6 text-ink" strokeWidth={1.5} aria-hidden />
             <p className="display text-[32px]">Drop to add it to the knowledge base.</p>
@@ -471,7 +477,7 @@ export function KnowledgeView() {
 
 function DropHero({ onPick, onFolder, onNew }: { onPick: () => void; onFolder: () => void; onNew: () => void }) {
   return (
-    <section className="glass relative flex min-h-[360px] flex-1 flex-col items-center justify-center gap-4 rounded-[20px] border-dashed p-8 text-center">
+    <section className="glass relative flex min-h-[360px] flex-1 flex-col items-center justify-center gap-4 rounded-[4px] border-dashed p-8 text-center">
       <CornerMarks />
       <span className="label">Empty vault</span>
       <p className="display max-w-[16ch] text-[clamp(32px,4vw,56px)]">Dump everything here.</p>

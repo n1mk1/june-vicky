@@ -87,7 +87,7 @@ export { DimBars };
 
 function Card({ icon, title, children, className }: { icon: React.ReactNode; title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("relative ml-10 flex flex-col gap-2.5 rounded-[14px] border border-line bg-surface-solid/50 p-3.5", className)}>
+    <div className={cn("relative ml-10 flex flex-col gap-2.5 rounded-[4px] border border-line bg-surface-solid/50 p-3.5", className)}>
       <span className="flex items-center gap-2 text-[11.5px] text-ink-2">
         {icon}
         {title}
@@ -215,7 +215,7 @@ function Message({ msg, fresh }: { msg: FeedItem; fresh: boolean }) {
           <p className="text-[13px] leading-snug">Your debrief: verdict, every question with a stronger answer, the claims ledger and sources.</p>
           <Link
             href={`/reports/${encodeURIComponent(msg.reportId)}`}
-            className="self-start rounded-full bg-invert-bg px-3.5 py-1.5 font-display text-[12.5px] uppercase tracking-[-0.02em] text-invert-ink"
+            className="self-start rounded-[3px] bg-invert-bg px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.02em] text-invert-ink"
           >
             Open the report
           </Link>

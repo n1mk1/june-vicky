@@ -34,7 +34,7 @@ export function KindChip({ kind }: { kind: string }) {
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full border px-2 font-mono text-[9.5px] uppercase tracking-[-0.04em] whitespace-nowrap",
+        "inline-flex h-5 items-center rounded-[3px] border px-2 font-mono text-[9.5px] uppercase tracking-[-0.04em] whitespace-nowrap",
         kind === "historical" ? "border-line-strong text-ink-2" : "border-dashed border-line-strong text-ink-2",
       )}
     >
@@ -50,12 +50,12 @@ function SourceTag({ fact }: { fact: Fact }) {
     <span className="flex flex-wrap items-center gap-1">
       <span
         title={s?.cited_text ?? undefined}
-        className="inline-flex h-5 items-center rounded-full border border-line px-2 font-mono text-[9.5px] uppercase tracking-[-0.04em] whitespace-nowrap text-ink-2"
+        className="inline-flex h-5 items-center rounded-[3px] border border-line px-2 font-mono text-[9.5px] uppercase tracking-[-0.04em] whitespace-nowrap text-ink-2"
       >
         {sourceLabel(s)}
       </span>
       {unverified && (
-        <span className="inline-flex h-5 items-center rounded-full border border-dashed border-ember px-2 font-mono text-[9.5px] uppercase tracking-[-0.04em] whitespace-nowrap text-ember">
+        <span className="inline-flex h-5 items-center rounded-[3px] border border-dashed border-ember px-2 font-mono text-[9.5px] uppercase tracking-[-0.04em] whitespace-nowrap text-ember">
           Couldn&apos;t verify on page
         </span>
       )}
@@ -107,7 +107,7 @@ function AddFact({ engagement, onSaved }: { engagement: Engagement; onSaved: (e:
 
   return (
     <form
-      className="flex flex-col gap-3 rounded-[14px] border border-line p-3.5"
+      className="flex flex-col gap-3 rounded-[4px] border border-line p-3.5"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
@@ -202,7 +202,7 @@ export function FactsTable({ engagement, onChanged }: { engagement: Engagement; 
                   setLimit(30);
                 }}
                 className={cn(
-                  "shrink-0 rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors",
+                  "shrink-0 rounded-[3px] border px-2.5 py-0.5 text-[11.5px] transition-colors",
                   kind === k ? "border-invert-bg bg-invert-bg text-invert-ink" : "border-line text-ink-2 hover:text-ink",
                 )}
               >
@@ -225,11 +225,11 @@ export function FactsTable({ engagement, onChanged }: { engagement: Engagement; 
       {all.length > 0 && facts.length === 0 ? (
         <p className="text-[12.5px] text-ink-2">No facts match that filter.</p>
       ) : facts.length === 0 ? (
-        <p className="rounded-[14px] border border-dashed border-line-strong p-4 text-[12.5px] text-ink-2">
+        <p className="rounded-[4px] border border-dashed border-line-strong p-4 text-[12.5px] text-ink-2">
           No facts beyond your tables yet. Add figures your files don&apos;t contain, such as cash in the bank or customer count.
         </p>
       ) : (
-        <div className="scroll-thin overflow-x-auto rounded-[14px] border border-line">
+        <div className="scroll-thin overflow-x-auto rounded-[4px] border border-line">
           <table className="w-full min-w-[640px] border-collapse text-left text-[12.5px]">
             <thead>
               <tr className="border-b border-line">

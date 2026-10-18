@@ -42,7 +42,7 @@ type Group = "native" | "month" | "quarter" | "year";
 type Chart = "line" | "area" | "bar" | "table";
 
 const select =
-  "h-8 min-w-0 rounded-[9px] border border-line bg-surface-solid/60 px-2 text-[12.5px] text-ink focus:border-line-strong focus:outline-none";
+  "h-8 min-w-0 rounded-[3px] border border-line bg-surface-solid/60 px-2 text-[12.5px] text-ink focus:border-line-strong focus:outline-none";
 
 interface AddWidgetProps {
   dashboardId: string;

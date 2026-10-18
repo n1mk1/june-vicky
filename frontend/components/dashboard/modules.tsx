@@ -46,7 +46,7 @@ export function AttackList({ items, loading, error }: { items: AttackItem[]; loa
           {shown.map((a) => (
             <li key={a.id} className="flex gap-3 px-4 py-3">
               <span
-                className={cn("mt-1.5 h-1.5 shrink-0 rounded-full", a.missing ? "border border-dashed border-ember" : "bg-ember")}
+                className={cn("mt-1.5 h-1.5 shrink-0 rounded-[3px]", a.missing ? "border border-dashed border-ember" : "bg-ember")}
                 style={{ width: 6 + a.severity * 18, opacity: 0.4 + a.severity * 0.6 }}
                 aria-label={`Severity ${Math.round(a.severity * 100)} of 100`}
                 role="img"

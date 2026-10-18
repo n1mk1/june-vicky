@@ -58,11 +58,14 @@ function readTokens(theme: Theme): Tokens {
   return out;
 }
 
-/** Monochrome ramp with ember as the second voice (carry-forwards, risk, the second ring). */
+/**
+ * Black and white: series are told apart by lightness alone. The first is full ink, the second a
+ * clearly lighter grey (carry-forwards, risk, the second ring), then alternating mid and far greys.
+ */
 function seriesColors(t: Tokens, theme: Theme): string[] {
   return theme === "dark"
-    ? [t.ink, t.ember, "#8d8e93", "#5b5c62", "#c6c6c8", "#3d3e44", "#b4705f", "#76777c"]
-    : [t.ink, t.ember, "#6a6b70", "#9b9ca1", "#2f3034", "#b9babd", "#a35140", "#4c4d52"];
+    ? [t.ink, "#8c8c8c", "#cfcfcf", "#5a5a5a", "#ababab", "#3c3c3c", "#e6e6e6", "#717171"]
+    : [t.ink, "#7a7a7a", "#3a3a3a", "#b0b0b0", "#5c5c5c", "#cfcfcf", "#1f1f1f", "#939393"];
 }
 
 function build(theme: Theme): Record<string, unknown> {

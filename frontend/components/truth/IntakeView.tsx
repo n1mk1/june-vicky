@@ -167,7 +167,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
 
       <StepBar step={step} onStep={setStep} />
 
-      <section className="glass relative rounded-[20px] p-4 md:p-6">
+      <section className="glass relative rounded-[4px] p-4 md:p-6">
         <CornerMarks />
         {step === 1 && (
           <div className="flex flex-col gap-4">
@@ -191,7 +191,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
               body="Check how each column maps to a standard field. Anything you keep as raw stays available to charts but isn't used for metrics."
             />
             {e.datasets.length === 0 ? (
-              <p className="rounded-[14px] border border-dashed border-line-strong p-4 text-[12.5px] text-ink-2">
+              <p className="rounded-[4px] border border-dashed border-line-strong p-4 text-[12.5px] text-ink-2">
                 No tables to map. Documents go straight to facts.
               </p>
             ) : (

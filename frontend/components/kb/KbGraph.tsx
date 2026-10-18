@@ -58,10 +58,15 @@ const KIND_LABEL: Record<KbGraphNode["kind"], string> = {
 function nodeStyle(n: KbGraphNode, t: Tokens) {
   const base = Math.min(26, 6 + Math.sqrt(n.degree) * 3.2);
   switch (n.kind) {
+    // Black and white: hubs are the big full-ink nodes with a ring; documents and tables are grey.
     case "hub":
-      return { symbol: "circle", symbolSize: Math.min(30, 12 + Math.sqrt(n.degree) * 2.6), itemStyle: { color: t.ember } };
+      return {
+        symbol: "circle",
+        symbolSize: Math.min(30, 12 + Math.sqrt(n.degree) * 2.6),
+        itemStyle: { color: t.ink, borderColor: t.lineStrong, borderWidth: 4 },
+      };
     case "table":
-      return { symbol: "roundRect", symbolSize: base, itemStyle: { color: t.ink2 } };
+      return { symbol: "rect", symbolSize: base, itemStyle: { color: t.ink2 } };
     case "note":
       return { symbol: "diamond", symbolSize: base + 2, itemStyle: { color: t.ink } };
     case "missing":
@@ -71,7 +76,7 @@ function nodeStyle(n: KbGraphNode, t: Tokens) {
         itemStyle: { color: "transparent", borderColor: t.dim, borderWidth: 1, borderType: "dashed" as const },
       };
     default:
-      return { symbol: "circle", symbolSize: base, itemStyle: { color: t.ink } };
+      return { symbol: "circle", symbolSize: base, itemStyle: { color: t.ink2 } };
   }
 }
 
@@ -262,13 +267,13 @@ export function GraphLegend({ className }: { className?: string }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-2", className)}>
       <span className={item}>
-        <span className="size-2.5 rounded-full bg-ember" /> Hub
+        <span className="size-2.5 rounded-full bg-ink ring-2 ring-line-strong" /> Hub
       </span>
       <span className={item}>
-        <span className="size-2 rounded-full bg-ink" /> Document
+        <span className="size-2 rounded-full bg-ink-2" /> Document
       </span>
       <span className={item}>
-        <span className="size-2 rounded-[2px] bg-ink-2" /> Table
+        <span className="size-2 bg-ink-2" /> Table
       </span>
       <span className={item}>
         <span className="size-2 rotate-45 bg-ink" /> Your note

@@ -35,7 +35,7 @@ export function ScorePanel() {
         <h3 className="label">Claims ledger</h3>
         <ul className="grid grid-cols-2 gap-2">
           {(Object.entries(PREVIEW_LEDGER) as [ClaimStatus, number | null][]).map(([status, n]) => (
-            <li key={status} className="flex flex-col items-start gap-1.5 rounded-[10px] border border-line px-2.5 py-2">
+            <li key={status} className="flex flex-col items-start gap-1.5 rounded-[3px] border border-line px-2.5 py-2">
               <ClaimChip status={status} />
               <span className="font-display text-[20px] tracking-[-0.04em] tabular-nums text-dim">{n ?? "–"}</span>
             </li>

@@ -50,7 +50,7 @@ export function AccessGate() {
         void submit();
       }}
       className={cn(
-        "glass relative flex w-full max-w-[380px] flex-col gap-5 rounded-[20px] p-6",
+        "glass relative flex w-full max-w-[380px] flex-col gap-5 rounded-[4px] p-6",
         shakes > 0 && "animate-[shake_0.42s_var(--ease-soft)]",
       )}
     >
@@ -64,7 +64,7 @@ export function AccessGate() {
         <label htmlFor="access-code" className="sr-only">
           Access code
         </label>
-        <div className="flex items-center gap-2 rounded-[12px] border border-line bg-surface-solid/60 p-1.5 focus-within:border-line-strong">
+        <div className="flex items-center gap-2 rounded-[4px] border border-line bg-surface-solid/60 p-1.5 focus-within:border-line-strong">
           <input
             id="access-code"
             value={code}
@@ -80,7 +80,7 @@ export function AccessGate() {
           <button
             type="submit"
             disabled={!code.trim() || busy}
-            className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-invert-bg px-3.5 font-display text-[12.5px] uppercase tracking-[-0.02em] text-invert-ink transition-opacity disabled:opacity-40"
+            className="group inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[3px] bg-invert-bg px-3.5 font-mono text-[11px] uppercase tracking-[0.02em] text-invert-ink transition-opacity disabled:opacity-40"
           >
             <RollLabel text={busy ? "Checking" : "Enter"} />
             <ArrowRight className="size-3.5" strokeWidth={1.75} />

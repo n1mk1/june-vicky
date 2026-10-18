@@ -14,7 +14,7 @@ export function CsvTable({ content }: { content: string }) {
   const numeric = (v: string) => /^[\s$£€(+-]*[\d,.]+%?\)?\s*$/.test(v);
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <div className="scroll-thin min-h-0 overflow-auto rounded-[12px] border border-line">
+      <div className="scroll-thin min-h-0 overflow-auto rounded-[4px] border border-line">
         <table className="w-max min-w-full border-collapse text-[12px]">
           <thead className="sticky top-0 z-10 bg-surface-solid">
             <tr>

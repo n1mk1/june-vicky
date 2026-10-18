@@ -2,39 +2,45 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Light scene: grey "gallery paper" */
+/*
+ * Black and white, as on the landing. There is no colour accent: `--ember` (the name the
+ * components use for "the one loud thing") is the ink itself, so emphasis is full-strength
+ * black or white against the greys.
+ */
+
+/* Light: white paper, black ink */
 :root,
 [data-theme="light"] {
-  --bg: #c8c8c8;
-  --bg-grad: linear-gradient(180deg, #f4f4f4 0%, #d6d6d6 55%, #c3c3c3 100%);
-  --surface: rgba(255, 255, 255, 0.58);
-  --surface-solid: #f2f2f2;
-  --ink: #111214;
-  --ink-2: #434343;
-  --dim: rgba(17, 18, 20, 0.5);
-  --line: rgba(17, 18, 20, 0.13);
-  --line-strong: rgba(17, 18, 20, 0.34);
-  --ember: #d9432b;
-  --invert-bg: #111214;
-  --invert-ink: #f2f2f2;
-  --paper: #c8c8c8;
+  --bg: #ffffff;
+  --bg-grad: #ffffff;
+  --surface: rgba(0, 0, 0, 0.025);
+  --surface-solid: #f4f4f4;
+  --ink: #000000;
+  --ink-2: rgba(0, 0, 0, 0.7);
+  --dim: rgba(0, 0, 0, 0.45);
+  --line: rgba(0, 0, 0, 0.13);
+  --line-strong: rgba(0, 0, 0, 0.36);
+  --ember: #000000;
+  --invert-bg: #000000;
+  --invert-ink: #ffffff;
+  --paper: #ffffff;
   color-scheme: light;
 }
 
-/* Dark scene: deep space */
+/* Dark: the landing's black */
 [data-theme="dark"] {
-  --bg: #040508;
-  --bg-grad: radial-gradient(120% 90% at 72% -10%, #11131a 0%, #040508 58%);
-  --surface: rgba(14, 15, 19, 0.62);
-  --surface-solid: #0c0d10;
-  --ink: #e2e2e2;
-  --ink-2: #a8a8aa;
-  --dim: rgba(216, 216, 216, 0.48);
-  --line: rgba(255, 255, 255, 0.11);
-  --line-strong: rgba(255, 255, 255, 0.3);
-  --ember: #e0502f;
-  --invert-bg: #ededed;
-  --invert-ink: #040508;
+  --bg: #000000;
+  --bg-grad: #000000;
+  --surface: rgba(255, 255, 255, 0.03);
+  --surface-solid: #0b0b0b;
+  --ink: #ffffff;
+  --ink-2: rgba(255, 255, 255, 0.7);
+  --dim: rgba(255, 255, 255, 0.42);
+  --line: rgba(255, 255, 255, 0.14);
+  --line-strong: rgba(255, 255, 255, 0.34);
+  --ember: #ffffff;
+  --invert-bg: #ffffff;
+  --invert-ink: #000000;
   color-scheme: dark;
 }
 
@@ -72,8 +78,8 @@ body {
 }
 
 ::selection {
-  background: var(--ember);
-  color: #fff;
+  background: var(--ink);
+  color: var(--bg);
 }
 
 :focus-visible {
@@ -102,8 +108,8 @@ body {
   .glass {
     background: var(--surface);
     border: 1px solid var(--line);
-    backdrop-filter: blur(18px) saturate(1.1);
-    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
   .scroll-thin {

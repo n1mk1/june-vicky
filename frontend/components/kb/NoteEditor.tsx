@@ -278,13 +278,13 @@ export function NoteEditor({ id, notes, startInEdit, onOpen, onCreate, onChanged
         {error && <ErrorNote message={error} />}
 
         {note.author === "ai" && note.kind === "hub" && (
-          <p className="rounded-[12px] border border-dashed border-line-strong px-3 py-2 text-[12px] text-ink-2">
+          <p className="rounded-[4px] border border-dashed border-line-strong px-3 py-2 text-[12px] text-ink-2">
             The organizer wrote this hub and rewrites it after each import. Edit it and it becomes yours: it won&apos;t be
             rewritten.
           </p>
         )}
         {note.summary && note.kind !== "hub" && (
-          <p className="rounded-[12px] bg-surface-solid/50 px-3 py-2 text-[12.5px] leading-snug text-ink-2">
+          <p className="rounded-[4px] bg-surface-solid/50 px-3 py-2 text-[12.5px] leading-snug text-ink-2">
             <span className="label mr-2">Summary</span>
             {note.summary}
           </p>
@@ -292,7 +292,7 @@ export function NoteEditor({ id, notes, startInEdit, onOpen, onCreate, onChanged
 
         <div className="flex flex-wrap items-center gap-1.5">
           {note.tags.map((t) => (
-            <span key={t} className="group inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] text-ink-2">
+            <span key={t} className="group inline-flex items-center gap-1 rounded-[3px] border border-line px-2 py-0.5 font-mono text-[10px] text-ink-2">
               #{t}
               <button
                 type="button"
@@ -334,7 +334,7 @@ export function NoteEditor({ id, notes, startInEdit, onOpen, onCreate, onChanged
                 void saveContent();
               }
             }}
-            className="scroll-thin min-h-[340px] w-full flex-1 resize-none rounded-[12px] border border-line bg-surface-solid/50 p-3 font-mono text-[12.5px] leading-relaxed text-ink outline-none focus:border-line-strong focus-visible:outline-none"
+            className="scroll-thin min-h-[340px] w-full flex-1 resize-none rounded-[4px] border border-line bg-surface-solid/50 p-3 font-mono text-[12.5px] leading-relaxed text-ink outline-none focus:border-line-strong focus-visible:outline-none"
           />
         ) : note.format === "csv" ? (
           <CsvTable content={content} />

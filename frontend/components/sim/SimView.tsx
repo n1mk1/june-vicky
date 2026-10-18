@@ -26,7 +26,7 @@ function StageNotice({ gate }: { gate: Gate }) {
   const noTruth = gate.kind === "no-truth";
   return (
     <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex justify-center md:inset-x-5 md:top-5">
-      <div className="pointer-events-auto relative flex w-full max-w-[560px] flex-col gap-2 rounded-[16px] border border-line-strong bg-surface-solid/95 p-4 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md">
+      <div className="pointer-events-auto relative flex w-full max-w-[560px] flex-col gap-2 rounded-[4px] border border-line-strong bg-surface-solid/95 p-4 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md">
         <CornerMarks />
         <span className="flex items-center gap-2 label">
           <span className={cn("size-1.5 rounded-full", noTruth ? "bg-ember" : "bg-ink animate-[pulse-dot_2.4s_ease-in-out_infinite]")} aria-hidden />
@@ -167,8 +167,8 @@ export function SimView() {
               aria-pressed={recording}
               aria-label={recording ? "Stop presenting" : "Start presenting"}
               className={cn(
-                "flex size-8 shrink-0 items-center justify-center rounded-[9px] border transition-colors disabled:opacity-40",
-                recording ? "border-ember bg-ember text-white" : "border-line text-ink-2 hover:border-line-strong hover:text-ink",
+                "flex size-8 shrink-0 items-center justify-center rounded-[3px] border transition-colors disabled:opacity-40",
+                recording ? "border-ember bg-ember text-invert-ink" : "border-line text-ink-2 hover:border-line-strong hover:text-ink",
               )}
             >
               {recording ? <Square className="size-3.5" strokeWidth={2} /> : blocked ? <AudioLines className="size-4" strokeWidth={1.5} /> : <Mic className="size-4" strokeWidth={1.5} />}

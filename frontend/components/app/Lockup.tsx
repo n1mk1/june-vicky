@@ -7,7 +7,7 @@ import Link from "next/link";
  */
 export function Lockup() {
   return (
-    <Link href="/" className="flex h-9 shrink-0 items-center rounded-full pr-1" aria-label="JUNE × VICKY home">
+    <Link href="/" className="flex h-9 shrink-0 items-center rounded-[3px] pr-1" aria-label="JUNE × VICKY home">
       <Image
         src="/brand/June_x_Vicky.svg"
         alt=""

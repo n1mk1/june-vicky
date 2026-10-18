@@ -11,7 +11,7 @@ export function FeedTabs({ value, onChange }: { value: FeedFilter; onChange: (f:
           aria-selected={value === f.value}
           onClick={() => onChange(f.value)}
           className={cn(
-            "shrink-0 rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors",
+            "shrink-0 rounded-[3px] border px-2.5 py-0.5 text-[11.5px] transition-colors",
             value === f.value ? "border-invert-bg bg-invert-bg text-invert-ink" : "border-line text-ink-2 hover:text-ink",
           )}
         >

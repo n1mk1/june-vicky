@@ -6,9 +6,9 @@ import { SourceChip } from "./SourceChip";
 
 const RADII = [70, 56, 42];
 const C = (r: number) => 2 * Math.PI * r;
-const STROKES = ["var(--ink)", "var(--ember)", "var(--ink-2)"];
+const STROKES = ["var(--ink)", "var(--dim)", "var(--ink-2)"];
 
-/** Concentric rings, one per KPI (e.g. margin as booked in ink, incl. customer success in ember). */
+/** Concentric rings, one per KPI (e.g. margin as booked in ink, incl. customer success in grey). */
 export function GaugeRingWidget({ widget, currency }: { widget: Widget; currency?: string }) {
   const kpi = widget.evaluated.kpi;
   const items: KpiItem[] = kpi ? [kpi.primary, ...kpi.secondary].filter((k) => k.value !== null).slice(0, 3) : [];

@@ -13,7 +13,7 @@ export function SourceChip({ x, className, align }: { x: Explanation; className?
       align={align}
       className={className}
       triggerClassName={cn(
-        "max-w-full truncate rounded-full border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2 transition-colors hover:text-ink",
+        "max-w-full truncate rounded-[3px] border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2 transition-colors hover:text-ink",
         summary ? "border-dashed border-line-strong" : "border-line hover:border-line-strong",
       )}
     >

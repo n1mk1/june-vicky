@@ -30,7 +30,7 @@ interface PanelProps {
 
 export function Panel({ title, aside, marks, className, bodyClassName, children }: PanelProps) {
   return (
-    <section className={cn("glass relative flex min-h-0 flex-col rounded-[20px]", className)}>
+    <section className={cn("glass relative flex min-h-0 flex-col rounded-[4px]", className)}>
       {marks && <CornerMarks />}
       {(title || aside) && (
         <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">

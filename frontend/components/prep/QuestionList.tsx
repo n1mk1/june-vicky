@@ -64,7 +64,7 @@ export function QuestionList({ items, empty }: { items: QA[]; empty?: string }) 
                       aria-pressed={mark === m}
                       onClick={() => toggle(q.id, m)}
                       className={cn(
-                        "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                        "flex items-center gap-1 rounded-[3px] border px-2 py-0.5 text-[11px] transition-colors",
                         mark === m ? "border-invert-bg bg-invert-bg text-invert-ink" : "border-line text-ink-2 hover:text-ink",
                       )}
                     >
@@ -83,7 +83,7 @@ export function QuestionList({ items, empty }: { items: QA[]; empty?: string }) 
           type="button"
           disabled={picked === 0}
           onClick={() => setDrilled(`Drill ready: ${picked} question${picked === 1 ? "" : "s"} at the top of your next session.`)}
-          className="group flex h-9 w-full items-center justify-center rounded-full bg-invert-bg font-display text-[12.5px] uppercase tracking-[-0.02em] text-invert-ink disabled:opacity-35"
+          className="group flex h-9 w-full items-center justify-center rounded-[3px] bg-invert-bg font-mono text-[11px] uppercase tracking-[0.02em] text-invert-ink disabled:opacity-35"
         >
           Drill {picked} selected
         </button>

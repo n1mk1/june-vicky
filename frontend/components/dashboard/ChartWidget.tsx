@@ -179,7 +179,7 @@ export function ChartWidget({
                 aria-selected={on}
                 onClick={() => setTable(v === "Table")}
                 className={cn(
-                  "rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
+                  "rounded-[3px] border px-2.5 py-0.5 text-[11px] transition-colors",
                   on ? "border-invert-bg bg-invert-bg text-invert-ink" : "border-line text-ink-2 hover:text-ink",
                 )}
               >

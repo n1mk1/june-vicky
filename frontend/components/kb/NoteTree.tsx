@@ -75,7 +75,7 @@ export function NoteTree({ notes, selected, query, onQuery, onOpen }: NoteTreePr
           onChange={(e) => onQuery(e.target.value)}
           placeholder="Search notes"
           aria-label="Search notes"
-          className="h-8 w-full rounded-full border border-line bg-surface-solid/60 pr-3 pl-8 text-[12.5px] text-ink placeholder:text-dim focus:border-line-strong focus:outline-none"
+          className="h-8 w-full rounded-[3px] border border-line bg-surface-solid/60 pr-3 pl-8 text-[12.5px] text-ink placeholder:text-dim focus:border-line-strong focus:outline-none"
         />
       </label>
       <nav aria-label="Notes" className="scroll-thin mt-2 min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
@@ -97,7 +97,7 @@ export function NoteTree({ notes, selected, query, onQuery, onOpen }: NoteTreePr
                   })
                 }
                 aria-expanded={open}
-                className="flex w-full items-center gap-1 rounded-[8px] px-1.5 py-1 text-left transition-colors hover:bg-surface-solid/50"
+                className="flex w-full items-center gap-1 rounded-[3px] px-1.5 py-1 text-left transition-colors hover:bg-surface-solid/50"
               >
                 <ChevronRight className={cn("size-3 text-dim transition-transform", open && "rotate-90")} strokeWidth={1.5} />
                 <span className="label flex-1 truncate">{folderLabel(folder)}</span>
@@ -113,7 +113,7 @@ export function NoteTree({ notes, selected, query, onQuery, onOpen }: NoteTreePr
                         aria-current={selected === n.id ? "page" : undefined}
                         title={n.summary || n.path}
                         className={cn(
-                          "flex w-full items-center gap-2 rounded-[8px] px-2 py-1 text-left text-[12.5px] transition-colors",
+                          "flex w-full items-center gap-2 rounded-[3px] px-2 py-1 text-left text-[12.5px] transition-colors",
                           selected === n.id ? "bg-invert-bg text-invert-ink" : "text-ink-2 hover:bg-surface-solid/50 hover:text-ink",
                         )}
                       >
@@ -136,7 +136,7 @@ export function NoteTree({ notes, selected, query, onQuery, onOpen }: NoteTreePr
                   <button
                     type="button"
                     onClick={() => onOpen(n.id)}
-                    className="flex w-full flex-col gap-0.5 rounded-[8px] px-2 py-1.5 text-left transition-colors hover:bg-surface-solid/50"
+                    className="flex w-full flex-col gap-0.5 rounded-[3px] px-2 py-1.5 text-left transition-colors hover:bg-surface-solid/50"
                   >
                     <span className="flex items-center gap-2 text-[12.5px] text-ink">
                       <KindIcon kind={n.kind} />

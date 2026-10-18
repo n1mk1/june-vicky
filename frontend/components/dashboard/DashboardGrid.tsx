@@ -214,13 +214,13 @@ export function DashboardGrid({ widgets, layout, highlight, onCommit, onRemove, 
               chart ? "min-h-[300px] md:col-span-2" : "min-h-[180px]",
               chart && inFit && "lg:col-span-1",
               active && "z-20 opacity-90",
-              highlight === w.id && "rounded-[20px] ring-2 ring-ember/70 ring-offset-2 ring-offset-bg",
+              highlight === w.id && "rounded-[4px] ring-2 ring-ember/70 ring-offset-2 ring-offset-bg",
             )}
           >
             <WidgetView widget={w} engagementId={engagementId} currency={currency} timeRange={timeRange} onRangeChange={onRangeChange} />
             <div
               className={cn(
-                "absolute -top-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-line bg-surface-solid p-0.5 shadow-sm transition-opacity",
+                "absolute -top-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-[3px] border border-line bg-surface-solid p-0.5 shadow-sm transition-opacity",
                 active ? "opacity-100" : "opacity-0 group-hover/cell:opacity-100 focus-within:opacity-100",
               )}
             >

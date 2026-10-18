@@ -32,6 +32,7 @@ export function useTheme() {
 
 /** Chart and canvas colours, which can't read CSS variables directly. */
 export const palette = {
-  dark: { ink: "#e2e2e2", dim: "rgba(216,216,216,0.45)", line: "rgba(255,255,255,0.1)", ember: "#e0502f", bg: "#040508" },
-  light: { ink: "#111214", dim: "rgba(17,18,20,0.45)", line: "rgba(17,18,20,0.12)", ember: "#d9432b", bg: "#c8c8c8" },
+  // Black and white: "ember" is the full-strength ink, as in globals.css.
+  dark: { ink: "#ffffff", dim: "rgba(255,255,255,0.42)", line: "rgba(255,255,255,0.14)", ember: "#ffffff", bg: "#000000" },
+  light: { ink: "#000000", dim: "rgba(0,0,0,0.45)", line: "rgba(0,0,0,0.13)", ember: "#000000", bg: "#ffffff" },
 } as const;

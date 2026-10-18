@@ -155,7 +155,7 @@ export function DashboardChat(props: DashboardChatProps) {
                     key={s}
                     type="button"
                     onClick={() => void send(s)}
-                    className="rounded-full border border-line px-2.5 py-0.5 text-[11.5px] text-ink-2 hover:border-line-strong hover:text-ink"
+                    className="rounded-[3px] border border-line px-2.5 py-0.5 text-[11.5px] text-ink-2 hover:border-line-strong hover:text-ink"
                   >
                     {s}
                   </button>
@@ -228,7 +228,7 @@ export function DashboardChat(props: DashboardChatProps) {
           data-testid="chat-thread"
           onPointerEnter={() => setHovered(true)}
           onPointerLeave={() => setHovered(false)}
-          className="glass absolute inset-x-0 bottom-full mb-2 flex bg-surface-solid/95 max-h-[min(64vh,640px)] flex-col overflow-hidden rounded-[18px] shadow-[0_24px_80px_-24px_rgba(0,0,0,0.6)]"
+          className="glass absolute inset-x-0 bottom-full mb-2 flex bg-surface-solid/95 max-h-[min(64vh,640px)] flex-col overflow-hidden rounded-[4px] shadow-[0_24px_80px_-24px_rgba(0,0,0,0.6)]"
         >
           <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5">
             <span className="label">Ask Vicky</span>
@@ -258,9 +258,9 @@ export function DashboardChat(props: DashboardChatProps) {
               <article
                 key={x.id}
                 data-testid={x === latest ? "chat-reply" : "chat-exchange"}
-                className={cn("flex flex-col gap-2", x.result?.kind === "missing" && "rounded-[12px] border border-dashed border-line p-3")}
+                className={cn("flex flex-col gap-2", x.result?.kind === "missing" && "rounded-[4px] border border-dashed border-line p-3")}
               >
-                <p className="max-w-[85%] self-end rounded-[12px] rounded-br-[4px] border border-line bg-surface-solid/70 px-3 py-1.5 text-[12.5px] text-ink">
+                <p className="max-w-[85%] self-end rounded-[4px] rounded-br-[4px] border border-line bg-surface-solid/70 px-3 py-1.5 text-[12.5px] text-ink">
                   {x.text}
                 </p>
                 {body(x)}

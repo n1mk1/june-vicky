@@ -10,7 +10,7 @@ export function MissingTile({ widget, engagementId, className }: { widget: Widge
   return (
     <section
       className={cn(
-        "relative flex min-h-[160px] flex-col justify-between gap-3 rounded-[20px] border border-dashed p-4",
+        "relative flex min-h-[160px] flex-col justify-between gap-3 rounded-[4px] border border-dashed p-4",
         error ? "border-ember/60" : "border-line-strong",
         className,
       )}

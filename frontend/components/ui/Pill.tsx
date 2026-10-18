@@ -6,7 +6,7 @@ import { RollLabel } from "./RollLabel";
 type Variant = "solid" | "outline" | "ghost";
 
 const base =
-  "group inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-full border px-3.5 font-display text-[12.5px] uppercase tracking-[-0.02em] transition-colors duration-300 disabled:pointer-events-none disabled:opacity-40";
+  "group inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-[3px] border px-3.5 font-mono text-[11px] uppercase tracking-[0.02em] transition-colors duration-300 disabled:pointer-events-none disabled:opacity-40";
 
 const variants: Record<Variant, string> = {
   solid: "border-invert-bg bg-invert-bg text-invert-ink",

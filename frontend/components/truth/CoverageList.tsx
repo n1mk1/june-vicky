@@ -21,7 +21,7 @@ export function CoverageList({ items }: { items: CoverageItem[] }) {
       </p>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {[...groups.entries()].map(([group, rows]) => (
-          <section key={group} className="rounded-[14px] border border-line p-3">
+          <section key={group} className="rounded-[4px] border border-line p-3">
             <h4 className="label pb-2">{group}</h4>
             <ul className="flex flex-col gap-1.5">
               {rows.map((r) => (

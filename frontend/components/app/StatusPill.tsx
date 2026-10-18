@@ -8,7 +8,7 @@ import { useActiveEngagement } from "./EngagementProvider";
 /** Header pill: which company's source of truth every tab is using (UI doc §2). */
 export function StatusPill({ className }: { className?: string }) {
   const { engagement, loading, error } = useActiveEngagement();
-  const base = "inline-flex h-8 max-w-full items-center gap-2 rounded-full border px-3.5 text-[12px] transition-colors";
+  const base = "inline-flex h-8 max-w-full items-center gap-2 rounded-[3px] border px-3.5 text-[12px] transition-colors";
 
   if (engagement === undefined && error && !loading) {
     return (

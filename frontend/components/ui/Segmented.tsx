@@ -14,7 +14,7 @@ interface SegmentedProps<T extends string> {
 /** Small radio pill group (Coached · Realistic, Slides · Feedback). */
 export function Segmented<T extends string>({ label, value, options, onChange, disabled, className }: SegmentedProps<T>) {
   return (
-    <div role="radiogroup" aria-label={label} className={cn("flex shrink-0 rounded-full border border-line p-[2px]", className)}>
+    <div role="radiogroup" aria-label={label} className={cn("flex shrink-0 rounded-[3px] border border-line p-[2px]", className)}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -24,7 +24,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, d
           disabled={disabled}
           onClick={() => onChange(o.value)}
           className={cn(
-            "rounded-full px-2.5 py-0.5 text-[11.5px] transition-colors disabled:opacity-50",
+            "rounded-[3px] px-2.5 py-0.5 text-[11.5px] transition-colors disabled:opacity-50",
             value === o.value ? "bg-invert-bg text-invert-ink" : "text-ink-2 hover:text-ink",
           )}
         >

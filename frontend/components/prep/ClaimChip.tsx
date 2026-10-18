@@ -2,7 +2,7 @@ import { CLAIM_LABEL, type ClaimStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const STYLE: Record<ClaimStatus, string> = {
-  contradicts: "border-ember bg-ember text-white",
+  contradicts: "border-ember bg-ember text-invert-ink",
   forecast_as_fact: "border-ember text-ember",
   unsupported: "border-dashed border-line-strong text-ink-2",
   matches: "border-line-strong text-ink",
@@ -14,7 +14,7 @@ export function ClaimChip({ status, className, title }: { status: ClaimStatus; c
     <span
       title={title}
       className={cn(
-        "inline-flex h-5 items-center rounded-full border px-2 font-mono text-[9.5px] uppercase tracking-[-0.04em] whitespace-nowrap",
+        "inline-flex h-5 items-center rounded-[3px] border px-2 font-mono text-[9.5px] uppercase tracking-[-0.04em] whitespace-nowrap",
         STYLE[status] ?? STYLE.unsupported,
         className,
       )}

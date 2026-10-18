@@ -29,7 +29,7 @@ export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hin
 
   return (
     <form
-      className={cn("glass relative overflow-hidden rounded-[18px] p-2", className)}
+      className={cn("glass relative overflow-hidden rounded-[4px] p-2", className)}
       onSubmit={(e) => {
         e.preventDefault();
         const text = value.trim();
@@ -38,7 +38,7 @@ export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hin
         setValue("");
       }}
     >
-      <div className="flex items-center gap-2 rounded-[12px] border border-line bg-surface-solid/60 p-1.5">
+      <div className="flex items-center gap-2 rounded-[4px] border border-line bg-surface-solid/60 p-1.5">
         {leading ??
           (onAttach && (
             <>
@@ -46,7 +46,7 @@ export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hin
                 type="button"
                 onClick={() => file.current?.click()}
                 disabled={busy}
-                className="flex size-8 shrink-0 items-center justify-center rounded-[9px] border border-line text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-40"
+                className="flex size-8 shrink-0 items-center justify-center rounded-[3px] border border-line text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-40"
                 aria-label="Attach a file (CSV, XLSX, PDF, DOCX or MD)"
                 title="Attach CSV, XLSX, PDF, DOCX or MD"
               >
@@ -82,7 +82,7 @@ export function PromptBar({ placeholder, label, onSubmit, onAttach, leading, hin
         <button
           type="submit"
           disabled={!value.trim() || disabled}
-          className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-invert-bg text-invert-ink transition-opacity disabled:opacity-35"
+          className="flex size-8 shrink-0 items-center justify-center rounded-[3px] bg-invert-bg text-invert-ink transition-opacity disabled:opacity-35"
           aria-label="Send"
         >
           <ArrowUp className="size-4" strokeWidth={1.75} />

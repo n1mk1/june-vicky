@@ -33,7 +33,7 @@ export function ChipInput({
       {values.length > 0 && (
         <ul className="flex flex-col gap-1.5" aria-label={label}>
           {values.map((v) => (
-            <li key={v} className="flex items-start gap-2 rounded-[10px] border border-line px-2.5 py-1.5 text-[12.5px] leading-snug text-ink">
+            <li key={v} className="flex items-start gap-2 rounded-[3px] border border-line px-2.5 py-1.5 text-[12.5px] leading-snug text-ink">
               <span className="min-w-0 flex-1">{v}</span>
               <button
                 type="button"

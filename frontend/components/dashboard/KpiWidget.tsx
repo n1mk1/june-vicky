@@ -38,7 +38,7 @@ export function KpiWidget({ widget, currency }: { widget: Widget; currency?: str
                 <dd className="flex items-baseline gap-1.5 font-display text-[clamp(16px,2.6vh,20px)] tracking-[-0.04em] tabular-nums">
                   {k.missing || k.value === null ? (
                     <span
-                      className="rounded-full border border-dashed border-line-strong px-2 py-0.5 font-sans text-[10.5px] tracking-normal text-dim"
+                      className="rounded-[3px] border border-dashed border-line-strong px-2 py-0.5 font-sans text-[10.5px] tracking-normal text-dim"
                       title={k.missing?.reason}
                     >
                       {k.missing?.needs?.length ? `Needs ${k.missing.needs.join(", ").replace(/_/g, " ")}` : "Not available"}

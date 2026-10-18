@@ -115,7 +115,7 @@ export function ReportDoc({ id }: { id: string }) {
           </ol>
         </nav>
 
-        <article className="glass relative flex min-w-0 flex-col gap-8 rounded-[20px] p-5 md:p-8">
+        <article className="glass relative flex min-w-0 flex-col gap-8 rounded-[4px] p-5 md:p-8">
           <CornerMarks />
           <header className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -126,7 +126,7 @@ export function ReportDoc({ id }: { id: string }) {
                 <a
                   href={`/api/v1/reports/${encodeURIComponent(r.id)}.md`}
                   download={`vicky-report-${r.id.slice(0, 8)}.md`}
-                  className="group inline-flex h-8 items-center gap-2 rounded-full border border-line-strong px-3.5 font-display text-[12.5px] uppercase tracking-[-0.02em] text-ink transition-colors hover:border-ink"
+                  className="group inline-flex h-8 items-center gap-2 rounded-[3px] border border-line-strong px-3.5 font-mono text-[11px] uppercase tracking-[0.02em] text-ink transition-colors hover:border-ink"
                 >
                   <Download className="size-3.5" strokeWidth={1.5} /> Download Markdown
                 </a>
@@ -169,7 +169,7 @@ export function ReportDoc({ id }: { id: string }) {
                 {r.per_vc.map((p) => {
                   const persona = glyphs.get(p.vc_id);
                   return (
-                    <div key={p.vc_id} className="flex flex-col gap-2 rounded-[14px] border border-line p-3.5">
+                    <div key={p.vc_id} className="flex flex-col gap-2 rounded-[4px] border border-line p-3.5">
                       <div className="flex items-center gap-2.5">
                         <VcGlyph glyph={persona?.glyph ?? "custom"} />
                         <span className="min-w-0 flex-1">
@@ -178,7 +178,7 @@ export function ReportDoc({ id }: { id: string }) {
                         </span>
                         <span
                           className={cn(
-                            "rounded-full border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em]",
+                            "rounded-[3px] border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em]",
                             p.second_meeting ? "border-line-strong text-ink" : "border-ember text-ember",
                           )}
                         >
@@ -211,7 +211,7 @@ export function ReportDoc({ id }: { id: string }) {
                         {q.why_asked}
                       </p>
                     )}
-                    <p className="rounded-[12px] bg-surface-solid/50 p-3 text-[13.5px] leading-snug">
+                    <p className="rounded-[4px] bg-surface-solid/50 p-3 text-[13.5px] leading-snug">
                       <span className="label mb-1 block">Your answer</span>
                       {q.answer || <span className="text-dim">No answer.</span>}
                     </p>
@@ -329,7 +329,7 @@ export function ReportDoc({ id }: { id: string }) {
             <Section id="knowledge" title="Knowledge gaps" n={num("knowledge")}>
               <div className="grid gap-3 md:grid-cols-2">
                 {r.knowledge_gaps.map((k) => (
-                  <div key={k.term} className="flex flex-col gap-1.5 rounded-[14px] border border-line p-3.5">
+                  <div key={k.term} className="flex flex-col gap-1.5 rounded-[4px] border border-line p-3.5">
                     <span className="font-display text-[16px] tracking-[-0.03em]">{k.term}</span>
                     <p className="text-[13px] leading-snug text-ink-2">{k.text}</p>
                   </div>
@@ -348,7 +348,7 @@ export function ReportDoc({ id }: { id: string }) {
                       <span className="font-mono text-[11px] tabular-nums text-dim">{String(i + 1).padStart(2, "0")}</span>
                       <span className="min-w-0 flex-1">{a.text}</span>
                       {a.drill_lens && (
-                        <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2">
+                        <span className="rounded-[3px] border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2">
                           {humanize(a.drill_lens)}
                         </span>
                       )}
