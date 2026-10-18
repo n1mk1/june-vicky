@@ -58,12 +58,12 @@ const KIND_LABEL: Record<KbGraphNode["kind"], string> = {
 function nodeStyle(n: KbGraphNode, t: Tokens) {
   const base = Math.min(26, 6 + Math.sqrt(n.degree) * 3.2);
   switch (n.kind) {
-    // Black and white: hubs are the big full-ink nodes with a ring; documents and tables are grey.
+    // Hubs are the big full-ink nodes with an orange ring; documents and tables are grey.
     case "hub":
       return {
         symbol: "circle",
         symbolSize: Math.min(30, 12 + Math.sqrt(n.degree) * 2.6),
-        itemStyle: { color: t.ink, borderColor: t.lineStrong, borderWidth: 4 },
+        itemStyle: { color: t.ink, borderColor: t.ember, borderWidth: 3 },
       };
     case "table":
       return { symbol: "rect", symbolSize: base, itemStyle: { color: t.ink2 } };
@@ -267,7 +267,7 @@ export function GraphLegend({ className }: { className?: string }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-2", className)}>
       <span className={item}>
-        <span className="size-2.5 rounded-full bg-ink ring-2 ring-line-strong" /> Hub
+        <span className="size-2.5 rounded-full bg-ink ring-2 ring-ember" /> Hub
       </span>
       <span className={item}>
         <span className="size-2 rounded-full bg-ink-2" /> Document

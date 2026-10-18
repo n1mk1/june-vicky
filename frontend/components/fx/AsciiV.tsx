@@ -160,7 +160,9 @@ export function AsciiV({ className }: { className?: string }) {
         const a = Math.max(0, Math.min(1, c.base * flick + band * 0.35 * c.base));
         if (a < 0.04) continue;
         if (n > (reduced ? 0.985 : 0.93)) c.ch = pick(a, hash(c.seed + frame * 0.37));
-        ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+        // The tertiary orange: a few bright digits glint for a frame or two (about 1 in 120).
+        const glint = a > 0.55 && hash(c.seed * 77 + Math.floor(frame / 2)) > 0.992;
+        ctx.fillStyle = glint ? `rgba(255,106,19,${Math.min(1, a + 0.2).toFixed(3)})` : `rgba(255,255,255,${a.toFixed(3)})`;
         ctx.fillText(c.ch, c.x, c.y);
       }
     };

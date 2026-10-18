@@ -10,6 +10,7 @@ export default function AccessPage() {
     // Same black and white as the landing, whatever the app theme: data-theme pins the tokens.
     <main data-theme="dark" className="relative isolate flex min-h-dvh flex-col items-center bg-black px-4 pt-6 pb-8 text-white md:pt-8">
       <p className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[-0.02em]">
+        <span aria-hidden className="size-1.5 bg-ember" />
         <span>Vicky</span>
         <span className="border border-white/25 bg-white/10 px-2 py-0.5 text-white/70">AI venture capitalist</span>
       </p>

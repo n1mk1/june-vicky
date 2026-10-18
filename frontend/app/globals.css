@@ -3,9 +3,10 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /*
- * Black and white, as on the landing. There is no colour accent: `--ember` (the name the
- * components use for "the one loud thing") is the ink itself, so emphasis is full-strength
- * black or white against the greys.
+ * Black and white, as on the landing, with orange as a tertiary accent. `--ember` (the name the
+ * components use for "the one loud thing") is that orange: used sparingly for markers, status
+ * dots, focus rings, weak scores and highlights, never for large fills. Both oranges pass AA for
+ * small text on their paper (7.3:1 on black, 4.7:1 on white).
  */
 
 /* Light: white paper, black ink */
@@ -20,7 +21,7 @@
   --dim: rgba(0, 0, 0, 0.45);
   --line: rgba(0, 0, 0, 0.13);
   --line-strong: rgba(0, 0, 0, 0.36);
-  --ember: #000000;
+  --ember: #c94a00;
   --invert-bg: #000000;
   --invert-ink: #ffffff;
   --paper: #ffffff;
@@ -38,7 +39,7 @@
   --dim: rgba(255, 255, 255, 0.42);
   --line: rgba(255, 255, 255, 0.14);
   --line-strong: rgba(255, 255, 255, 0.34);
-  --ember: #ffffff;
+  --ember: #ff6a13;
   --invert-bg: #ffffff;
   --invert-ink: #000000;
   color-scheme: dark;

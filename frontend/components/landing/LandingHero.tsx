@@ -16,8 +16,9 @@ export function LandingHero() {
   }, []);
 
   return (
-    <main className="relative isolate flex min-h-dvh flex-col items-center bg-black px-4 pt-6 pb-8 text-white md:pt-8">
+    <main data-theme="dark" className="relative isolate flex min-h-dvh flex-col items-center bg-black px-4 pt-6 pb-8 text-white md:pt-8">
       <p className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[-0.02em] animate-[rise_0.9s_var(--ease-soft)_both]">
+        <span aria-hidden className="size-1.5 bg-ember" />
         <span className="text-white">Vicky</span>
         <span className="border border-white/25 bg-white/10 px-2 py-0.5 text-white/70">AI venture capitalist</span>
       </p>
@@ -44,7 +45,7 @@ export function LandingHero() {
 
       <Link
         href="/knowledge"
-        className="inline-flex h-11 items-center justify-center rounded-[3px] border border-white bg-white px-7 font-mono text-[12.5px] uppercase tracking-[0.02em] text-black transition-colors duration-200 hover:bg-black hover:text-white animate-[rise_0.9s_var(--ease-soft)_both] [animation-delay:450ms]"
+        className="inline-flex h-11 items-center justify-center rounded-[3px] border border-white bg-white px-7 font-mono text-[12.5px] uppercase tracking-[0.02em] text-black transition-colors duration-200 hover:border-ember hover:bg-ember hover:text-black animate-[rise_0.9s_var(--ease-soft)_both] [animation-delay:450ms]"
       >
         Get started
       </Link>

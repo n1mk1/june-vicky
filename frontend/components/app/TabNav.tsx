@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * `flagship` tabs (the dashboard, the prep court and the simulator) are the product. In black and
- * white they stand out by contrast: a full-ink outline, a bright label and a square marker, against
- * the dim outlines of the rest. The open tab is filled, like the landing's button.
+ * white they stand out by contrast: a full-ink outline, a bright label and an orange square marker,
+ * against the dim outlines of the rest. The open tab is filled, like the landing's button.
  */
 export const TABS = [
   { href: "/knowledge", label: "Knowledge base", flagship: false },
@@ -50,13 +50,13 @@ function Tabs({ pathname }: { pathname: string }) {
             )}
           >
             {tab.flagship && (
-              <span aria-hidden className={cn("size-1.5 shrink-0", active ? "bg-invert-ink" : "bg-ink")} />
+              <span aria-hidden className="size-1.5 shrink-0 bg-ember" />
             )}
             <RollLabel text={tab.label} />
             {active && (
               <span
                 aria-hidden
-                className="absolute -bottom-[11px] left-1/2 h-px w-6 -translate-x-1/2 bg-ink"
+                className="absolute -bottom-[11px] left-1/2 h-px w-6 -translate-x-1/2 bg-ember"
               />
             )}
           </Link>
