@@ -1,7 +1,8 @@
 "use client";
 
-import { Download, Network, StickyNote, Table2, FileText, Trash2, X } from "lucide-react";
+import { Download, Network, StickyNote, Table2, FileText, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDelete } from "@/components/ui/ConfirmDelete";
 import { Segmented } from "@/components/ui/Segmented";
 import { ErrorNote, Loading } from "@/components/ui/States";
 import { ApiError, apiDelete, apiPut } from "@/lib/api";
@@ -171,7 +172,6 @@ export function NoteEditor({ id, notes, startInEdit, onOpen, onCreate, onChanged
   const setTags = (tags: string[]) => void put({ tags }, { reloadTree: true });
 
   const remove = async () => {
-    if (!window.confirm(`Delete “${note.title}”? This can't be undone.`)) return;
     try {
       latest.current.draft = null;
       await apiDelete(`kb/notes/${encodeURIComponent(id)}`);
@@ -222,15 +222,7 @@ export function NoteEditor({ id, notes, startInEdit, onOpen, onCreate, onChanged
               <Download className="size-3.5" strokeWidth={1.5} />
             </a>
           )}
-          <button
-            type="button"
-            onClick={() => void remove()}
-            className="grid size-7 place-items-center rounded-full text-ink-2 transition-colors hover:text-ember"
-            aria-label="Delete note"
-            title="Delete note"
-          >
-            <Trash2 className="size-3.5" strokeWidth={1.5} />
-          </button>
+          <ConfirmDelete what="note" title="Delete note" onConfirm={remove} className="text-ink-2" />
           <button
             type="button"
             onClick={onClose}

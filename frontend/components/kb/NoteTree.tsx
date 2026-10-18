@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronRight, Search, Trash2 } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ConfirmDelete } from "@/components/ui/ConfirmDelete";
 import { apiGet } from "@/lib/api";
 import { FOLDER_ORDER, folderLabel } from "@/lib/kb";
 import type { KbNote } from "@/lib/types";
@@ -14,8 +15,8 @@ interface NoteTreeProps {
   query: string;
   onQuery: (q: string) => void;
   onOpen: (id: string) => void;
-  /** Delete a note from its row, without opening it. */
-  onDelete?: (note: KbNote) => void;
+  /** Delete a note from its row, without opening it (asks in place first). */
+  onDelete?: (note: KbNote) => void | Promise<void>;
 }
 
 const KIND_RANK = { hub: 0, note: 1, document: 2, table: 3 } as const;
@@ -126,18 +127,17 @@ export function NoteTree({ notes, selected, query, onQuery, onOpen, onDelete }: 
                         <span className="truncate">{n.title}</span>
                       </button>
                       {onDelete && (
-                        <button
-                          type="button"
-                          onClick={() => onDelete(n)}
-                          aria-label={`Delete ${n.title}`}
-                          title="Delete note"
-                          className={cn(
-                            "mr-1 grid size-6 shrink-0 place-items-center rounded-full opacity-0 transition-[opacity,color] group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
-                            selected === n.id ? "text-invert-ink hover:text-ember" : "text-dim hover:text-ember",
-                          )}
-                        >
-                          <Trash2 className="size-3.5" strokeWidth={1.5} />
-                        </button>
+                        <span className="mr-1 flex shrink-0">
+                          <ConfirmDelete
+                            what={n.title}
+                            title="Delete note"
+                            onConfirm={() => onDelete(n)}
+                            className={cn(
+                              "size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
+                              selected === n.id ? "text-invert-ink" : "text-dim",
+                            )}
+                          />
+                        </span>
                       )}
                     </li>
                   ))}

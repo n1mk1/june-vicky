@@ -1,6 +1,6 @@
 "use client";
 
-import { GitFork, Pencil, Plus, Trash2 } from "lucide-react";
+import { GitFork, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { CornerMarks } from "@/components/ui/Panel";
@@ -65,6 +65,8 @@ function PersonaCard({
 }) {
   const [up, setUp] = useState(false);
   const [room, setRoom] = useState<number | null>(null);
+  // Delete asks in place: window.confirm can be suppressed (returns false, shows nothing) in embedded browsers.
+  const [armed, setArmed] = useState(false);
   const lenses = Object.entries(p.priorities ?? {}).sort((a, b) => b[1] - a[1]);
   const top = new Set(lenses.slice(0, 2).map(([k]) => k));
   const interrupt = typeof p.style?.interrupt_tendency === "number" ? p.style.interrupt_tendency : null;
@@ -184,13 +186,31 @@ function PersonaCard({
               ) : (
                 <span className="flex items-center gap-1">
                   <PillButton label="Edit" variant="outline" disabled={busy} onClick={onEdit} icon={<Pencil className="size-3.5" strokeWidth={1.5} />} />
-                  <PillButton
-                    label={busy ? "Deleting" : "Delete"}
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={onDelete}
-                    icon={<Trash2 className="size-3.5" strokeWidth={1.5} />}
-                  />
+                  {armed || busy ? (
+                    <>
+                      <PillButton
+                        label={busy ? "Deleting" : "Confirm delete"}
+                        variant="solid"
+                        disabled={busy}
+                        onClick={() => {
+                          setArmed(false);
+                          onDelete();
+                        }}
+                        title="Removes them from every roster"
+                        icon={<Trash2 className="size-3.5" strokeWidth={1.5} />}
+                      />
+                      {!busy && (
+                        <PillButton label="Cancel" variant="ghost" onClick={() => setArmed(false)} icon={<X className="size-3.5" strokeWidth={1.5} />} />
+                      )}
+                    </>
+                  ) : (
+                    <PillButton
+                      label="Delete"
+                      variant="ghost"
+                      onClick={() => setArmed(true)}
+                      icon={<Trash2 className="size-3.5" strokeWidth={1.5} />}
+                    />
+                  )}
                 </span>
               )}
             </footer>
@@ -234,7 +254,6 @@ export function AreopagusView() {
   };
 
   const remove = async (p: PersonaSummary) => {
-    if (!window.confirm(`Delete ${p.name}? This removes them from every roster.`)) return;
     setBusy(p.id);
     setError(null);
     try {

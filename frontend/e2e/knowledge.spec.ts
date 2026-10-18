@@ -200,8 +200,8 @@ test("drag-and-drop imports, delete removes a note", async ({ page, request }) =
   await expect(page.getByText(/1 file added/)).toBeVisible({ timeout: JOB_MS });
   await settled(page);
   await openNote(page, `${RUN} dropped`);
-  page.once("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "Delete note" }).click();
+  await page.getByRole("button", { name: "Confirm delete note" }).click();
   await expect(page.getByRole("navigation", { name: "Notes" }).getByRole("button", { name: `${RUN} dropped` })).toHaveCount(0);
   expect((await runNotes(request)).some((n) => n.title === `${RUN} dropped`)).toBeFalsy();
 });

@@ -219,9 +219,8 @@ export function KnowledgeView() {
     }
   };
 
-  /** Delete from the vault row: the same `DELETE /kb/notes/{id}` the open note uses (it also leaves the hubs). */
+  /** Delete from the vault row (confirmed in place): the same `DELETE /kb/notes/{id}` the open note uses. */
   const remove = async (n: KbNote) => {
-    if (!window.confirm(`Delete “${n.title}”? This can't be undone.`)) return;
     setError(null);
     try {
       await apiDelete(`kb/notes/${encodeURIComponent(n.id)}`);
@@ -406,7 +405,7 @@ export function KnowledgeView() {
               query={query}
               onQuery={setQuery}
               onOpen={(id) => open(id)}
-              onDelete={(n) => void remove(n)}
+              onDelete={remove}
             />
           </Panel>
           <Panel
