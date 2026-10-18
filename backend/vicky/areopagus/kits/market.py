@@ -19,11 +19,11 @@ from vicky.areopagus.kits._base import (
 )
 from vicky.areopagus.kits.benchmark import clean_source, sourced
 from vicky.model.context import TruthContext
-from vicky.model.figures import Figure
+from vicky.model.figures import CURRENCY_UNITS, Figure
 
 KIT = "Market"
 MARKET = re.compile(r"\b(tam|sam|som)\b|market[_ ]?(size|sizing)|addressable|total[_ ]market", re.I)
-UNITS = ("cad", "usd", "gbp", "eur", "aud", "pct", "count")
+UNITS = CURRENCY_UNITS | {"pct", "count"}
 
 BOTTOM_UP_FIELDS = [
     ("target_accounts", "Number of target accounts: who they are, where, and the size band, with a cited count"),

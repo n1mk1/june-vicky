@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from vicky.model.canonical import OPEX_CATEGORIES
-from vicky.model.figures import Fact, Figure, FigureRef, MissingFigure, Source
+from vicky.model.figures import UNITS, Fact, Figure, FigureRef, MissingFigure, Source
 from vicky.model.financials import CanonicalModel
 from vicky.model.loader import period_sort_key
 
@@ -620,7 +620,7 @@ def fact_figures(facts: list[Fact], exclude: set[str]) -> list[Figure]:
         fid = FACT_ALIASES.get(f.name, f.name)
         if fid in exclude:
             continue
-        unit = f.unit if f.unit in ("cad", "usd", "gbp", "eur", "aud", "pct", "months", "count", "ratio", "x") else "count"
+        unit = f.unit if f.unit in UNITS else "count"
         out.append(Figure(id=f"fact.{f.name}", label=f.label or f.name, value=f.value, unit=unit, formula=f.label or f.name,
                           source=f.source, kind="founder_claim" if f.source.kind == "founder_stated" else f.kind,
                           period=f.period, group="facts"))

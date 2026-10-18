@@ -10,6 +10,7 @@ import { fmtValue, humanize, sourceLabel } from "@/lib/format";
 import type { Engagement, Fact, FigureKind } from "@/lib/types";
 import { errorText, useAccessGuard } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
+import { CURRENCY_CODES, normCurrency } from "@/lib/currency";
 
 const KIND: Record<string, string> = {
   historical: "Historical",
@@ -65,7 +66,7 @@ function SourceTag({ fact }: { fact: Fact }) {
 
 function AddFact({ engagement, onSaved }: { engagement: Engagement; onSaved: (e: Engagement) => void }) {
   const guard = useAccessGuard();
-  const currency = (engagement.profile?.currency ?? "usd").toLowerCase();
+  const currency = normCurrency(engagement.profile?.currency);
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ name: "", label: "", value: "", unit: currency, period: "", kind: "founder_claim" as FigureKind });
   const [busy, setBusy] = useState(false);
@@ -138,7 +139,7 @@ function AddFact({ engagement, onSaved }: { engagement: Engagement; onSaved: (e:
         </Field>
         <Field label="Unit" htmlFor="fact-unit" className="sm:col-span-2">
           <select id="fact-unit" className={selectCls} value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })}>
-            {[currency, "pct", "count", "months", "ratio", "x"].map((u) => (
+            {[currency, "pct", "count", "months", "ratio", "x", ...CURRENCY_CODES.filter((c) => c !== currency)].map((u) => (
               <option key={u} value={u}>
                 {u.toUpperCase()}
               </option>

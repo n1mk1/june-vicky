@@ -9,6 +9,7 @@ import re
 from pydantic import BaseModel
 
 from vicky.model.canonical import FIELDS
+from vicky.model.currencies import strip_currency
 from vicky.model.loader import ParsedDataset
 
 
@@ -21,6 +22,7 @@ class ColumnMapping(BaseModel):
 
 
 def _norm(name: str) -> str:
+    name = strip_currency(name)  # "Revenue (USD)" maps like "Revenue"; the unit keeps the currency
     s = name.lower().replace("&", " and ").replace("r&d", "rnd")
     s = re.sub(r"[^a-z0-9]+", " ", s)
     return f" {s.strip()} "
@@ -105,7 +107,8 @@ def propose_heuristic(ds: ParsedDataset, currency: str) -> list[ColumnMapping]:
                 out.append(ColumnMapping(source_column=c.name, canonical_field=dim_field, confidence=0.9))
             elif c.dtype == "number" and not value_done and re.search(r"mrr|revenue|arr|amount|value", c.name, re.I):
                 value_done = True
-                out.append(ColumnMapping(source_column=c.name, canonical_field="value.mrr", unit=currency.lower(), confidence=0.9))
+                out.append(ColumnMapping(source_column=c.name, canonical_field="value.mrr", unit=(c.currency or currency).lower(),
+                                         confidence=0.9))
             else:
                 out.append(ColumnMapping(source_column=c.name, canonical_field=None, confidence=0.5, note="kept as raw column"))
         return out
@@ -118,7 +121,7 @@ def propose_heuristic(ds: ParsedDataset, currency: str) -> list[ColumnMapping]:
         target, conf = _rule_match(c.name)
         if c.dtype != "number" and target not in (None, "period"):
             conf = min(conf, 0.4)
-        proposals.append(ColumnMapping(source_column=c.name, canonical_field=target, unit=_unit_for(target, currency),
+        proposals.append(ColumnMapping(source_column=c.name, canonical_field=target, unit=_unit_for(target, c.currency or currency),
                                        confidence=conf, note="" if target else "no canonical match; kept as raw column"))
 
     # A column named as the total wins; its components stay raw so they aren't double counted.

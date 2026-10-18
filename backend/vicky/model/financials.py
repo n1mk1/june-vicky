@@ -2,6 +2,10 @@
 
 Every value keeps provenance (dataset, column(s), source row) so figures and chart points can
 explain themselves. Missing totals are derived from components and marked as derived.
+
+Money columns in another currency (the mapping's unit) are converted into the model currency at
+Bank of Canada rates for their own period (`vicky.model.fx`); each cell keeps the rates it used.
+A column whose rate isn't published for a period stays a raw column for that period.
 """
 
 from collections import defaultdict
@@ -9,6 +13,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from vicky.model.canonical import FIELDS, OPEX_CATEGORIES
+from vicky.model.currencies import CURRENCY_CODES
+from vicky.model.fx import SOURCE_NAME, FxRate, Rates
 from vicky.model.loader import period_sort_key, quarter_of
 
 
@@ -20,6 +26,7 @@ class Cell:
     rows: list[int]
     upload_kind: str = "csv"
     derived: str | None = None
+    fx: list[FxRate] = field(default_factory=list)
 
 
 @dataclass
@@ -46,6 +53,16 @@ class CanonicalModel:
     cohort_mrr: dict[str, dict[str, float]] = field(default_factory=dict)
     table_sources: dict[str, str] = field(default_factory=dict)
     datasets: dict[str, DatasetInput] = field(default_factory=dict)
+    fx_skipped: list[str] = field(default_factory=list)  # "<dataset>:<column> <period>" left unconverted
+    table_fx: dict[str, str] = field(default_factory=dict)  # table kind → " · converted …" for its source refs
+    fx: Rates | None = None
+
+    def convert(self, val: float, src: str, period: str, agg: str = "sum") -> tuple[float, FxRate | None] | None:
+        """A `src` amount for a period in the model currency (with the rate used), or None without a rate."""
+        if src == self.currency or src not in CURRENCY_CODES:
+            return val, None
+        r = self.fx.rate(src, self.currency, period, "end" if agg == "last" else "avg") if self.fx else None
+        return (val * r.value, r) if r else None
 
     @property
     def months_per_period(self) -> int:
@@ -90,7 +107,17 @@ class CanonicalModel:
             ref = f"row {rows[0]}" if len(rows) == 1 else f"rows {rows[0]}–{rows[-1]}"
             ref += f" · {', '.join(cols)}"
         name = dsi.name if dsi else ""
-        return ds, f"{name} {ref}".strip(), kind
+        return ds, f"{name} {ref}".strip() + fx_note([r for c in cells for r in c.fx], self.currency), kind
+
+
+def fx_note(rates: list[FxRate], currency: str) -> str:
+    """" · converted …" for a source reference, or "" when nothing was converted."""
+    if not rates:
+        return ""
+    if len(rates) == 1:
+        return f" · converted {rates[0].note()}"
+    srcs = "/".join(sorted({r.src.upper() for r in rates}))
+    return f" · converted {srcs}→{currency.upper()} at {SOURCE_NAME} rates for each period"
 
 
 def _to_target(period: str, granularity: str, target: str) -> str | None:
@@ -101,16 +128,26 @@ def _to_target(period: str, granularity: str, target: str) -> str | None:
     return None
 
 
-def build_model(datasets: list[DatasetInput], currency: str, target_granularity: str | None = None) -> CanonicalModel:
+def column_currency(mapping: dict, default: str) -> str:
+    """The currency a mapped money column is in: its mapping unit when that is a currency."""
+    u = str(mapping.get("unit") or "").lower()
+    return u if u in CURRENCY_CODES else default
+
+
+def build_model(datasets: list[DatasetInput], currency: str, target_granularity: str | None = None,
+                fx: Rates | None = None) -> CanonicalModel:
     series_ds = [d for d in datasets if d.table_kind == "series"]
     grans = {d.granularity for d in series_ds if d.granularity in ("month", "quarter", "year")}
     if target_granularity not in grans:
         target_granularity = "month" if "month" in grans else "quarter" if "quarter" in grans else (next(iter(grans)) if grans else "month")
-    model = CanonicalModel(currency=currency.lower(), granularity=target_granularity)
+    model = CanonicalModel(currency=currency.lower(), granularity=target_granularity, fx=fx)
+    convert = model.convert
 
     for d in datasets:
         model.datasets[d.id] = d
         m_by_col = {m["source_column"]: m.get("canonical_field") for m in d.mapping}
+        cur_by_col = {m["source_column"]: column_currency(m, model.currency) for m in d.mapping}
+        foreign = {c for c, u in cur_by_col.items() if u != model.currency}  # raw columns in a currency convert too
         if d.table_kind == "series":
             accum: dict[str, dict[str, Cell]] = defaultdict(dict)
             for i, row in enumerate(d.rows):
@@ -122,6 +159,15 @@ def build_model(datasets: list[DatasetInput], currency: str, target_granularity:
                     if col == "period" or not isinstance(val, int | float):
                         continue
                     target = m_by_col.get(col)
+                    rate = None
+                    if (target in FIELDS and FIELDS[target].kind == "money") or col in foreign:
+                        agg_ = FIELDS[target].agg if target in FIELDS else "sum"
+                        conv = convert(float(val), cur_by_col.get(col, model.currency), row["period"], agg_)
+                        if conv is None:
+                            # No published rate for this period: left out rather than shown in the wrong currency.
+                            model.fx_skipped.append(f"{d.name}:{col} {row['period']}")
+                            continue
+                        val, rate = conv
                     if target in (None, "period") or target not in FIELDS:
                         key = f"{d.name}:{col}"
                         model.raw.setdefault(key, {})
@@ -131,12 +177,15 @@ def build_model(datasets: list[DatasetInput], currency: str, target_granularity:
                     agg = FIELDS[target].agg
                     cell = accum[target].get(p)
                     if cell is None:
-                        accum[target][p] = Cell(float(val), d.id, [col], [src_row], d.upload_kind)
+                        accum[target][p] = Cell(float(val), d.id, [col], [src_row], d.upload_kind, fx=[rate] if rate else [])
                     else:
                         if agg == "sum" and (col not in cell.columns or d.granularity != target_granularity):
                             cell.value += float(val)
                         elif agg == "last":
                             cell.value = float(val)
+                            cell.fx = []
+                        if rate:
+                            cell.fx.append(rate)
                         if col not in cell.columns:
                             cell.columns.append(col)
                         cell.rows.append(src_row)
@@ -147,12 +196,20 @@ def build_model(datasets: list[DatasetInput], currency: str, target_granularity:
             val_col = next((c for c, t in m_by_col.items() if t == "value.mrr"), None)
             target_table = model.customer_mrr if d.table_kind == "customer_mrr" else model.cohort_mrr
             model.table_sources[d.table_kind] = d.id
+            src_cur = cur_by_col.get(val_col, model.currency) if val_col else model.currency
             for row in d.rows:
                 v = row.get(val_col) if val_col else None
                 if v is None:
                     v = next((x for k, x in row.items() if k not in ("period", "dim") and isinstance(x, int | float)), None)
                 if v is None:
                     continue
+                conv = convert(float(v), src_cur, row["period"], "sum")
+                if conv is None:
+                    model.fx_skipped.append(f"{d.name}:{val_col} {row['period']}")
+                    continue
+                v = conv[0]
+                if conv[1]:
+                    model.table_fx[d.table_kind] = fx_note([conv[1], conv[1]], model.currency)
                 dim = str(row.get("dim") if dim_col else row.get("dim"))
                 if d.table_kind == "customer_mrr":
                     target_table.setdefault(row["period"], {})[dim] = float(v)

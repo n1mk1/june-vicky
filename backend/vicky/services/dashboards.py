@@ -14,6 +14,7 @@ from typing import Any
 
 from vicky import db, qa
 from vicky.model.context import TruthContext
+from vicky.model.currencies import CURRENCIES
 from vicky.model.metrics import label_period
 from vicky.realtime import publish
 from vicky.services import engagements
@@ -22,6 +23,8 @@ from vicky.viz.defaults import RESERVED
 from vicky.viz.evaluate import period_bounds
 from vicky.viz.phrases import _CHART_VERB, interpret, normalise
 from vicky.viz.spec import spec_json
+
+CURRENCY_LIST = [{"code": c, "name": n, "symbol": sym.strip()} for c, (n, sym) in CURRENCIES.items()]
 
 THEMES = ("vicky-dark", "vicky-light")
 
@@ -67,16 +70,18 @@ def _evaluated(spec: dict, ctx: TruthContext, theme: str) -> tuple[dict, dict | 
     return ev.model_dump(mode="json"), option
 
 
-async def _ctx_for_dashboard(dashboard_id: str) -> tuple[dict, TruthContext]:
+async def _ctx_for_dashboard(dashboard_id: str, currency: str | None = None) -> tuple[dict, TruthContext]:
     dash = await db.fetchrow("select * from dashboards where id::text = $1", dashboard_id)
     if dash is None:
         raise engagements.NotFound("dashboard")
-    return dash, await engagements.context(str(dash["engagement_id"]))
+    return dash, await engagements.context(str(dash["engagement_id"]), currency)
 
 
-async def get(dashboard_id: str, theme: str = "vicky-dark") -> dict:
+async def get(dashboard_id: str, theme: str = "vicky-dark", currency: str | None = None) -> dict:
+    """The dashboard with every widget evaluated; money in `currency` (default: the reporting currency),
+    converted at Bank of Canada rates for each period."""
     theme = theme if theme in THEMES else THEMES[0]
-    dash, ctx = await _ctx_for_dashboard(dashboard_id)
+    dash, ctx = await _ctx_for_dashboard(dashboard_id, currency)
     rows = await db.fetch('select * from widgets where dashboard_id = $1 order by "order", created_at', dash["id"])
     widgets = []
     for r in rows:
@@ -85,22 +90,23 @@ async def get(dashboard_id: str, theme: str = "vicky-dark") -> dict:
                         "evaluated": evaluated, "option": option, "created_by": r["created_by"]})
     ids = {w["id"] for w in widgets}
     return {"id": str(dash["id"]), "engagement_id": str(dash["engagement_id"]), "version": dash["version"],
-            "company": ctx.company, "truthpack_version": ctx.version,
+            "company": ctx.company, "truthpack_version": ctx.version, "currency": ctx.currency,
+            "reporting_currency": ctx.profile.get("reporting_currency", ctx.currency), "currencies": CURRENCY_LIST,
             "layout": [li for li in (dash["layout"] or []) if li.get("widget_id") in ids],
             "reserved": [dict(r) for r in RESERVED], "time_range": resolve_time_range(dash["time_range"], ctx),
             "widgets": widgets}
 
 
-async def active(theme: str = "vicky-dark") -> dict:
+async def active(theme: str = "vicky-dark", currency: str | None = None) -> dict:
     eid = await engagements.require_confirmed()
     did = await db.fetchval("select id::text from dashboards where engagement_id = $1 and name = 'default'", eid)
     if did is None:
         did = await ensure_default(eid, await engagements.context(eid))
-    return await get(did, theme)
+    return await get(did, theme, currency)
 
 
-async def preview(dashboard_id: str, spec: dict, theme: str = "vicky-dark") -> dict:
-    _, ctx = await _ctx_for_dashboard(dashboard_id)
+async def preview(dashboard_id: str, spec: dict, theme: str = "vicky-dark", currency: str | None = None) -> dict:
+    _, ctx = await _ctx_for_dashboard(dashboard_id, currency)
     ws = WidgetSpec.model_validate(spec)
     ev = evaluate_widget(ws, ctx)
     return {"evaluated": ev.model_dump(mode="json"), "option": build_option(ws, ev, theme)}
@@ -115,7 +121,8 @@ async def _check_version(conn, dashboard_id: str, version: int | None) -> dict:
     return dict(dash)
 
 
-async def add_widget(dashboard_id: str, spec: dict, version: int | None, created_by: str = "founder") -> dict:
+async def add_widget(dashboard_id: str, spec: dict, version: int | None, created_by: str = "founder",
+                     currency: str | None = None) -> dict:
     ws = WidgetSpec.model_validate(spec)
     h = spec_hash(ws)
     async with db.pool().acquire() as conn, conn.transaction():
@@ -132,13 +139,13 @@ async def add_widget(dashboard_id: str, spec: dict, version: int | None, created
             w = 3 if ws.template in ("kpi", "gauge_ring") else 6
             layout.append({"widget_id": wid, "x": 0, "y": bottom, "w": w, "h": 5})
             await conn.execute("update dashboards set layout = $2, version = version + 1 where id = $1", dash["id"], layout)
-    out = await get(dashboard_id)
+    out = await get(dashboard_id, currency=currency)
     await publish(f"dashboard:{dashboard_id}", "widget.diff",
                   {"version": out["version"], "op": "add", "title": ws.title, "by": created_by})
     return out
 
 
-async def remove_widget(dashboard_id: str, widget_id: str) -> dict:
+async def remove_widget(dashboard_id: str, widget_id: str, currency: str | None = None) -> dict:
     async with db.pool().acquire() as conn, conn.transaction():
         dash = await _check_version(conn, dashboard_id, None)
         n = await conn.execute("delete from widgets where dashboard_id = $1 and id::text = $2", dash["id"], widget_id)
@@ -146,12 +153,13 @@ async def remove_widget(dashboard_id: str, widget_id: str) -> dict:
             raise engagements.NotFound("widget")
         layout = [x for x in (dash["layout"] or []) if x.get("widget_id") != widget_id]
         await conn.execute("update dashboards set layout = $2, version = version + 1 where id = $1", dash["id"], layout)
-    out = await get(dashboard_id)
+    out = await get(dashboard_id, currency=currency)
     await publish(f"dashboard:{dashboard_id}", "widget.diff", {"version": out["version"], "op": "remove", "widget_id": widget_id})
     return out
 
 
-async def set_layout(dashboard_id: str, layout: list[dict[str, Any]], version: int | None) -> dict:
+async def set_layout(dashboard_id: str, layout: list[dict[str, Any]], version: int | None,
+                     currency: str | None = None) -> dict:
     clean = []
     for li in layout:
         try:
@@ -162,7 +170,7 @@ async def set_layout(dashboard_id: str, layout: list[dict[str, Any]], version: i
     async with db.pool().acquire() as conn, conn.transaction():
         dash = await _check_version(conn, dashboard_id, version)
         await conn.execute("update dashboards set layout = $2, version = version + 1 where id = $1", dash["id"], clean)
-    out = await get(dashboard_id)
+    out = await get(dashboard_id, currency=currency)
     await publish(f"dashboard:{dashboard_id}", "layout.diff", {"version": out["version"]})
     return out
 
@@ -209,13 +217,14 @@ def resolve_time_range(tr: dict[str, Any] | None, ctx: TruthContext) -> dict[str
     return {**tr, "from": lo, "to": hi, "label": f"{name} · {label_period(lo)} → {label_period(hi)}"}
 
 
-async def set_time_range(dashboard_id: str, time_range: dict[str, Any] | None, version: int | None) -> dict:
+async def set_time_range(dashboard_id: str, time_range: dict[str, Any] | None, version: int | None,
+                         currency: str | None = None) -> dict:
     clean = clean_time_range(time_range)
     async with db.pool().acquire() as conn, conn.transaction():
         dash = await _check_version(conn, dashboard_id, version)
         await conn.execute("update dashboards set time_range = $2, version = version + 1 where id = $1",
                            dash["id"], clean)
-    out = await get(dashboard_id)
+    out = await get(dashboard_id, currency=currency)
     await publish(f"dashboard:{dashboard_id}", "time_range.diff",
                   {"version": out["version"], "time_range": out["time_range"]})
     return out
@@ -235,13 +244,13 @@ async def _log(dashboard_id: str, role: str, content: str, tool_calls: list[dict
                      "values ($1::uuid, $2::message_role, $3, $4)", dashboard_id, role, content, tool_calls or [])
 
 
-async def chat(dashboard_id: str, text: str) -> dict:
+async def chat(dashboard_id: str, text: str, currency: str | None = None) -> dict:
     """One dashboard request → a reply plus the widget added or the time range set.
 
     The reply never carries a figure: it names the widget, the period range or the missing-data reason.
     """
     text = (text or "").strip()[:500]
-    dash, ctx = await _ctx_for_dashboard(dashboard_id)
+    dash, ctx = await _ctx_for_dashboard(dashboard_id, currency)
     intent = interpret(text, ctx)
     out: dict[str, Any] = {"kind": intent.kind, "reply": "", "spec": None, "widget_id": None, "missing": None,
                            "time_range": None, "dashboard": None, "citations": [], "suggestions": [], "chart": None}
@@ -281,7 +290,7 @@ async def chat(dashboard_id: str, text: str) -> dict:
             if existing:
                 out.update(kind="exists", widget_id=existing, reply=f"“{spec.title}” is already on your dashboard.")
             else:
-                d = await add_widget(dashboard_id, out["spec"], None, created_by="vicky")
+                d = await add_widget(dashboard_id, out["spec"], None, created_by="vicky", currency=currency)
                 wid = next((w["id"] for w in d["widgets"] if w["evaluated"].get("spec_hash") == h), None)
                 out.update(kind="widget_added", widget_id=wid, dashboard=d, reply=f"Added “{spec.title}”.")
                 tool = {"name": "add_widget", "input": out["spec"], "widget_id": wid}

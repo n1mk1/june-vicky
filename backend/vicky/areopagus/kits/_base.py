@@ -19,7 +19,9 @@ from typing import Any
 
 from vicky.model.canonical import FIELDS, is_money
 from vicky.model.context import TruthContext
-from vicky.model.figures import Fact, Figure, FigureRef, MissingFigure, Source, fmt_value
+from vicky.model.figures import UNITS, Fact, Figure, FigureRef, MissingFigure, Source, fmt_value
+from vicky.model.financials import column_currency
+from vicky.model.fx import SOURCE_NAME
 from vicky.model.loader import period_sort_key, quarter_of
 from vicky.model.metrics import label_period
 
@@ -147,11 +149,12 @@ def profile_figure(ctx: TruthContext, key: str, label: str, unit: str) -> Figure
         return f
     v = ctx.profile.get(key)
     if isinstance(v, int | float) and not isinstance(v, bool) and v > 0:
-        return founder_figure(f"profile.{key}", label, float(v), unit, where=f"stated in the company profile ({key})")
+        fx = ctx.profile.get(f"{key}_fx")
+        return founder_figure(f"profile.{key}", label, float(v), unit,
+                              where=f"stated in the company profile ({key})" + (f" · converted {fx}" if fx else ""))
     return None
 
 
-UNITS = ("cad", "usd", "gbp", "eur", "aud", "pct", "months", "count", "ratio", "x")
 PERIOD_RX = re.compile(r"^\d{4}(-(Q[1-4]|\d{2}))?$")
 
 
@@ -236,7 +239,7 @@ def table_source(ctx: TruthContext, table_kind: str, refstr: str) -> Source:
     ds = ctx.model.table_sources.get(table_kind)
     dsi = ctx.model.datasets.get(ds or "")
     kind = dsi.upload_kind if dsi and dsi.upload_kind in ("csv", "xlsx") else "csv"
-    return Source(kind=kind, ref=refstr, dataset_id=ds)
+    return Source(kind=kind, ref=refstr + ctx.model.table_fx.get(table_kind, ""), dataset_id=ds)
 
 
 def column_series(ctx: TruthContext, ds_id: str, col: str) -> dict[str, float]:
@@ -245,11 +248,18 @@ def column_series(ctx: TruthContext, ds_id: str, col: str) -> dict[str, float]:
     d = m.datasets.get(ds_id)
     if d is None or d.table_kind != "series":
         return {}
+    mapping = next((x for x in d.mapping if x.get("source_column") == col), {})
+    src = column_currency(mapping, m.currency)
+    agg = FIELDS[mapping["canonical_field"]].agg if mapping.get("canonical_field") in FIELDS else "sum"
     out: dict[str, float] = {}
     for row in d.rows:
         v = row.get(col)
         if not isinstance(v, int | float) or isinstance(v, bool):
             continue
+        conv = m.convert(float(v), src, row["period"], agg)  # a column in another currency, at its period's rate
+        if conv is None:
+            continue
+        v = conv[0]
         p = row["period"]
         if d.granularity != m.granularity:
             if d.granularity == "month" and m.granularity == "quarter":
@@ -272,8 +282,15 @@ def column_figure(ctx: TruthContext, ds_id: str, col: str, periods: list[str], f
     what = f"Sum of '{col}' over {window_label(ps)}" if len(ps) > 1 else f"'{col}' in {label_period(ps[0])}"
     return Figure(id=fid, label=label, value=total, unit=ctx.currency, formula=what,
                   inputs=[FigureRef(dataset_id=ds_id, column=col, period=p, value=series[p]) for p in ps],
-                  source=Source(kind=kind, ref=f"{d.name} · {col} · {window_label(ps)}", dataset_id=ds_id),
+                  source=Source(kind=kind, ref=f"{d.name} · {col} · {window_label(ps)}{_column_fx(ctx, d, col)}",
+                                dataset_id=ds_id),
                   period=ps[0] if len(ps) == 1 else f"{ps[0]}..{ps[-1]}", group=group)
+
+
+def _column_fx(ctx: TruthContext, d, col: str) -> str:
+    mapping = next((x for x in d.mapping if x.get("source_column") == col), {})
+    src = column_currency(mapping, ctx.currency)
+    return "" if src == ctx.currency else f" · converted {src.upper()}→{ctx.currency.upper()} at {SOURCE_NAME} rates for each period"
 
 
 def series_columns(ctx: TruthContext) -> list[tuple[str, str]]:

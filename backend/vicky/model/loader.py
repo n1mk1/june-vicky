@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from vicky.model.currencies import STRIP_RE, currency_in
+
 MONTHS = {m: i + 1 for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 )}
@@ -40,8 +42,7 @@ def parse_number(raw: Any) -> float | None:
         neg, s = (not neg), s[1:].strip()
     elif s.startswith("+"):
         s = s[1:].strip()
-    s = re.sub(r"^(cad|usd|gbp|eur|aud|c\$|us\$|a\$)\s*", "", s, flags=re.I)
-    s = s.lstrip("$£€").strip()
+    s = STRIP_RE.sub("", s).strip()  # US$, £, "USD", "1 200 €" … (the column's currency is read separately)
     if s.startswith("-"):
         neg, s = (not neg), s[1:].strip()
     pct = s.endswith("%")
@@ -127,10 +128,11 @@ class ColumnProfile:
     dtype: str
     sample_values: list[str]
     null_rate: float
+    currency: str | None = None  # the currency its header or cells name, if exactly one
 
     def as_dict(self) -> dict:
         return {"name": self.name, "dtype": self.dtype, "sample_values": self.sample_values,
-                "null_rate": round(self.null_rate, 3)}
+                "null_rate": round(self.null_rate, 3), "currency": self.currency}
 
 
 @dataclass
@@ -210,7 +212,18 @@ def _profile(name: str, values: list[Any]) -> ColumnProfile:
     dtype = "number" if numeric >= 0.8 else "period" if _share(values, lambda v: parse_period(v) is not None) >= 0.8 else "text"
     samples = [str(v) for v in present[:3]]
     null_rate = 1 - len(present) / len(values) if values else 1.0
-    return ColumnProfile(name, dtype, samples, null_rate)
+    return ColumnProfile(name, dtype, samples, null_rate, column_currency_of(name, present) if dtype == "number" else None)
+
+
+def column_currency_of(name: str, present: list[Any]) -> str | None:
+    """The header's currency ("Revenue (USD)"), else the one most cells carry ("US$1,200")."""
+    head = currency_in(name)
+    if head:
+        return head
+    marked = [c for v in present if isinstance(v, str) and (c := currency_in(v))]
+    if marked and len(marked) >= len(present) / 2 and len(set(marked)) == 1:
+        return marked[0]
+    return None
 
 
 def _granularity(keys: list[str]) -> str:

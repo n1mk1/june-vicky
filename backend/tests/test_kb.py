@@ -154,7 +154,7 @@ def test_profile_heuristic_and_evidence_check():
     ]
     p = heuristic_profile(notes)
     assert p["name"][0] == "Northwind Labs Inc"
-    assert p["currency"][0] == "USD" and p["country"][0] == "US"
+    assert "currency" not in p and "country" not in p  # the reporting currency is CAD unless the founder changes it
     assert p["stage"][0] == "seed" and p["business_model"][0] == "recurring"
     assert p["round_size"][0] == 2_500_000 and p["granularity"][0] == "month"
     by = {n["path"]: n for n in notes}
@@ -195,7 +195,7 @@ async def test_claude_profile_values_must_quote_their_note(live_llm):
     ev = lambda v, q, note="deck.md": {"value": v, "note": note, "quote": q}  # noqa: E731
     reply = {"name": ev("Northwind Labs Inc.", "Northwind Labs Inc. builds"), "one_liner": ev(
         "Billing tools for 4000 shops.", "builds billing tools"), "country": ev("CA", "Based in Toronto"),
-        "city": ev("Toronto", "Based in Toronto"), "currency": ev("CAD", "raising $2.5M"),
+        "city": ev("Toronto", "Based in Toronto"),
         "stage": ev("seed", "a seed round"),  # not in the note: rejected
         "round_type": ev("SAFE", "on a SAFE"), "round_size": ev("$3M", "raising $2.5M"),  # wrong number: rejected
         "business_model": None, "granularity": None, "fiscal_year_start_month": None}
@@ -204,7 +204,7 @@ async def test_claude_profile_values_must_quote_their_note(live_llm):
     assert by == "claude"
     values = {k: v for k, (v, _) in found.items()}
     assert values["name"] == "Northwind Labs Inc." and values["country"] == "CA" and values["city"] == "Toronto"
-    assert values["round_type"] == "safe" and values["currency"] == "CAD"
+    assert values["round_type"] == "safe" and "currency" not in values
     assert values["round_size"] == 2_500_000  # the heuristic's verified value stands; Claude's $3M was rejected
     assert "stage" not in values and "one_liner" not in values  # unquoted, and an invented figure
     assert found["name"][1] == "From [[deck.md]]: “Northwind Labs Inc. builds”"

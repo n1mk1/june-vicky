@@ -20,6 +20,7 @@ from vicky.audit import audit_text
 from vicky.model.canonical import FIELDS
 from vicky.model.context import TruthContext
 from vicky.model.coverage import coverage
+from vicky.model.currencies import norm_currency
 from vicky.model.figures import CURRENCY_UNITS, Fact, Figure, FigureRef, MissingFigure, Source, fmt_value
 from vicky.model.loader import period_sort_key, quarter_of
 from vicky.model.metrics import FACT_ALIASES
@@ -111,7 +112,7 @@ def _human(col: str) -> str:
 
 
 def _currency(ctx: TruthContext) -> str:
-    return ctx.currency if ctx.currency in CURRENCY_UNITS else "usd"
+    return norm_currency(ctx.currency)
 
 
 def build_series(ctx: TruthContext) -> dict[str, Series]:

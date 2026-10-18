@@ -21,9 +21,10 @@ from vicky.services import engagements
 from vicky.services.engagements import Invalid
 
 log = logging.getLogger(__name__)
-FIELDS = ("name", "one_liner", "country", "city", "currency", "stage", "round_type", "round_size", "business_model",
+# The reporting currency isn't read from the vault: it is CAD unless the founder changes it, and a
+# table in another currency converts at Bank of Canada rates (each table's currency is read from it).
+FIELDS = ("name", "one_liner", "country", "city", "stage", "round_type", "round_size", "business_model",
           "granularity", "fiscal_year_start_month")
-CURRENCY_COUNTRY = {"GBP": "GB", "CAD": "CA", "AUD": "AU", "USD": "US", "INR": "IN", "SGD": "SG", "NZD": "NZ"}
 UPLOAD_CONCURRENCY = 3
 BATCH_CHARS = 120_000  # one profile call reads this much of the vault
 PROFILE_CONCURRENCY = 3
@@ -40,7 +41,6 @@ class ProfileDraft(BaseModel):
     one_liner: Evidence | None = Field(description="what the company does, one sentence in your words, no figures")
     country: Evidence | None = Field(description="where the company is incorporated or based, ISO 3166 alpha-2 (US, GB, CA)")
     city: Evidence | None
-    currency: Evidence | None = Field(description="the currency its financials are reported in, ISO 4217 (USD, GBP)")
     stage: Evidence | None = Field(description="one of: pre_seed, seed, series_a, series_b_plus, other")
     round_type: Evidence | None = Field(description="how the round is structured: priced_equity, safe, convertible_note, "
                                                     "none (not raising) or other")
@@ -124,10 +124,6 @@ def verify(field: str, ev: Evidence, notes: dict[str, dict]) -> tuple[object, st
             return None
     elif field == "round_type":
         value = round_type(v)
-    elif field == "currency":
-        value = v.upper()[:3]
-        if not re.fullmatch(r"[A-Z]{3}", value):
-            return None
     elif field == "fiscal_year_start_month":
         try:
             value = int(v)
@@ -171,29 +167,6 @@ def heuristic_profile(notes: list[dict]) -> dict[str, tuple[object, str]]:
         if grans:
             out["granularity"] = (grans[0], f"From [[{n['path']}]]: its period column reads as {grans[0]}ly")
             break
-
-    codes = Counter()
-    where: dict[str, tuple[dict, str]] = {}
-    for n in notes:
-        text = n["content"][:200_000]
-        for code, pat in (("USD", r"\bUSD\b|US\$|\$\s?\d"), ("GBP", r"\bGBP\b|£\s?\d"), ("EUR", r"\bEUR\b|€\s?\d"),
-                          ("CAD", r"\bCAD\b|C\$\s?\d"), ("AUD", r"\bAUD\b|A\$\s?\d")):
-            hits = len(re.findall(pat, text))
-            if hits:
-                codes[code] += hits
-                if code not in where:
-                    line = _line_with(text, pat)
-                    if line:
-                        where[code] = (n, line)
-    if "CAD" in codes:
-        codes["USD"] = max(0, codes["USD"] - codes["CAD"])  # "C$1" also matches "$1"
-    if codes:
-        code = codes.most_common(1)[0][0]
-        if code in where:
-            n, line = where[code]
-            out["currency"] = (code, f"From [[{n['path']}]]: “{line}”")
-            if code in CURRENCY_COUNTRY:
-                out["country"] = (CURRENCY_COUNTRY[code], f"From the reporting currency ({code})")
 
     for stage, pat in (("pre_seed", r"\bpre[- ]?seed\b"), ("series_b_plus", r"\bseries [b-e]\b"),
                        ("series_a", r"\bseries a\b"), ("seed", r"\bseed (round|stage|funding|raise)\b|\braising .{0,30}\bseed\b")):
@@ -323,6 +296,7 @@ async def autofill() -> dict:
     if not notes:
         raise Invalid("The knowledge base is empty. Import some files first.")
     found, by = await propose_profile(notes)
+    found["currency"] = ("CAD", "The default reporting currency; tables in another currency convert at Bank of Canada rates")
     profile = {f: v for f, (v, _) in found.items()}
     eid = await engagements.create_engagement(profile)
     await db.execute("update company_profiles set inferred = $2 where engagement_id = $1", eid,

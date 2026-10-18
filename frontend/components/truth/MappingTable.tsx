@@ -6,6 +6,7 @@ import { selectCls } from "@/components/ui/Field";
 import { PillButton } from "@/components/ui/Pill";
 import { ErrorNote, Loading } from "@/components/ui/States";
 import { apiPut } from "@/lib/api";
+import { CURRENCY_CODES, isCurrency } from "@/lib/currency";
 import { humanize } from "@/lib/format";
 import type { ColumnMapping, DatasetSummary, MappingResponse, MappingTarget } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
@@ -15,7 +16,7 @@ const LOW = 0.6;
 const RAW = "__raw__";
 
 function unitOptions(currency: string): string[] {
-  return ["", currency, "pct", "count", "months", "ratio", "x"].filter((u, i, a) => a.indexOf(u) === i);
+  return ["", currency, "pct", "count", "months", "ratio", "x", ...CURRENCY_CODES].filter((u, i, a) => a.indexOf(u) === i);
 }
 
 function Confidence({ value }: { value: number }) {
@@ -106,6 +107,12 @@ function MappingEditor({ data, currency, onSaved }: EditorProps) {
                       {sampleText(col?.sample_values) || "no sample values"}
                     </span>
                     {r.note && <span className="mt-0.5 block text-[11px] text-ink-2">{r.note}</span>}
+                    {isCurrency(r.unit) && r.unit !== currency && (
+                      <span className="mt-0.5 block text-[11px] text-ink-2">
+                        {r.unit?.toUpperCase()} {col?.currency === r.unit ? "read from the file" : "chosen"}; converted to {currency.toUpperCase()} at
+                        Bank of Canada rates for each period.
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <label className="sr-only" htmlFor={`map-${data.dataset.id}-${i}`}>

@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from vicky import DATA_DIR
+from vicky.model.currencies import norm_currency
 from vicky.model.figures import Fact, Source
 from vicky.model.loader import ParsedDataset, parse_upload
 from vicky.model.mapping import ColumnMapping, propose_heuristic
@@ -73,7 +74,7 @@ def load_sample(sample_id: str) -> Sample:
     if not (d / "profile.yaml").exists():
         raise KeyError(sample_id)
     profile = yaml.safe_load((d / "profile.yaml").read_text(encoding="utf-8")) or {}
-    currency = str(profile.get("currency", "usd"))
+    currency = norm_currency(profile.get("currency"))
     mapping_raw = yaml.safe_load((d / "mapping.yaml").read_text(encoding="utf-8")) if (d / "mapping.yaml").exists() else None
     entries = _mapping_entries(mapping_raw)
     files: list[SampleFile] = []

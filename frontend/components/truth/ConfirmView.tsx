@@ -19,6 +19,7 @@ import { FactsTable } from "./FactsTable";
 import { MappingTable } from "./MappingTable";
 import { ProfileForm } from "./ProfileForm";
 import { UploadDrop } from "./UploadDrop";
+import { normCurrency } from "@/lib/currency";
 
 const STEPS = ["Profile", "Mapping", "Facts", "Confirm"] as const;
 type Step = 1 | 2 | 3 | 4;
@@ -78,7 +79,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
   if (!e) return null;
 
   const company = e.profile?.name || e.name || "Your company";
-  const currency = (e.profile?.currency ?? "usd").toLowerCase();
+  const currency = normCurrency(e.profile?.currency);
 
   const confirm = async () => {
     setConfirming(true);

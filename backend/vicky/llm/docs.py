@@ -23,7 +23,8 @@ from typing import Any
 from vicky.audit import extract_numbers
 from vicky.llm.client import get_llm
 from vicky.llm.schemas import DocFact, DocFactList
-from vicky.model.figures import CURRENCY_UNITS, Fact, Source
+from vicky.model.currencies import norm_currency
+from vicky.model.figures import Fact, Source
 
 log = logging.getLogger(__name__)
 MAX_TEXT_CHARS = 400_000
@@ -177,8 +178,7 @@ def _slug(name: str) -> str:
 def to_fact(f: DocFact, span: CitedSpan, verified: bool, why: str, *, upload_id: str, filename: str, kind: str,
             currency: str) -> Fact:
     if f.unit == "money":
-        unit = (f.currency or currency or "usd").lower()
-        unit = unit if unit in CURRENCY_UNITS else (currency or "usd").lower()
+        unit = norm_currency(f.currency, norm_currency(currency))  # the document's own currency, else the company's
     else:
         unit = {"pct": "pct", "months": "months", "count": "count", "x": "x", "ratio": "ratio"}[f.unit]
     name = _slug(f.name)

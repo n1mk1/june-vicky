@@ -12,14 +12,18 @@ from typing import Any
 
 from vicky import db, jobs, llm
 from vicky.llm import mapper
+from vicky.model import fx as fx_model
 from vicky.model.canonical import FIELDS, SPECIAL_TARGETS
 from vicky.model.context import TruthContext, build_context
 from vicky.model.coverage import coverage
-from vicky.model.figures import Fact, Source, figure_dict
+from vicky.model.currencies import norm_currency
+from vicky.model.figures import UNITS, Fact, Source, figure_dict
 from vicky.model.financials import DatasetInput
+from vicky.model.fx import Rates
 from vicky.model.loader import ParsedDataset, parse_upload
 from vicky.model.mapping import ColumnMapping, propose_heuristic
 from vicky.model.truth import check_claim
+from vicky.services import fx
 
 STAGES = {"pre_seed", "seed", "series_a", "series_b_plus", "other"}
 UPLOAD_KINDS = {".csv": "csv", ".xlsx": "xlsx", ".xlsm": "xlsx", ".pdf": "pdf", ".docx": "docx", ".md": "md", ".txt": "md"}
@@ -46,7 +50,7 @@ def clean_profile(p: dict[str, Any]) -> dict[str, Any]:
         c = str(p["country"]).strip().upper()[:2]
         out["country"] = "GB" if c == "UK" else c
     if p.get("currency"):
-        out["currency"] = str(p["currency"]).strip().upper()[:3]
+        out["currency"] = norm_currency(p["currency"]).upper()
     if p.get("fiscal_year_start_month") is not None:
         out["fiscal_year_start_month"] = min(12, max(1, int(p["fiscal_year_start_month"])))
     if p.get("stage"):
@@ -99,7 +103,7 @@ def _profile_out(row: dict | None) -> dict | None:
 def model_profile(profile: dict | None) -> dict:
     """The profile as the metrics engine expects it (lowercase currency)."""
     p = dict(profile or {})
-    p["currency"] = str(p.get("currency") or "usd").lower()
+    p["currency"] = norm_currency(p.get("currency"))
     return p
 
 
@@ -118,8 +122,30 @@ async def create_engagement(profile: dict[str, Any] | None = None) -> str:
 async def update_profile(engagement_id: str, profile: dict[str, Any]) -> None:
     await _require(engagement_id)
     async with db.pool().acquire() as conn, conn.transaction():
+        old = norm_currency(await conn.fetchval("select currency from company_profiles where engagement_id = $1",
+                                                engagement_id))
         await _upsert_profile(conn, engagement_id, profile)
+        new = norm_currency(await conn.fetchval("select currency from company_profiles where engagement_id = $1",
+                                                engagement_id))
+        if new != old:
+            await _follow_currency(conn, engagement_id, old, new)
         await _bump(conn, engagement_id)
+
+
+async def _follow_currency(conn, engagement_id: str, old: str, new: str) -> None:
+    """Columns that were in the reporting currency move with it when the founder changes it; a column
+    set to another currency (read from the file, or chosen in the mapping) keeps its own."""
+    rows = await conn.fetch(
+        """select m.dataset_id, m.proposed, m.confirmed from dataset_mappings m join datasets d on d.id = m.dataset_id
+           where d.engagement_id = $1""", engagement_id)
+    for r in rows:
+        moved = {}
+        for col in ("proposed", "confirmed"):
+            if r[col] is not None:
+                moved[col] = [{**m, "unit": new} if str(m.get("unit") or "").lower() == old else m for m in r[col]]
+        await conn.execute("update dataset_mappings set proposed = $2, confirmed = coalesce($3, confirmed) "
+                           "where dataset_id = $1", r["dataset_id"], moved.get("proposed", r["proposed"]),
+                           moved.get("confirmed"))
 
 
 async def _require(engagement_id: str) -> dict:
@@ -202,8 +228,8 @@ async def add_upload(engagement_id: str | None, filename: str, data: bytes, mime
                              {"granularity": "from the uploaded file"})
     else:
         await _require(engagement_id)
-    currency = str(await db.fetchval("select currency from company_profiles where engagement_id = $1", engagement_id)
-                   or "USD").lower()
+    currency = norm_currency(await db.fetchval("select currency from company_profiles where engagement_id = $1",
+                                               engagement_id))
     # Claude refines the heuristic mapping (when a key is set) before the transaction; a dataset whose
     # fingerprint has a confirmed mapping already reuses it, so it isn't sent.
     refined: dict[str, tuple[list[ColumnMapping], str]] = {}
@@ -279,6 +305,9 @@ async def put_mapping(dataset_id: str, mapping: list[dict]) -> dict:
             raise Invalid(f"Unknown column {cm.source_column!r}")
         if cm.canonical_field is not None and cm.canonical_field not in valid:
             raise Invalid(f"Unknown canonical field {cm.canonical_field!r}")
+        cm.unit = (cm.unit or "").strip().lower()
+        if cm.unit and cm.unit not in UNITS:
+            raise Invalid(f"Unknown unit {cm.unit!r} for {cm.source_column!r}")
         cleaned.append(cm.model_dump())
     async with db.pool().acquire() as conn, conn.transaction():
         await conn.execute("update dataset_mappings set confirmed = $2, confirmed_at = now() where dataset_id = $1",
@@ -331,7 +360,7 @@ async def remove_fact(engagement_id: str, fact_id: str) -> None:
 
 # ---------------------------------------------------------------- context
 
-_CTX: dict[tuple[str, int], TruthContext] = {}
+_CTX: dict[tuple[str, int, str], TruthContext] = {}
 
 
 async def _inputs(engagement_id: str, use_proposed: bool = True) -> list[DatasetInput]:
@@ -361,28 +390,41 @@ def _deck_checks(deck: list[dict], figures: dict) -> list:
     return out
 
 
-async def context(engagement_id: str) -> TruthContext:
-    """The TruthContext for an engagement at its current TruthPack version (cached per version)."""
+async def rates_for(inputs: list[DatasetInput], facts: list[Fact], profile: dict, target: str) -> Rates | None:
+    """Bank of Canada rates for every currency the data is in that isn't `target`, from its first period."""
+    units = [m.get("unit") for d in inputs for m in d.mapping] + [f.unit for f in facts] + [profile.get("currency"), target]
+    codes = fx_model.needed_codes(*units)
+    if not codes:
+        return None
+    periods = [r["period"] for d in inputs for r in d.rows if r.get("period")] + [f.period for f in facts if f.period]
+    return await fx.load(codes, fx_model.earliest_date(periods))
+
+
+async def context(engagement_id: str, currency: str | None = None) -> TruthContext:
+    """The TruthContext for an engagement at its current TruthPack version, with every money figure in
+    `currency` (default: the profile's reporting currency). Cached per version and currency."""
     await _require(engagement_id)
     pack = await db.fetchrow("select * from truthpacks where engagement_id = $1 order by created_at desc limit 1",
                              engagement_id)
     version = pack["version"] if pack else 0
-    key = (engagement_id, version)
-    if key in _CTX:
-        return _CTX[key]
     prof = _profile_out(await db.fetchrow("select * from company_profiles where engagement_id = $1", engagement_id))
     profile = model_profile(prof)
+    target = norm_currency(currency, profile["currency"])
+    key = (engagement_id, version, target)
+    if key in _CTX:
+        return _CTX[key]
     facts = [Fact.model_validate(f) for f in (pack["facts"] if pack else [])]
     if pack and pack["confirmed_at"] is not None:
         # Once confirmed, only confirmed facts count; a fact typed afterwards waits for re-confirmation.
         facts = [f for f in facts if f.status == "confirmed"]
     inputs = await _inputs(engagement_id)
-    base = build_context(inputs, facts, profile, version=version, engagement_id=engagement_id,
-                         truthpack_id=str(pack["id"]) if pack else None)
+    rates = await rates_for(inputs, facts, profile, target)
+    common = {"version": version, "engagement_id": engagement_id, "truthpack_id": str(pack["id"]) if pack else None,
+              "fx": rates, "currency": target}
+    base = build_context(inputs, facts, profile, **common)
     deck = _deck_checks(pack["deck_claims"] if pack else [], base.figures)
-    ctx = build_context(inputs, facts, profile, version=version, engagement_id=engagement_id,
-                        truthpack_id=str(pack["id"]) if pack else None, deck_checks=deck) if deck else base
-    for k in [k for k in _CTX if k[0] == engagement_id]:
+    ctx = build_context(inputs, facts, profile, deck_checks=deck, **common) if deck else base
+    for k in [k for k in _CTX if k[0] == engagement_id and k[1] != version]:
         _CTX.pop(k, None)
     _CTX[key] = ctx
     return ctx

@@ -83,6 +83,8 @@ export interface DatasetColumn {
   dtype: string;
   sample_values: unknown[];
   null_rate: number;
+  /** The currency the column's header or cells name, read from the file. */
+  currency?: string | null;
 }
 
 export interface DatasetSummary {
@@ -316,6 +318,10 @@ export interface Dashboard {
   engagement_id: string;
   version: number;
   company: string;
+  /** Every money figure is in this currency, converted at Bank of Canada rates when it isn't the reporting one. */
+  currency: string;
+  reporting_currency: string;
+  currencies: { code: string; name: string; symbol: string }[];
   layout: LayoutItem[];
   reserved: { id: string; x: number; y: number; w: number; h: number }[];
   time_range: TimeRange | null;

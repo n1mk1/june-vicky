@@ -4,11 +4,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-Unit = Literal["cad", "usd", "gbp", "eur", "aud", "pct", "months", "count", "ratio", "x"]
+from vicky.model.currencies import CURRENCY_CODES, DEFAULT_CURRENCY, symbol
+
+Unit = Literal["cad", "usd", "eur", "gbp", "aud", "nzd", "jpy", "cny", "hkd", "sgd", "twd", "krw", "inr", "idr", "myr",
+               "thb", "chf", "nok", "sek", "pln", "try", "zar", "mxn", "brl", "pen",
+               "pct", "months", "count", "ratio", "x"]
 FigureKind = Literal["historical", "forecast", "founder_claim", "benchmark"]
 SourceKind = Literal["csv", "xlsx", "pdf", "docx", "md", "pack_summary", "founder_stated", "benchmark", "derived"]
 
-CURRENCY_UNITS = {"cad", "usd", "gbp", "eur", "aud"}
+CURRENCY_UNITS = set(CURRENCY_CODES)
+UNITS = CURRENCY_UNITS | {"pct", "months", "count", "ratio", "x"}
 
 
 class Source(BaseModel):
@@ -72,10 +77,10 @@ class Fact(BaseModel):
 
 
 def currency_symbol(unit: str) -> str:
-    return {"gbp": "£", "eur": "€"}.get(unit, "$")
+    return symbol(unit) if unit in CURRENCY_UNITS else "$"
 
 
-def fmt_money(value: float, unit: str = "usd") -> str:
+def fmt_money(value: float, unit: str = DEFAULT_CURRENCY) -> str:
     sym = currency_symbol(unit)
     sign = "-" if value < 0 else ""
     v = abs(value)

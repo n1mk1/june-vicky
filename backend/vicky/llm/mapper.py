@@ -52,6 +52,7 @@ def _columns_block(ds: ParsedDataset, heuristic: list[ColumnMapping]) -> str:
 def mapping_from_llm(out: ColumnMappingList, ds: ParsedDataset, currency: str) -> list[ColumnMapping]:
     """Validated proposals: known columns only, known targets only, units set by code."""
     cols = {c.name for c in ds.columns}
+    col_cur = {c.name: c.currency for c in ds.columns}  # the currency read from the file, if any
     valid = set(ALL_TARGETS) - {"dim.customer", "dim.cohort", "value.mrr"}  # structure targets are table-kind specific
     res = []
     for m in out.columns:
@@ -61,7 +62,7 @@ def mapping_from_llm(out: ColumnMappingList, ds: ParsedDataset, currency: str) -
         if m.canonical_field and target is None:
             continue  # an unknown target is a bad proposal, not a "keep raw" one
         conf = max(0.0, min(0.95, float(m.confidence)))
-        res.append(ColumnMapping(source_column=m.source_column, canonical_field=target, unit=_unit_for(target, currency),
+        res.append(ColumnMapping(source_column=m.source_column, canonical_field=target, unit=_unit_for(target, col_cur.get(m.source_column) or currency),
                                  confidence=round(conf, 2), note=f"Claude: {m.note.strip()[:160]}" if m.note else "Claude"))
     return res
 

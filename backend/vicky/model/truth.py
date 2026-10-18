@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from vicky.model.figures import Fact, Figure, MissingFigure, fmt_value
+from vicky.model.figures import CURRENCY_UNITS, Fact, Figure, MissingFigure, fmt_value
 from vicky.model.metrics import FACT_ALIASES
 from vicky.model.sources import cite_source
 
@@ -101,7 +101,7 @@ def _tolerance(claimed: float, unit: str, rel: float) -> float:
 
 
 def _same_unit(figure_unit: str, claim_unit: str) -> bool:
-    money = {"cad", "usd", "gbp", "eur", "aud", "money", "$"}
+    money = CURRENCY_UNITS | {"money", "$"}
     if figure_unit in money and claim_unit in money:
         return True
     return figure_unit == claim_unit or not claim_unit

@@ -6,6 +6,7 @@ PDF / DOCX / MD uploads (FR-7); `kb_ingest` converts and organizes knowledge-bas
 
 from vicky.areopagus import registry
 from vicky.jobs import job
+from vicky.model.currencies import norm_currency
 from vicky.services import engagements
 
 
@@ -37,7 +38,7 @@ async def extract_job(payload: dict) -> dict:
     currency = await db.fetchval("select currency from company_profiles where engagement_id::text = $1", row["eid"])
     try:
         out = await docs.extract_facts(bytes(row["bytes"]), row["filename"], row["kind"], upload_id=uid,
-                                       currency=str(currency or "usd").lower())
+                                       currency=norm_currency(currency))
     except Exception:
         await db.execute("update uploads set status = 'failed' where id::text = $1", uid)
         raise

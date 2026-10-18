@@ -49,6 +49,8 @@ interface AddWidgetProps {
   version: number;
   engagementId: string;
   currency?: string;
+  /** "?currency=usd" when the dashboard shows another currency than the reporting one, else "". */
+  query?: string;
   /** Marks a request from this tab so its own realtime event isn't mistaken for another tab's. */
   track: <T>(p: Promise<T>) => Promise<T>;
   /** Called with the new dashboard after a successful add. */
@@ -59,7 +61,7 @@ interface AddWidgetProps {
 }
 
 /** Build a widget from the metric vocabulary, preview it (evaluated by the backend), then add it. */
-export function AddWidget({ dashboardId, version, engagementId, currency, track, onAdded, onConflict, onClose }: AddWidgetProps) {
+export function AddWidget({ dashboardId, version, engagementId, currency, query = "", track, onAdded, onConflict, onClose }: AddWidgetProps) {
   const guard = useAccessGuard();
   const [ref, setRef] = useState("revenue");
   const [custom, setCustom] = useState("");
@@ -94,7 +96,7 @@ export function AddWidget({ dashboardId, version, engagementId, currency, track,
     if (!spec) return;
     let live = true;
     const t = window.setTimeout(() => {
-      apiPost<WidgetPreview>(`dashboards/${encodeURIComponent(dashboardId)}/widgets/preview`, { spec: spec as unknown as Record<string, unknown> }).then(
+      apiPost<WidgetPreview>(`dashboards/${encodeURIComponent(dashboardId)}/widgets/preview${query}`, { spec: spec as unknown as Record<string, unknown> }).then(
         (data) => live && setPreview({ key, data, error: null }),
         (err: unknown) => {
           if (!live || guard(err)) return;
@@ -108,7 +110,7 @@ export function AddWidget({ dashboardId, version, engagementId, currency, track,
     };
     // `key` is the spec.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, dashboardId, guard]);
+  }, [key, dashboardId, guard, query]);
 
   const current = preview?.key === key ? preview : null;
   const widget: Widget | null =
@@ -122,7 +124,7 @@ export function AddWidget({ dashboardId, version, engagementId, currency, track,
     setAddError(null);
     const body = (v: number) => ({ spec: spec as unknown as Record<string, unknown>, version: v });
     const post = (v: number) =>
-      apiPost<Dashboard>(`dashboards/${encodeURIComponent(dashboardId)}/widgets`, body(v)).then((d) => {
+      apiPost<Dashboard>(`dashboards/${encodeURIComponent(dashboardId)}/widgets${query}`, body(v)).then((d) => {
         onAdded(d, spec.title);
         return d;
       });

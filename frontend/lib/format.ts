@@ -3,18 +3,16 @@
  * helpers never derive new figures, they only turn a number and its unit into text.
  */
 
+import { currencySymbol, DEFAULT_CURRENCY, isCurrency } from "./currency";
 import type { InputRef, PointSource, Source } from "./types";
 
-const CURRENCIES = new Set(["cad", "usd", "gbp", "eur", "aud"]);
-const SYMBOL: Record<string, string> = { gbp: "£", eur: "€" };
-
-export const isCurrency = (unit: string | null | undefined) => !!unit && CURRENCIES.has(unit.toLowerCase());
+export { isCurrency };
 
 /** Compact value for axes, tooltips and popovers: $1.29M, 9.0%, 8.0 mo, 1,204. */
 export function fmtValue(value: number | null | undefined, unit?: string | null, currency?: string | null): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "–";
   const u = (unit ?? "").toLowerCase();
-  if (u === "money" || isCurrency(u)) return fmtMoney(value, isCurrency(u) ? u : (currency ?? "usd"));
+  if (u === "money" || isCurrency(u)) return fmtMoney(value, isCurrency(u) ? u : (currency ?? DEFAULT_CURRENCY));
   if (u === "pct") return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
   if (u === "months") return `${value.toFixed(1)} mo`;
   if (u === "x") return `${value.toFixed(2)}x`;
@@ -23,8 +21,8 @@ export function fmtValue(value: number | null | undefined, unit?: string | null,
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
-export function fmtMoney(value: number, currency = "usd"): string {
-  const sym = SYMBOL[currency.toLowerCase()] ?? "$";
+export function fmtMoney(value: number, currency = DEFAULT_CURRENCY): string {
+  const sym = currencySymbol(currency);
   const sign = value < 0 ? "-" : "";
   const v = Math.abs(value);
   if (v >= 1_000_000) return `${sign}${sym}${(v / 1_000_000).toFixed(2)}M`;
@@ -38,7 +36,7 @@ export function fmtAxis(value: number, unit?: string | null, currency?: string |
   const u = (unit ?? "").toLowerCase();
   if (u === "pct") return `${Math.round(value * 100)}%`;
   const money = u === "money" || isCurrency(u);
-  const sym = money ? (SYMBOL[(isCurrency(u) ? u : (currency ?? "usd")).toLowerCase()] ?? "$") : "";
+  const sym = money ? currencySymbol(isCurrency(u) ? u : (currency ?? DEFAULT_CURRENCY)) : "";
   const sign = value < 0 ? "-" : "";
   const v = Math.abs(value);
   if (v >= 1_000_000) return `${sign}${sym}${+(v / 1_000_000).toFixed(1)}M`;

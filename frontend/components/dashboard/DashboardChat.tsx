@@ -22,6 +22,8 @@ interface Exchange {
 interface DashboardChatProps {
   dashboardId: string;
   engagementId: string;
+  /** "?currency=usd" when the dashboard shows another currency than the reporting one, else "". */
+  query?: string;
   /** Marks a request from this tab so its own realtime event isn't mistaken for another tab's. */
   track: <T>(p: Promise<T>) => Promise<T>;
   /** Apply the dashboard a request changed (widget added, time range set). */
@@ -58,7 +60,7 @@ function Action({ onClick, children, icon }: { onClick: () => void; children: Re
  * up room to it. Esc, the close button or a click on the dashboard closes it; the thread is kept.
  */
 export function DashboardChat(props: DashboardChatProps) {
-  const { dashboardId, engagementId, track, onResult, onUndo, onShow, onResetRange, onAttach, attachBusy, attachError } = props;
+  const { dashboardId, engagementId, query = "", track, onResult, onUndo, onShow, onResetRange, onAttach, attachBusy, attachError } = props;
   const guard = useAccessGuard();
   const [thread, setThread] = useState<Exchange[]>([]);
   const [open, setOpen] = useState(false);
@@ -110,7 +112,7 @@ export function DashboardChat(props: DashboardChatProps) {
     setBusy(true);
     try {
       const r = await track(
-        apiPost<ChatResult>(`dashboards/${encodeURIComponent(dashboardId)}/chat`, { text }).then((res) => {
+        apiPost<ChatResult>(`dashboards/${encodeURIComponent(dashboardId)}/chat${query}`, { text }).then((res) => {
           onResult(res);
           return res;
         }),

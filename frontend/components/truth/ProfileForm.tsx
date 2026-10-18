@@ -6,6 +6,7 @@ import { PillButton } from "@/components/ui/Pill";
 import { Segmented } from "@/components/ui/Segmented";
 import { ErrorNote } from "@/components/ui/States";
 import { apiPut } from "@/lib/api";
+import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, normCurrency } from "@/lib/currency";
 import type { Engagement, Profile, Stage } from "@/lib/types";
 import { errorText, useAccessGuard } from "@/lib/use-api";
 
@@ -21,7 +22,6 @@ const COUNTRIES = [
   ["OTHER", "Other"],
 ] as const;
 
-const CURRENCIES = ["usd", "cad", "gbp", "eur", "aud"] as const;
 const STAGES: { value: Stage; label: string }[] = [
   { value: "pre_seed", label: "Pre-seed" },
   { value: "seed", label: "Seed" },
@@ -41,7 +41,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 const EMPTY: Profile = {
   name: "",
   country: "US",
-  currency: "usd",
+  currency: DEFAULT_CURRENCY,
   fiscal_year_start_month: 1,
   stage: "seed",
   round_type: "priced_equity",
@@ -60,7 +60,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
   const from = (k: string) => (sources[k] ? <SourceHint text={sources[k]} /> : undefined);
   const [p, setP] = useState<Profile>(() => {
     const merged = { ...EMPTY, ...(engagement.profile ?? {}) };
-    return { ...merged, currency: (merged.currency || "usd").toLowerCase() };
+    return { ...merged, currency: normCurrency(merged.currency) };
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,11 +113,15 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
             ))}
           </select>
         </Field>
-        <Field label="Currency" htmlFor="pf-currency" hint={from("currency")}>
+        <Field
+          label="Reporting currency"
+          htmlFor="pf-currency"
+          hint={from("currency") ?? "Every figure is shown in it. Tables in another currency convert at Bank of Canada rates."}
+        >
           <select id="pf-currency" className={selectCls} value={p.currency} onChange={(e) => set("currency", e.target.value)}>
-            {(CURRENCIES.includes(p.currency as (typeof CURRENCIES)[number]) ? CURRENCIES : [p.currency, ...CURRENCIES]).map((c) => (
+            {CURRENCY_CODES.map((c) => (
               <option key={c} value={c}>
-                {c.toUpperCase()}
+                {c.toUpperCase()} · {CURRENCIES[c][0]}
               </option>
             ))}
           </select>

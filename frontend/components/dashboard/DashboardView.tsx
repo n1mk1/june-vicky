@@ -2,12 +2,13 @@
 
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { PillButton, PillLink } from "@/components/ui/Pill";
 import { EmptyState, ErrorNote, Loading } from "@/components/ui/States";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api";
 import { pack } from "@/lib/dashboard-layout";
 import { useChannel, useSocketStatus, type Envelope } from "@/lib/socket";
+import { CURRENCIES, DEFAULT_CURRENCY, isCurrency } from "@/lib/currency";
 import { confirmHref } from "@/lib/kb";
 import type { ChatResult, Dashboard, Engagement, ReportSummary, TimeRange, Truth } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
@@ -64,12 +65,83 @@ function RangeChip({ range, onReset }: { range: TimeRange; onReset: () => void }
   );
 }
 
+const VIEW_KEY = "vicky:dashboard-currency";
+let viewMemory: string | null | undefined; // this page view's choice, kept even when storage is blocked
+const viewListeners = new Set<() => void>();
+
+function readView(): string | null {
+  if (viewMemory !== undefined) return viewMemory;
+  try {
+    const saved = window.localStorage.getItem(VIEW_KEY);
+    return saved && isCurrency(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function subscribeView(onChange: () => void) {
+  viewListeners.add(onChange);
+  return () => void viewListeners.delete(onChange);
+}
+
+function writeView(next: string | null) {
+  viewMemory = next;
+  try {
+    if (next) window.localStorage.setItem(VIEW_KEY, next);
+    else window.localStorage.removeItem(VIEW_KEY);
+  } catch {
+    // Storage can be blocked; the choice still holds for this page view.
+  }
+  viewListeners.forEach((l) => l());
+}
+
+/** Which currency the figures show in. Anything but the reporting currency is converted by the
+ * backend at Bank of Canada rates for each period; nothing is converted here. */
+function CurrencySwitch({
+  value,
+  reporting,
+  options,
+  busy,
+  onChange,
+}: {
+  value: string;
+  reporting: string;
+  options?: Dashboard["currencies"];
+  busy: boolean;
+  onChange: (code: string) => void;
+}) {
+  const list = options?.length ? options : Object.entries(CURRENCIES).map(([code, [name]]) => ({ code, name, symbol: "" }));
+  const converted = value !== reporting;
+  return (
+    <label className="flex items-center gap-1.5 text-[11.5px] text-ink-2" title={converted ? `Converted from ${reporting.toUpperCase()} at Bank of Canada rates for each period` : "Reporting currency"}>
+      <span className="sr-only">Show figures in</span>
+      {converted && <span className="hidden sm:inline">{busy ? "Converting…" : `from ${reporting.toUpperCase()} · Bank of Canada rates`}</span>}
+      <select
+        className="h-7 rounded-[3px] border border-line bg-surface-solid/60 px-1.5 font-mono text-[11px] uppercase text-ink focus:border-line-strong focus:outline-none"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Show figures in"
+      >
+        {list.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.code.toUpperCase()}
+            {c.code === reporting ? " · reporting" : ""}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function DashboardView() {
   const router = useRouter();
   const guard = useAccessGuard();
   const { theme } = useTheme();
   const tname = themeName(theme);
-  const dash = useApi<Dashboard>("dashboards/active", { theme: tname });
+  // The currency the dashboard shows: null is the reporting currency. Remembered in this browser only.
+  const view = useSyncExternalStore(subscribeView, readView, () => null);
+  const q = view ? `?currency=${encodeURIComponent(view)}` : "";
+  const dash = useApi<Dashboard>("dashboards/active", { theme: tname, currency: view });
   const ready = !!dash.data;
   const truth = useApi<Truth>(ready ? "truth" : null);
   const reports = useApi<ReportSummary[]>(ready ? "reports" : null);
@@ -117,14 +189,14 @@ export function DashboardView() {
   const refetch = useCallback(async () => {
     if (!did) return null;
     try {
-      const next = await apiGet<Dashboard>(`dashboards/${encodeURIComponent(did)}`, { theme: tname });
+      const next = await apiGet<Dashboard>(`dashboards/${encodeURIComponent(did)}`, { theme: tname, currency: view });
       apply(next);
       return next;
     } catch (err) {
       guard(err);
       return null;
     }
-  }, [did, tname, apply, guard]);
+  }, [did, tname, view, apply, guard]);
 
   /**
    * Track a request from this tab. The server publishes before it responds, so our own change can
@@ -204,7 +276,7 @@ export function DashboardView() {
     const id = dash.data.id;
     // optimistic: drop it now, the response (or a re-read on failure) is the record
     mutate((prev) => (prev ? { ...prev, widgets: prev.widgets.filter((w) => w.id !== wid), layout: prev.layout.filter((l) => l.widget_id !== wid) } : prev!));
-    const next = await write(() => apiDelete<Dashboard>(`dashboards/${encodeURIComponent(id)}/widgets/${encodeURIComponent(wid)}`));
+    const next = await write(() => apiDelete<Dashboard>(`dashboards/${encodeURIComponent(id)}/widgets/${encodeURIComponent(wid)}${q}`));
     if (!next) await refetch();
     return !!next;
   };
@@ -218,13 +290,13 @@ export function DashboardView() {
     const top = flowYs.length ? Math.min(...flowYs) : FLOW_TOP;
     const layout = [...fixed, ...pack(items, top)];
     mutate((prev) => (prev ? { ...prev, layout } : prev!));
-    void write(() => apiPatch<Dashboard>(`dashboards/${encodeURIComponent(d.id)}/layout`, { layout, version: d.version }));
+    void write(() => apiPatch<Dashboard>(`dashboards/${encodeURIComponent(d.id)}/layout${q}`, { layout, version: d.version }));
   };
 
   const setRange = (time_range: { last_months: number } | { from: string; to: string } | null) => {
     if (!dash.data) return;
     const id = dash.data.id;
-    void write(() => apiPatch<Dashboard>(`dashboards/${encodeURIComponent(id)}/time-range`, { time_range }));
+    void write(() => apiPatch<Dashboard>(`dashboards/${encodeURIComponent(id)}/time-range${q}`, { time_range }));
   };
 
   // Zooming any chart sets the dashboard-wide range (UI doc: linked interaction). Slider drags and
@@ -269,7 +341,9 @@ export function DashboardView() {
 
   const d = dash.data;
   const byRole = new Map(d.widgets.map((w) => [w.role, w]));
-  const currency = truth.data?.profile?.currency;
+  const currency = d.currency ?? truth.data?.profile?.currency;
+  const reporting = d.reporting_currency ?? currency ?? DEFAULT_CURRENCY;
+  const pickCurrency = (code: string) => writeView(code === reporting ? null : code);
   const rest = d.widgets.filter((w) => !HERO_ROLES.has(w.role));
   const common = { engagementId: d.engagement_id, currency, timeRange: d.time_range, onRangeChange: zoomTo };
   const ctx: ModuleContext = {
@@ -296,6 +370,13 @@ export function DashboardView() {
         </div>
         <div className="flex items-center gap-2">
           {d.time_range && <RangeChip range={d.time_range} onReset={() => setRange(null)} />}
+          <CurrencySwitch
+            value={currency ?? reporting}
+            reporting={reporting}
+            options={d.currencies}
+            busy={dash.loading}
+            onChange={pickCurrency}
+          />
           <PillButton label="Add widget" icon={<Plus className="size-3.5" strokeWidth={1.75} />} onClick={() => setAdding(true)} />
         </div>
       </div>
@@ -349,6 +430,7 @@ export function DashboardView() {
       <div className="mx-auto w-full shrink-0 lg:max-w-[min(820px,50%)]">
         <DashboardChat
           dashboardId={d.id}
+          query={q}
           track={track}
           engagementId={d.engagement_id}
           onResult={onChat}
@@ -373,6 +455,7 @@ export function DashboardView() {
               version={d.version}
               engagementId={d.engagement_id}
               currency={currency}
+              query={q}
               onAdded={(next, title) => {
                 const before = new Set(d.widgets.map((w) => w.id));
                 apply(next);

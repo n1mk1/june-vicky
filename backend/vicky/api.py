@@ -279,33 +279,33 @@ class LayoutIn(BaseModel):
 
 
 @api.get("/dashboards/active")
-async def dashboard_active(theme: str = "vicky-dark") -> dict:
-    return await dashboards.active(theme)
+async def dashboard_active(theme: str = "vicky-dark", currency: str | None = None) -> dict:
+    return await dashboards.active(theme, currency)
 
 
 @api.get("/dashboards/{did}")
-async def dashboard(did: str, theme: str = "vicky-dark") -> dict:
-    return await dashboards.get(did, theme)
+async def dashboard(did: str, theme: str = "vicky-dark", currency: str | None = None) -> dict:
+    return await dashboards.get(did, theme, currency)
 
 
 @api.post("/dashboards/{did}/widgets/preview")
-async def widget_preview(did: str, body: SpecIn, theme: str = "vicky-dark") -> dict:
-    return await dashboards.preview(did, body.spec, theme)
+async def widget_preview(did: str, body: SpecIn, theme: str = "vicky-dark", currency: str | None = None) -> dict:
+    return await dashboards.preview(did, body.spec, theme, currency)
 
 
 @api.post("/dashboards/{did}/widgets")
-async def widget_add(did: str, body: SpecIn) -> dict:
-    return await dashboards.add_widget(did, body.spec, body.version)
+async def widget_add(did: str, body: SpecIn, currency: str | None = None) -> dict:
+    return await dashboards.add_widget(did, body.spec, body.version, currency=currency)
 
 
 @api.delete("/dashboards/{did}/widgets/{wid}")
-async def widget_remove(did: str, wid: str) -> dict:
-    return await dashboards.remove_widget(did, wid)
+async def widget_remove(did: str, wid: str, currency: str | None = None) -> dict:
+    return await dashboards.remove_widget(did, wid, currency)
 
 
 @api.patch("/dashboards/{did}/layout")
-async def layout(did: str, body: LayoutIn) -> dict:
-    return await dashboards.set_layout(did, body.layout, body.version)
+async def layout(did: str, body: LayoutIn, currency: str | None = None) -> dict:
+    return await dashboards.set_layout(did, body.layout, body.version, currency)
 
 
 class TimeRangeIn(BaseModel):
@@ -314,8 +314,8 @@ class TimeRangeIn(BaseModel):
 
 
 @api.patch("/dashboards/{did}/time-range")
-async def time_range(did: str, body: TimeRangeIn) -> dict:
-    return await dashboards.set_time_range(did, body.time_range, body.version)
+async def time_range(did: str, body: TimeRangeIn, currency: str | None = None) -> dict:
+    return await dashboards.set_time_range(did, body.time_range, body.version, currency)
 
 
 class ChatIn(BaseModel):
@@ -323,8 +323,8 @@ class ChatIn(BaseModel):
 
 
 @api.post("/dashboards/{did}/chat")
-async def dashboard_chat(did: str, body: ChatIn) -> dict:
-    return await dashboards.chat(did, body.text)
+async def dashboard_chat(did: str, body: ChatIn, currency: str | None = None) -> dict:
+    return await dashboards.chat(did, body.text, currency)
 
 
 # ---------------------------------------------------------------- areopagus

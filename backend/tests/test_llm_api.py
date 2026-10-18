@@ -108,7 +108,7 @@ async def test_uploaded_pdf_becomes_pending_cited_facts(api_client, live_llm):
     facts = {f["name"]: f for f in eng["facts"]}
     assert set(facts) == {"cash_balance", "customers"} and all(f["status"] == "pending" for f in facts.values())
     assert facts["cash_balance"]["source"] | {"verified": True} == facts["cash_balance"]["source"]
-    assert facts["cash_balance"]["source"]["page"] == 2 and facts["cash_balance"]["unit"] == "usd"
+    assert facts["cash_balance"]["source"]["page"] == 2 and facts["cash_balance"]["unit"] == "cad"  # no currency named: the reporting one
     assert facts["customers"]["source"]["verified"] is False and facts["customers"]["note"].startswith("Check this")
 
 
