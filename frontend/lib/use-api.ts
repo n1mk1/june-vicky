@@ -33,7 +33,7 @@ export function useAccessGuard() {
 /** A readable message for any thrown value. */
 export function errorText(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 502) return err.detail || "The Vik API is not reachable. It may be waking up; try again in a minute.";
+    if ([502, 503, 504].includes(err.status)) return err.detail || "The Vik API is not reachable. It may be waking up; try again in a minute.";
     return err.detail || `Request failed (${err.status}).`;
   }
   if (err instanceof Error) return err.message;

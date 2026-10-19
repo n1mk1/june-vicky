@@ -50,6 +50,8 @@ async function detailOf(res: Response): Promise<{ detail: string; body?: unknown
     const detail = typeof d === "string" ? d : msgs.length ? msgs.join("; ") : d ? JSON.stringify(d) : res.statusText;
     return { detail, body };
   } catch {
+    // An HTML page is the host's own error page (a sleeping or restarting API), not a message from the API.
+    if (/^\s*</.test(text) || (res.headers.get("content-type") ?? "").includes("text/html")) return { detail: "" };
     return { detail: text || res.statusText };
   }
 }

@@ -444,13 +444,14 @@ class LLM:
             "system_instruction": p["system"] or None,
             "max_output_tokens": p["max_tokens"],
             "thinking_config": types.ThinkingConfig(thinking_level=p["thinking_level"]),
+            # Tool loops run here (`run_tools`), never in the SDK.
+            "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
         }
         if schema is not None:
             cfg["response_mime_type"] = "application/json"
             cfg["response_json_schema"] = json_schema(schema)
         if tools:
             cfg["tools"] = [types.Tool(function_declarations=[t.declaration() for t in tools])]
-            cfg["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(disable=True)
         if timeout:  # one bound on the call, and no retries inside it
             cfg["http_options"] = types.HttpOptions(
                 timeout=int(timeout * 1000), retry_options=types.HttpRetryOptions(attempts=1)
