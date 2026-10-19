@@ -263,10 +263,10 @@ Regex-extract every number; normalize units ($, K, M, %, months, x); each must m
 
 | Channel | Transport | Payload |
 |---|---|---|
-| `/ws?token=…&channels=dashboard:{id},session:{id}` | WebSocket, one per tab, ping 20 s; token from `GET /realtime/token` | `{type, channel, session_id, version, ts, payload}`: `vc.turn.done`, `chair.decision`, `score.ready`, `knowledge.checked`, `coach.timeout`, `session.ended` (session); `widget.diff`, `layout.diff`, `time_range.diff` (dashboard); `job.status` (session, engagement or `kb`); `kb.index.ready`, `kb.index.failed` (`kb`) |
-| Redis pub/sub | `vik:{channel}` (`vik:session:{id}`, `vik:dashboard:{id}`, …) | same envelope; API fan-out to sockets |
+| `/ws?token=…&channels=dashboard:{id},session:{id},kb` | WebSocket, one per tab, ping 20 s; token from `GET /realtime/token` | `{type, channel, session_id, version, ts, payload}`: `vc.turn.done`, `chair.decision`, `score.ready`, `knowledge.checked`, `coach.timeout`, `session.ended` (session); `widget.diff`, `layout.diff`, `time_range.diff` (dashboard); `job.status` (session, engagement or `kb`); `kb.index.ready`, `kb.index.failed` (`kb`) |
+| Redis pub/sub | `vik:{channel}`: `vik:session:{id}`, `vik:dashboard:{id}`, `vik:engagement:{id}`, `vik:kb` | same envelope; the API's hub subscribes to exactly these (`CHANNELS` in `vik/realtime.py`) and fans out to sockets |
 
-Reconnect: clients drop envelopes at or below the last `version` seen per channel and re-fetch REST state; Postgres is the record (turns, widgets), so a redeploy mid-session loses nothing.
+Reconnect: clients drop envelopes at or below the last `version` seen per channel and re-fetch REST state; Postgres is the record (turns, widgets), so a redeploy mid-session loses nothing. The Knowledge base view and the search status line reload on `kb` events and keep a slower poll (10 s while the socket is open, their old 1.5 s / 2 s while it is down) as a fallback for a missed event.
 
 ## 8. API surface (REST, under `/api/v1`, cookie-gated except `/healthz` and `/auth/*`)
 

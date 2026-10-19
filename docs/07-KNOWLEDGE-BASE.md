@@ -27,6 +27,7 @@ POST /kb/import (files, folders, zips)
   └─ job kb_ingest
        convert (in a thread: OCR blocks) → notes in inbox/ (or the zip's own folders)
        organize → move inbox notes into folders, title/tag/summarize/link, rewrite AI hubs
+       job.status (running → done | failed) on the "kb" channel: every open Knowledge base tab reloads
 ```
 
 | In | Notes |

@@ -10,7 +10,7 @@ import re
 import httpx
 import pytest
 
-from tests.helpers import start_court
+from tests.helpers import received, start_court, tab_on
 from tests.llm_fakes import json_reply
 from vik import db, jobs, kv
 from vik.audit import audit_text
@@ -310,6 +310,35 @@ async def test_a_new_fill_cancels_a_running_build_and_a_failed_build_keeps_the_o
     await jobs.wait_for([job], 60)
     assert await index.active_build_id() == c["build_id"]
     assert int(await db.fetchval("select count(*) from kb_index_builds where status = 'active'")) == 1
+
+
+@pytest.mark.db
+async def test_open_tabs_hear_when_search_is_ready_or_failed(vault, monkeypatch):
+    """A build says how it ended on `kb` (`kb.index.ready` / `kb.index.failed`, and its job's `job.status`), so
+    the search status line changes without a poll."""
+
+    def boom(*_a, **_k):
+        raise RuntimeError("chunker exploded")
+
+    with tab_on("kb") as tab:
+        bid = await _build()
+        ready = await received(tab, lambda e: e["type"] == "kb.index.ready")
+        monkeypatch.setattr(index, "chunk_note", boom)
+        b = await index.start_build()
+        job = await db.fetchval("select job_id::text from kb_index_builds where id = $1::uuid", b["build_id"])
+        await jobs.wait_for([job], 30)
+        failed = await received(tab, lambda e: e["type"] == "kb.index.failed")
+        ends = await received(
+            tab, lambda e: e["type"] == "job.status" and e["payload"]["status"] != "running", n=2
+        )
+    assert ready and ready[0]["channel"] == "kb" and ready[0]["payload"]["build_id"] == bid
+    assert ready[0]["payload"]["chunks"] >= 4
+    assert failed and failed[0]["payload"]["build_id"] == b["build_id"]
+    assert "chunker exploded" in failed[0]["payload"]["error"]
+    assert [(e["payload"]["kind"], e["payload"]["status"]) for e in ends] == [
+        ("kb_index", "done"),
+        ("kb_index", "failed"),
+    ]
 
 
 @pytest.mark.db

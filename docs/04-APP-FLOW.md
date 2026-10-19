@@ -165,7 +165,8 @@ Guardrails on save: field caps, delimited persona block, audit applied to the te
 
 | Event | Behaviour |
 |---|---|
-| New tab opened | Connects `/ws?session=…`; receives current version; subscribes to dashboard and session channels |
+| New tab opened | Connects `/ws?token=…&channels=…`; receives each channel's current version; subscribes to the channels its page uses (dashboard, session, or `kb` on the Knowledge base tab) |
+| Import, organize or search build from another tab | `job.status` and `kb.index.ready` / `kb.index.failed` on `kb` → the Knowledge base tab reloads the vault or the search status line; no reload or poll needed |
 | Widget/turn in another tab | Diff over pub/sub → WebSocket → store applies if `version` is newer (dedupes AG-UI + WS) |
 | Redeploy mid-session | Socket drops; client reconnects with `since_version`; server replays from Postgres; ember reconnect line disappears |
 | Job lost (free Key Value restart) | `jobs` row stays `queued` past its TTL → UI shows Retry → re-enqueue |

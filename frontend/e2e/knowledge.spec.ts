@@ -60,11 +60,8 @@ async function newestJob(api: APIRequestContext): Promise<string | null> {
   return (await kbStatus(api)).jobs[0]?.id ?? null;
 }
 
-/**
- * Wait until the import/organize job started after `before` has finished and the vault reloaded. "Done:" alone
- * isn't enough: an earlier job's summary (e.g. global setup's import) shows until the new job is listed.
- */
-async function settled(page: Page, api: APIRequestContext, before: string | null) {
+/** Wait until the API says the import/organize job started after `before` has finished. */
+async function jobDone(api: APIRequestContext, before: string | null) {
   await expect
     .poll(
       async () => {
@@ -74,6 +71,14 @@ async function settled(page: Page, api: APIRequestContext, before: string | null
       { timeout: JOB_MS },
     )
     .toBe("done");
+}
+
+/**
+ * Wait until the import/organize job started after `before` has finished and the vault reloaded. "Done:" alone
+ * isn't enough: an earlier job's summary (e.g. global setup's import) shows until the new job is listed.
+ */
+async function settled(page: Page, api: APIRequestContext, before: string | null) {
+  await jobDone(api, before);
   await expect(page.getByText(/Done:/)).toBeVisible({ timeout: JOB_MS });
 }
 
@@ -264,6 +269,33 @@ test("drag-and-drop imports, delete removes a note", async ({ page, request }) =
   await page.getByRole("button", { name: "Confirm delete note" }).click();
   await expect(page.getByRole("navigation", { name: "Notes" }).getByRole("button", { name: `${RUN} dropped` })).toHaveCount(0);
   expect((await runNotes(request)).some((n) => n.title === `${RUN} dropped`)).toBeFalsy();
+});
+
+test("an import started elsewhere shows up over the socket, with no poll and no reload", async ({ page, request }) => {
+  // Jobs report on the realtime hub's `kb` channel. Once the socket has said hello on it, the page's clock is
+  // paused: no interval or timeout fires from then on, so only the job events can bring the note in.
+  await page.clock.install();
+  const hello = page.waitForEvent("websocket").then((ws) =>
+    ws.waitForEvent("framereceived", {
+      predicate: (f) => {
+        const m = JSON.parse(String(f.payload)) as { type?: string; channels?: string[] };
+        return m.type === "hello" && !!m.channels?.includes("kb");
+      },
+    }),
+  );
+  await page.goto("/knowledge");
+  await expect(page.getByRole("button", { name: "New note", exact: true })).toBeEnabled();
+  await hello;
+  await page.clock.pauseAt(Date.now() + 1000);
+  const before = await newestJob(request);
+  const title = `${RUN} from another tab`;
+  const r = await request.post("/api/v1/kb/import", {
+    multipart: { files: { name: `${title}.md`, mimeType: "text/markdown", buffer: Buffer.from(`# ${title}\n\nImported while the page watched.\n`) } },
+  });
+  expect(r.ok()).toBeTruthy();
+  await jobDone(request, before);
+  // No "Done:" line here: that summary belongs to an import this tab started.
+  await expect(page.getByRole("navigation", { name: "Notes" }).getByRole("button", { name: title, exact: true })).toBeVisible();
 });
 
 test("Fill dashboard builds a draft source of truth from the vault", async ({ page }) => {

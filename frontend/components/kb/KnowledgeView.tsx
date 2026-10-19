@@ -10,6 +10,7 @@ import { ErrorNote, Loading } from "@/components/ui/States";
 import { apiDelete, apiGet, apiPost } from "@/lib/api";
 import { fmtBytes } from "@/lib/format";
 import { confirmHref } from "@/lib/kb";
+import { useChannel, useSocketStatus, type Envelope } from "@/lib/socket";
 import type { KbAutofill, KbGraph as Graph, KbImportResult, KbJob, KbNote, KbNoteDetail, KbStatus } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,9 @@ import { NoteTree } from "./NoteTree";
 const MAX_FILE = 50 * 1024 * 1024;
 const BATCH_FILES = 20;
 const BATCH_BYTES = 40 * 1024 * 1024;
+const POLL_MS = 1500;
+/** With the socket up, job events on `kb` drive the reloads; this slower poll only catches one it missed. */
+const FALLBACK_POLL_MS = 10_000;
 const ACCEPTS =
   "any file: spreadsheets, PDFs (scanned too), Word, PowerPoint, OpenDocument, emails, images, recordings (transcribed), HTML, JSON, text, or a zip of all of it";
 
@@ -148,6 +152,7 @@ export function KnowledgeView() {
 
   // While an import or organize job runs, poll its status; reload the vault when it settles.
   const running = !!status.data?.running;
+  const live = useSocketStatus() === "open";
   const wasRunning = useRef(false);
   useEffect(() => {
     if (!running) {
@@ -159,9 +164,19 @@ export function KnowledgeView() {
       return;
     }
     wasRunning.current = true;
-    const t = window.setInterval(() => reloadStatus(), 1500);
+    const t = window.setInterval(() => reloadStatus(), live ? FALLBACK_POLL_MS : POLL_MS);
     return () => window.clearInterval(t);
-  }, [running, reloadNotes, reloadGraph, reloadStatus]);
+  }, [running, live, reloadNotes, reloadGraph, reloadStatus]);
+  // Imports and organize passes report on `kb`, this tab's or another's (docs/05-BACKEND-SCHEMA.md §7). A job
+  // this tab saw running reloads the vault through the effect above once the status says it settled; one that
+  // started and ended unseen reloads it now.
+  const onKbEvent = (e: Envelope) => {
+    const { kind, status: st } = e.payload as { kind?: string; status?: string };
+    if (e.type !== "job.status" || (kind !== "kb_ingest" && kind !== "kb_organize")) return;
+    if (st === "running" || wasRunning.current) reloadStatus();
+    else refreshVault();
+  };
+  useChannel("kb", onKbEvent, refreshVault);
   /** After starting a job: read the status now, so polling starts (or, if it already finished, reload). */
   const kick = async () => {
     // Retried with backoff: if this one read fails (a busy or rate-limited API), nothing else would

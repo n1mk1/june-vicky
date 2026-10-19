@@ -1,7 +1,11 @@
 """Test helpers: build the canonical model and metrics for a sample without a database, or load a
 sample into the database as a draft engagement (the app itself never offers samples)."""
 
+import asyncio
+import contextlib
 import hashlib
+import json
+from collections.abc import Callable, Iterator
 
 import yaml
 
@@ -120,3 +124,37 @@ async def start_court(
     except (PersonaError, court.CourtError) as e:
         return Started(422, {"detail": str(e)})
     return Started(200, await court.view(sid))
+
+
+class FakeSocket:
+    """Stands in for a browser tab's WebSocket on the realtime hub: it keeps every envelope it is sent."""
+
+    def __init__(self) -> None:
+        self.got: list[dict] = []
+
+    async def send_text(self, data: str) -> None:
+        self.got.append(json.loads(data))
+
+
+@contextlib.contextmanager
+def tab_on(channel: str) -> Iterator[FakeSocket]:
+    """A fake tab subscribed to `channel` on the hub while the block runs."""
+    from vik import realtime
+
+    tab = FakeSocket()
+    realtime.hub.add(channel, tab)  # type: ignore[arg-type]
+    try:
+        yield tab
+    finally:
+        realtime.hub.remove(tab)  # type: ignore[arg-type]
+
+
+async def received(
+    tab: FakeSocket, match: Callable[[dict], bool] = lambda e: True, n: int = 1, seconds: float = 5.0
+) -> list[dict]:
+    """The envelopes `tab` got that `match`, once there are `n` of them or the time is up."""
+    for _ in range(int(seconds / 0.05)):
+        if len([e for e in tab.got if match(e)]) >= n:
+            break
+        await asyncio.sleep(0.05)
+    return [e for e in tab.got if match(e)]
