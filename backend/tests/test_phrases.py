@@ -2,9 +2,9 @@
 
 import pytest
 
-from vicky.model.context import sample_context
-from vicky.viz import evaluate_widget
-from vicky.viz.phrases import interpret, normalise
+from vik.model.context import sample_context
+from vik.viz import evaluate_widget
+from vik.viz.phrases import interpret, normalise
 
 
 @pytest.fixture(scope="module")

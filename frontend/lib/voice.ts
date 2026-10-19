@@ -58,7 +58,7 @@ class Tap extends AudioWorkletProcessor {
     return true;
   }
 }
-registerProcessor("vicky-tap", Tap);
+registerProcessor("vik-tap", Tap);
 `;
 
 /** Box-filter resample to `to` Hz and convert to 16-bit PCM. */
@@ -177,7 +177,7 @@ export async function openMic({ onPartial, onError }: MicHandlers = {}): Promise
   // Batch the worklet's 128-frame blocks into ~250 ms chunks.
   let buf = new Int16Array(0);
   const source = ctx.createMediaStreamSource(stream);
-  const tap = new AudioWorkletNode(ctx, "vicky-tap");
+  const tap = new AudioWorkletNode(ctx, "vik-tap");
   tap.port.onmessage = (e: MessageEvent<Float32Array>) => {
     if (!active) return;
     const frame = e.data;
@@ -265,7 +265,7 @@ export async function openMic({ onPartial, onError }: MicHandlers = {}): Promise
 }
 
 /**
- * Speaks `text` in `speaker`'s voice (a persona id, or "vicky"), or in `voiceId` when the sitting cast one;
+ * Speaks `text` in `speaker`'s voice (a persona id, or "vik"), or in `voiceId` when the sitting cast one;
  * resolves when playback ends or is cut.
  */
 export function speak(text: string, speaker: string, signal?: AbortSignal, voiceId?: string): Promise<void> {

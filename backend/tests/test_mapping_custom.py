@@ -3,15 +3,15 @@ the metrics engine (as a labelled series) and the confirmed knowledge base note.
 
 import pytest
 
-from vicky import db
-from vicky.kb import truthnote
-from vicky.services import engagements
+from vik import db
+from vik.kb import truthnote
+from vik.services import engagements
 
 pytestmark = pytest.mark.db
 
 
 async def _login(c):
-    await c.post("/auth/access", json={"code": "vicky-demo"})
+    await c.post("/auth/access", json={"code": "vik-demo"})
 
 
 async def test_a_custom_field_is_saved_offered_and_computed(api_client):

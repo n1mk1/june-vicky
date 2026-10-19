@@ -5,7 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
  * http://localhost:3000) and the API behind it. Start them first:
  *
  *   docker compose up -d db kv
- *   (backend)  uv run uvicorn vicky.api:app --port 8000
+ *   (backend)  uv run uvicorn vik.api:app --port 8000
  *   (frontend) npm run dev
  *   npm run test:e2e
  *

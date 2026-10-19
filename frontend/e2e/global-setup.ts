@@ -6,7 +6,7 @@ import { join } from "node:path";
 export default async function globalSetup(config: FullConfig) {
   const baseURL = config.projects[0].use.baseURL ?? "http://localhost:3000";
   const ctx = await request.newContext({ baseURL });
-  const access = await ctx.post("/api/v1/auth/access", { data: { code: process.env.ACCESS_CODE ?? "vicky-demo" } });
+  const access = await ctx.post("/api/v1/auth/access", { data: { code: process.env.ACCESS_CODE ?? "vik-demo" } });
   if (!access.ok()) throw new Error(`Sign-in failed (${access.status()}). Is the stack running at ${baseURL}?`);
 
   const active = await ctx.get("/api/v1/engagements/active");

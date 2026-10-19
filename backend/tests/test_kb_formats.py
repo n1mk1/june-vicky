@@ -4,7 +4,7 @@ import io
 import zipfile
 from email.message import EmailMessage
 
-from vicky.kb import convert
+from vik.kb import convert
 
 ODF_HEAD = (
     '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
@@ -111,7 +111,7 @@ def test_media_is_transcribed_with_speakers(monkeypatch):
 
 
 def test_autofill_places_the_company_from_how_often_documents_name_it():
-    from vicky.kb.autofill import place_in
+    from vik.kb.autofill import place_in
 
     found = place_in(
         [
@@ -125,28 +125,28 @@ def test_autofill_places_the_company_from_how_often_documents_name_it():
     assert place_in([{"path": "a.md", "content": "Sold once in London."}]) == {}  # one mention isn't enough
 
 
-async def test_fact_parsing_runs_in_batches_and_halves_an_overflowing_one(monkeypatch):
-    from vicky.llm import docs
-    from vicky.llm.client import LLMError
-    from vicky.llm.schemas import DocFactList
+async def test_a_long_text_is_read_in_parts_and_an_overflowing_part_is_halved(monkeypatch):
+    from vik.llm import docs
+    from vik.llm.client import LLMError
+    from vik.llm.schemas import DocFactList
 
     calls = []
 
     class Fake:
         async def parse(self, route, schema, *, system, messages):
-            n = messages[0]["content"].count("\n   [")  # one citation line per cited line
+            n = messages[0]["content"][0]["text"].count("customers")  # one fact per paragraph
             calls.append(n)
             if n > 3:
-                raise LLMError("structured output did not validate: EOF while parsing")
+                raise LLMError("response hit max_tokens")
             return DocFactList(facts=[])
 
+        async def delete_file(self, name):
+            pass
+
     monkeypatch.setattr(docs, "get_llm", lambda: Fake())
-    monkeypatch.setattr(docs, "PARSE_BATCH", 8)
-    lines = [
-        docs.CitedLine(f"Customers {i}", [docs.CitedSpan(f"we have {i} customers", 1, 2)]) for i in range(10)
-    ]
-    await docs.parse_lines(lines)
-    assert calls[:2] == [8, 2] or sorted(calls[:2]) == [2, 8]  # two batches first
-    assert (
-        max(c for c in calls if c <= 3) <= 3 and sum(c for c in calls if c <= 3) == 10
-    )  # every line parsed once
+    monkeypatch.setattr(docs, "TEXT_PART_CHARS", 2000)
+    text = "\n\n".join(f"We have {i} customers. " + "More of the operating report. " * 8 for i in range(10))
+    out = await docs.extract_facts(text.encode(), "pack.md", "md", upload_id="u", currency="usd")
+    assert out == {"facts": [], "dropped": 0, "lines": 0}
+    assert len([c for c in calls if c > 3]) >= 1  # a part overflowed and was halved
+    assert sum(c for c in calls if c <= 3) == 10  # every paragraph read exactly once

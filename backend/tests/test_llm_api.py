@@ -1,14 +1,14 @@
 """The LLM path end to end over the REST API, on recorded responses (no network, no real key):
-the Prepare court with Claude minds, FR-7 extraction from an uploaded PDF, and the 402 budget guard.
+the court with Gemini minds, FR-7 extraction from an uploaded PDF, and the 402 budget guard.
 """
 
 import re
 
 import pytest
 
-from tests.helpers import load_and_confirm
-from tests.llm_fakes import FILE_META, json_reply, make_pdf, message, page_cite, text_block, text_reply
-from vicky import db, jobs
+from tests.helpers import load_and_confirm, start_court
+from tests.llm_fakes import json_reply, make_pdf, text_reply
+from vik import db, jobs
 
 pytestmark = pytest.mark.db
 
@@ -52,7 +52,7 @@ def scripted(call):
                 "mind_changers": ["A cited answer"],
                 "opening_question": SPOKEN,
             },
-            model="claude-opus-5-5",
+            model="gemini-4-argon",
         )
     if task == "speak":
         return text_reply(SPOKEN)
@@ -68,17 +68,17 @@ def scripted(call):
             }
         )
     if task == "claims":
-        return json_reply({"claims": []}, model="claude-haiku-5-5")
+        return json_reply({"claims": []}, model="gemini-3.5-flash-lite")
     if task == "judge":
-        return json_reply(JUDGED, model="claude-opus-5-5")
+        return json_reply(JUDGED, model="gemini-4-argon")
     if task == "review":
-        return json_reply({"verdict": "approve", "issues": [], "note": ""}, model="claude-haiku-5-5")
+        return json_reply({"verdict": "approve", "issues": [], "note": ""}, model="gemini-3.5-flash-lite")
     if task == "probes":
         return json_reply({"probes": []})
     if task == "ask_knowledge":
         return text_reply("From memory: what do your notes say about that?")
     if task == "verify":
-        return json_reply({"verdict": "partial", "explanation": "Part of it."}, model="claude-haiku-5-5")
+        return json_reply({"verdict": "partial", "explanation": "Part of it."}, model="gemini-3.5-flash-lite")
     if task == "bid":
         hid = re.search(r"\n(\S+\.h\d+) \|", user)
         return json_reply(
@@ -88,15 +88,15 @@ def scripted(call):
 
 
 async def _login_and_confirm(api_client):
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     if (await api_client.get("/engagements/active")).status_code != 200:
         await load_and_confirm(api_client, "tidewell")
 
 
-async def test_prepare_court_runs_on_the_llm_path(api_client, live_llm):
+async def test_court_runs_on_the_llm_path(api_client, live_llm):
     await _login_and_confirm(api_client)
     rec = live_llm.install(scripted)
-    r = await api_client.post("/court/start", json={"panel": ["aristotle", "thales"], "question_cap": 4})
+    r = await start_court(["aristotle", "thales"], 4)
     assert r.status_code == 200, r.text
     s = r.json()
     assert [t["kind"] for t in s["turns"]] == ["intro", "question"] and s["turns"][1]["text"] == SPOKEN
@@ -129,19 +129,7 @@ async def test_uploaded_pdf_becomes_pending_cited_facts(api_client, live_llm):
     pdf = make_pdf([["Monthly investor update"], lines])
 
     def respond(call):
-        if call["method"] == "POST" and call["path"].endswith("/v1/files"):
-            return FILE_META
-        if call["method"] == "DELETE":
-            return {"id": FILE_META["id"], "type": "file_deleted"}
         if call["task"] == "doc_facts":
-            return message(
-                [
-                    text_block("Cash: $483,270 (Sep)", [page_cite(lines[0], 2)]),
-                    text_block("\nCustomers: 41", [page_cite(lines[1], 1)]),
-                ],
-                model="claude-opus-5-5",
-            )
-        if call["task"] == "doc_parse":
             return json_reply(
                 {
                     "facts": [
@@ -164,17 +152,17 @@ async def test_uploaded_pdf_becomes_pending_cited_facts(api_client, live_llm):
                             "currency": None,
                             "period": "2026-09",
                             "kind": "historical",
-                            "page": 1,
-                            "cited_text": lines[1],
+                            "page": 2,
+                            "cited_text": "We had 41 paying customers at the end of the quarter.",  # not the text
                         },
                     ]
                 },
-                model="claude-opus-5-5",
+                model="gemini-4-argon",
             )
         raise AssertionError(call["task"])
 
     live_llm.install(respond)
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     r = await api_client.post("/uploads", files={"file": ("update.pdf", pdf, "application/pdf")})
     assert r.status_code == 200, r.text
     eng = r.json()
@@ -196,7 +184,7 @@ async def test_uploaded_pdf_becomes_pending_cited_facts(api_client, live_llm):
 
 
 async def test_offline_upload_of_a_pdf_runs_no_extraction(api_client):
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     r = await api_client.post(
         "/uploads", files={"file": ("update.pdf", make_pdf([["Hello"]]), "application/pdf")}
     )
@@ -208,7 +196,7 @@ async def test_llm_routes_return_402_over_budget(api_client, live_llm):
     await _login_and_confirm(api_client)
     live_llm.install(scripted)
     live_llm.spend = 1e6
-    r = await api_client.post("/court/start", json={})
+    r = await api_client.post("/court/00000000-0000-0000-0000-000000000000/answer", json={"text": "Hello."})
     assert r.status_code == 402 and "budget" in r.json()["detail"].lower()
     assert (
         await api_client.get("/dashboards/active")

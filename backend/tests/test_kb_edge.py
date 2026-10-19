@@ -9,10 +9,10 @@ import zipfile
 import pytest
 
 from tests.llm_fakes import make_pdf
-from vicky.config import get_settings
-from vicky.kb import convert, ocr
-from vicky.kb.organize import excerpt, heuristic_related, scrub_numbers
-from vicky.kb.store import Resolver, clean_path, clean_tags
+from vik.config import get_settings
+from vik.kb import convert, ocr
+from vik.kb.organize import excerpt, heuristic_related, scrub_numbers
+from vik.kb.store import Resolver, clean_path, clean_tags
 
 # ---------------------------------------------------------------- converters
 
@@ -201,11 +201,11 @@ pytestmark_db = pytest.mark.db
 
 async def _login(api_client):
     if not (await api_client.get("/auth/session")).json()["ok"]:
-        assert (await api_client.post("/auth/access", json={"code": "vicky-demo"})).status_code == 200
+        assert (await api_client.post("/auth/access", json={"code": "vik-demo"})).status_code == 200
 
 
 async def _import(api_client, files):
-    from vicky import jobs
+    from vik import jobs
 
     r = await api_client.post("/kb/import", files=files)
     assert r.status_code == 200, r.text
@@ -319,7 +319,7 @@ async def test_kb_zip_folders_concurrency_and_export_with_originals(api_client):
             "/kb/import", files=[("files", ("solo.md", b"# Solo\nA founder note.", "text/markdown"))]
         ),
     )
-    from vicky import jobs
+    from vik import jobs
 
     await jobs.wait_for([r1.json()["job_id"], r2.json()["job_id"]], timeout_s=60)
     notes = {n["path"]: n for n in (await api_client.get("/kb/notes")).json()}
@@ -333,4 +333,4 @@ async def test_kb_zip_folders_concurrency_and_export_with_originals(api_client):
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         names = z.namelist()
     assert any(n.startswith("_originals/") and n.endswith("p&l.csv") for n in names)
-    assert "finance/q1/p&l.csv" in names and ".vicky/meta.json" in names
+    assert "finance/q1/p&l.csv" in names and ".vik/meta.json" in names

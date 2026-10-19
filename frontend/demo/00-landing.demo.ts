@@ -5,9 +5,9 @@ test("00-landing", async ({ page, demo }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   demo.begin();
   // The intro counts up, then lifts to show the landing and its 3D mark.
-  await expect(page.getByRole("heading", { name: "JUNE × VICKY" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "VIK" })).toBeVisible();
   await demo.pause(4200);
-  await demo.caption("Vicky", "An AI venture capitalist that knows your numbers before the investors do.");
+  await demo.caption("Vik", "An AI venture capitalist that knows your numbers before the investors do.");
   await demo.moveTo(520, 380, 1200);
   await demo.moveTo(900, 420, 1400);
   await demo.pause(1500);
@@ -21,10 +21,10 @@ test("00-landing", async ({ page, demo }) => {
   await code.press("Enter");
 
   await expect(page).toHaveURL(/\/knowledge/);
-  await expect(page.getByRole("heading", { name: "Everything Vicky knows." })).toBeVisible();
-  await demo.caption("Six tabs", "Knowledge base · Dashboard · Preparation · Simulation · Areopagus · Reports");
+  await expect(page.getByRole("heading", { name: "Everything Vik knows." })).toBeVisible();
+  await demo.caption("Five tabs", "Knowledge base · Dashboard · Simulation · Areopagus · Reports");
   const nav = page.getByRole("navigation", { name: "Sections" });
-  for (const name of ["Knowledge base", "Dashboard", "Preparation", "Simulation", "Areopagus", "Reports"]) {
+  for (const name of ["Knowledge base", "Dashboard", "Simulation", "Areopagus", "Reports"]) {
     await demo.hover(nav.getByRole("link", { name }), 420);
     await demo.pause(250);
   }

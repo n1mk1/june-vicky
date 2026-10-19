@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from vicky.model.context import sample_context
-from vicky.model.figures import Figure
-from vicky.model.loader import parse_number, quarter_of
-from vicky.samples import SAMPLES_DIR
-from vicky.viz import (
+from vik.model.context import sample_context
+from vik.model.figures import Figure
+from vik.model.loader import parse_number, quarter_of
+from vik.samples import SAMPLES_DIR
+from vik.viz import (
     DSLError,
     WidgetSpec,
     build_option,
@@ -21,7 +21,7 @@ from vicky.viz import (
     parse,
     spec_hash,
 )
-from vicky.viz.dsl import to_source
+from vik.viz.dsl import to_source
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -372,7 +372,7 @@ def test_echarts_option_numbers_come_only_from_evaluator(tidewell):
     )
     ev = evaluate_widget(spec, tidewell)
     assert ev.status == "ok"
-    opt = build_option(spec, ev, "vicky-dark")
+    opt = build_option(spec, ev, "vik-dark")
     allowed = ev.numbers()
 
     source = opt["dataset"]["source"]
@@ -401,7 +401,7 @@ def test_echarts_option_numbers_come_only_from_evaluator(tidewell):
     assert opt["tooltip"]["trigger"] == "axis"
     assert {d["type"] for d in opt["dataZoom"]} == {"inside", "slider"}
     assert "brush" in opt and "axisPointer" in opt and "legend" in opt
-    assert opt["theme"] == "vicky-dark" and opt["aria"]["enabled"] is True
+    assert opt["theme"] == "vik-dark" and opt["aria"]["enabled"] is True
     assert not any(isinstance(s, str) and s.startswith("#") for s in _walk_strings(opt))
     # click-to-explain provenance per option series and period
     prov = opt["_provenance"]["1"]["2026-Q3"]
@@ -411,8 +411,8 @@ def test_echarts_option_numbers_come_only_from_evaluator(tidewell):
 
 def test_echarts_line_dashed_and_dual_axis(tidewell):
     trend = next(w for w in default_widgets(tidewell) if w.template == "line")
-    opt = build_option(trend, evaluate_widget(trend, tidewell), "vicky-light")
-    assert opt["theme"] == "vicky-light"
+    opt = build_option(trend, evaluate_widget(trend, tidewell), "vik-light")
+    assert opt["theme"] == "vik-light"
     mrr, burn = opt["series"]
     assert mrr["type"] == burn["type"] == "line"
     assert mrr["yAxisIndex"] == 0 and burn["yAxisIndex"] == 1
@@ -516,8 +516,8 @@ def test_default_dashboard(sample):
 
 
 def test_missing_tiles_for_key_metrics(tidewell):
-    from vicky.model.figures import MissingFigure
-    from vicky.viz.defaults import KEY_MISSING
+    from vik.model.figures import MissingFigure
+    from vik.viz.defaults import KEY_MISSING
 
     d = default_dashboard(tidewell)
     expected = [f for f in KEY_MISSING if isinstance(tidewell.figures.get(f), MissingFigure)]
@@ -526,7 +526,7 @@ def test_missing_tiles_for_key_metrics(tidewell):
 
 def test_no_eval_in_engine():
     src = "".join(
-        (REPO / "backend" / "vicky" / "viz" / f).read_text(encoding="utf-8")
+        (REPO / "backend" / "vik" / "viz" / f).read_text(encoding="utf-8")
         for f in ("dsl.py", "evaluate.py", "echarts.py")
     )
     assert not re.search(r"(?<![.\w])(eval|exec|compile)\s*\(", src)

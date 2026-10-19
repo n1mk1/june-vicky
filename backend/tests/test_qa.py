@@ -1,9 +1,9 @@
-"""Ask Vicky: questions about the ingested data, answered by code and held to the citation audit."""
+"""Ask Vik: questions about the ingested data, answered by code and held to the citation audit."""
 
 import pytest
 
-from vicky.model.context import sample_context
-from vicky.qa import answer, parse_when
+from vik.model.context import sample_context
+from vik.qa import answer, parse_when
 
 
 @pytest.fixture(scope="module")

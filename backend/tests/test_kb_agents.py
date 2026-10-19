@@ -1,19 +1,19 @@
 """Agents reading the knowledge base: the note-quote rule in the audit, the kb_search / kb_read tools,
-Ask Vicky (offline keyword lookup and the Claude tool loop) and the court memos, on recorded responses."""
+Ask Vik (offline keyword lookup and the Gemini tool loop) and the court memos, on recorded responses."""
 
 import json
 
 import pytest
 
 from tests.llm_fakes import json_reply, queue, tool_use_reply
-from vicky.areopagus import registry
-from vicky.audit import audit_text
-from vicky.court import minds as offline
-from vicky.kb import store
-from vicky.kb.tools import Vault, excerpts, terms
-from vicky.llm import minds as agents
-from vicky.model.context import sample_context
-from vicky.qa import answer_any
+from vik.areopagus import registry
+from vik.audit import audit_text
+from vik.court import minds as offline
+from vik.kb import store
+from vik.kb.tools import Vault, excerpts, terms
+from vik.llm import minds as agents
+from vik.model.context import sample_context
+from vik.qa import answer_any
 
 BOARD = (
     "# Zephyrine partnership\n\nBoard update, 2026-09-14.\n\n"
@@ -117,8 +117,8 @@ def test_excerpts_are_verbatim_lines_best_first():
 async def board_note(api_client):
     """These tests cover the vault before the first Fill dashboard: no search index (docs/08-RAG.md);
     tests/test_rag.py covers search over a built index."""
-    from vicky import db
-    from vicky.kb import rag
+    from vik import db
+    from vik.kb import rag
 
     await db.execute("delete from kb_index_builds")
     rag.drop_index()
@@ -142,7 +142,7 @@ async def test_kb_search_and_read_return_excerpts_and_cite_tokens(board_note):
     assert "error" in await Vault().read("no/such note")
 
 
-async def test_offline_ask_vicky_quotes_the_notes_when_the_data_cant_answer(board_note, ctx):
+async def test_offline_ask_vik_quotes_the_notes_when_the_data_cant_answer(board_note, ctx):
     out = await answer_any(QUESTION, ctx)
     assert out["topic"] == "notes" and out["audit"]["passed"]
     assert f"“{QUOTE}” [kb:{board_note['path']}]" in out["reply"]
@@ -151,7 +151,7 @@ async def test_offline_ask_vicky_quotes_the_notes_when_the_data_cant_answer(boar
     assert (await answer_any("What is my ARR?", ctx))["topic"] != "notes"  # the data answers this one
 
 
-async def test_claude_reads_the_vault_and_quotes_it(board_note, ctx, live_llm):
+async def test_gemini_reads_the_vault_and_quotes_it(board_note, ctx, live_llm):
     path = board_note["path"]
     reply = f"Your board minutes say “{QUOTE}” [kb:{path}]"
     rec = live_llm.install(
@@ -172,7 +172,7 @@ async def test_claude_reads_the_vault_and_quotes_it(board_note, ctx, live_llm):
     assert QUOTE in hit["excerpts"] and hit["cite"] == f"[kb:{path}]"
 
 
-async def test_claude_restating_a_note_number_falls_back_to_the_quote(board_note, ctx, live_llm):
+async def test_gemini_restating_a_note_number_falls_back_to_the_quote(board_note, ctx, live_llm):
     live_llm.install(
         queue(
             tool_use_reply("kb_read", {"note": board_note["path"]}),
@@ -206,8 +206,8 @@ async def test_memo_may_quote_a_note_it_read(board_note, ctx, live_llm):
     }  # restated: dropped
     rec = live_llm.install(
         queue(
-            tool_use_reply("kb_read", {"note": path}, model="claude-opus-5-5"),
-            json_reply(memo, model="claude-opus-5-5"),
+            tool_use_reply("kb_read", {"note": path}, model="gemini-4-argon"),
+            json_reply(memo, model="gemini-4-argon"),
         )
     )
     out = (await agents.build_memos([james], ctx))["aristotle"]

@@ -1,6 +1,6 @@
 /**
- * The currencies Vicky handles: CAD, the default reporting currency, plus every currency the Bank of
- * Canada publishes a daily rate for. Mirrors `backend/vicky/model/currencies.py`; conversion itself
+ * The currencies Vik handles: CAD, the default reporting currency, plus every currency the Bank of
+ * Canada publishes a daily rate for. Mirrors `backend/vik/model/currencies.py`; conversion itself
  * happens in the backend, at Bank of Canada rates for each period.
  */
 

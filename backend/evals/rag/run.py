@@ -21,10 +21,10 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from vicky import db, jobs, migrate  # noqa: E402
-from vicky.config import get_settings  # noqa: E402
-from vicky.kb import index, rag, store, voyage  # noqa: E402
-from vicky.kb.tools import terms  # noqa: E402
+from vik import db, jobs, migrate  # noqa: E402
+from vik.config import get_settings  # noqa: E402
+from vik.kb import index, rag, store, voyage  # noqa: E402
+from vik.kb.tools import terms  # noqa: E402
 
 DATA = Path(__file__).resolve().parents[2] / "data" / "samples" / "rag_eval"
 TARGETS = {"recall@5": 0.95, "MRR": 0.85}
@@ -32,7 +32,7 @@ TARGETS = {"recall@5": 0.95, "MRR": 0.85}
 
 async def _fresh_db() -> str:
     u = urlparse(os.environ.get("DATABASE_URL", get_settings().database_url))
-    name = f"{(u.path or '/vicky').lstrip('/') or 'vicky'}_rag_eval"
+    name = f"{(u.path or '/vik').lstrip('/') or 'vik'}_rag_eval"
     admin = await asyncpg.connect(urlunparse(u._replace(path="/postgres")))
     await admin.execute(f'drop database if exists "{name}" with (force)')
     await admin.execute(f'create database "{name}"')

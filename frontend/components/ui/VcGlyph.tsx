@@ -12,7 +12,7 @@ export type Glyph =
   | "grid"
   | "prism"
   | "cross"
-  | "vicky"
+  | "vik"
   | "custom"
   | (string & {});
 
@@ -72,7 +72,7 @@ function Shape({ glyph }: { glyph: Glyph }) {
       );
     case "cross":
       return <path d="M9 9l10 10M19 9 9 19" />;
-    case "vicky":
+    case "vik":
       return (
         <>
           <path d="M8 8.5 14 20.5 20 8.5" />

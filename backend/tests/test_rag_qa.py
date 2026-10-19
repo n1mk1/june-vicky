@@ -11,10 +11,10 @@ import pytest
 
 from tests.llm_fakes import json_reply
 from tests.test_rag import DECK, QUOTE, _build, vault  # noqa: F401  (fixture)
-from vicky import db, jobs
-from vicky.audit import audit_text
-from vicky.kb import ask, index, rag, store
-from vicky.model.context import sample_context
+from vik import db, jobs
+from vik.audit import audit_text
+from vik.kb import ask, index, rag, store
+from vik.model.context import sample_context
 
 pytestmark = pytest.mark.db
 
@@ -71,7 +71,7 @@ async def test_a_note_deleted_or_renamed_after_the_fill(vault, ctx):  # noqa: F8
     assert (
         top["path"] == "company/Pitch deck renamed.md" and top["cite"] == "[kb:company/Pitch deck renamed.md]"
     )
-    from vicky.kb.tools import Vault
+    from vik.kb.tools import Vault
 
     v = Vault()
     await v.keep_ids([top["note_id"]])
@@ -99,9 +99,9 @@ async def test_an_edit_after_the_fill_invalidates_cached_answers(vault, ctx, liv
     await _build()
     reply = f"Your board pack says “{QUOTE}” [kb:{vault['deck']['path']}]"
     rec = live_llm.install(
-        lambda call: json_reply({"answerable": True, "reply": reply}, model="claude-haiku-5-5")
+        lambda call: json_reply({"answerable": True, "reply": reply}, model="gemini-3.5-flash-lite")
     )
-    from vicky.qa import answer_any
+    from vik.qa import answer_any
 
     q = "What did the board approve for the Zephyrine partnership?"
     await answer_any(q, ctx)
@@ -189,7 +189,7 @@ async def test_concurrent_searches_during_a_rebuild(vault):  # noqa: F811
 
 
 async def _dash(api_client) -> str:
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     d = await api_client.get("/dashboards/active")
     if d.status_code == 404:
         from tests.helpers import load_and_confirm
@@ -218,9 +218,9 @@ async def test_one_offer_accepted_twice_at_once_runs_one_call(vault, live_llm, a
             await asyncio.sleep(0.3)
             return json_reply(
                 {"answerable": True, "reply": f"“{QUOTE}” [kb:{vault['deck']['path']}]"},
-                model="claude-haiku-5-5",
+                model="gemini-3.5-flash-lite",
             )
-        return json_reply({"answerable": False, "reply": "no"}, model="claude-haiku-5-5")
+        return json_reply({"answerable": False, "reply": "no"}, model="gemini-3.5-flash-lite")
 
     live_llm.install(respond)
     did = await _dash(api_client)
@@ -253,7 +253,7 @@ async def test_bad_catch_all_requests(vault, api_client, body, status):  # noqa:
 async def test_the_catch_all_needs_the_access_cookie(vault, api_client):  # noqa: F811
     import httpx
 
-    from vicky.api import app
+    from vik.api import app
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test/api/v1"
@@ -264,7 +264,9 @@ async def test_the_catch_all_needs_the_access_cookie(vault, api_client):  # noqa
 
 async def test_an_ignored_offer_is_marked_expired(vault, live_llm, api_client):  # noqa: F811
     await _build()
-    live_llm.install(lambda call: json_reply({"answerable": False, "reply": "no"}, model="claude-haiku-5-5"))
+    live_llm.install(
+        lambda call: json_reply({"answerable": False, "reply": "no"}, model="gemini-3.5-flash-lite")
+    )
     did = await _dash(api_client)
     await _offer(api_client, did)
     await db.execute(
@@ -282,11 +284,11 @@ async def test_figure_footnotes_name_their_note_on_the_offline_path(api_client):
     """Fill dashboard from a CSV note, confirm, then ask a figure question with no API key: the answer comes
     from code, and its footnote still names the note the table came from."""
     from tests.helpers import load_sample_engagement  # noqa: F401
-    from vicky.samples import SAMPLES_DIR
+    from vik.samples import SAMPLES_DIR
 
     await db.execute("delete from kb_index_builds")
     rag.drop_index()
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     csv = (SAMPLES_DIR / "tidewell" / "income_statement_monthly.csv").read_text(encoding="utf-8")
     note = await store.create_note(
         {"title": "Income statement", "path": "financials/Income statement", "content": csv, "format": "csv"}
@@ -317,10 +319,12 @@ async def test_an_accepted_offer_says_why_when_nothing_could_be_read(
     monkeypatch,
 ):
     await _build()
-    live_llm.install(lambda call: json_reply({"answerable": False, "reply": "no"}, model="claude-haiku-5-5"))
+    live_llm.install(
+        lambda call: json_reply({"answerable": False, "reply": "no"}, model="gemini-3.5-flash-lite")
+    )
     did = await _dash(api_client)
     offer = await _offer(api_client, did)
-    from vicky.llm import client
+    from vik.llm import client
 
     async def spent() -> bool:
         return True
@@ -382,14 +386,14 @@ def test_an_abbreviation_cannot_hide_the_next_sentence(ctx):
 
 
 def test_chunks_are_numbered_without_gaps():
-    from vicky.kb.chunk import chunk_note
+    from vik.kb.chunk import chunk_note
 
     content = "## Page 1\n\n## Page 2\n\nText on page two.\n\n## Page 3\n\n## Page 4\n\nMore text."
     assert [c.ord for c in chunk_note(content)] == list(range(len(chunk_note(content))))
 
 
 async def test_an_oversized_vault_still_gives_the_catch_all_something_to_read(vault, monkeypatch):  # noqa: F811
-    from vicky.config import get_settings
+    from vik.config import get_settings
 
     await _build()
     monkeypatch.setattr(get_settings(), "rag_full_max_tokens", 60)  # ~240 characters: less than the two notes

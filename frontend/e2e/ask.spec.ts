@@ -40,7 +40,7 @@ const QUESTIONS: { q: string; expect: RegExp; numbers?: boolean }[] = [
   { q: "tell me about unicorns on mars", expect: /couldn't find that in your data/i },
 ];
 
-test.describe("Ask Vicky about the data", () => {
+test.describe("Ask Vik about the data", () => {
   for (const { q, expect: want, numbers } of QUESTIONS) {
     test(`answers “${q}”`, async ({ page }) => {
       await openDashboard(page);

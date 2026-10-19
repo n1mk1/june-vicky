@@ -14,11 +14,11 @@ from functools import cache
 import pytest
 import yaml
 
-from vicky.areopagus.kits import KITS, LENS_KITS, TOOLS, kit_tools, registry_for, run_tool
-from vicky.areopagus.kits.cash import simulate
-from vicky.areopagus.kits.governance import GEO_DIR, country_code
-from vicky.model.context import TruthContext, sample_context
-from vicky.model.figures import Figure, MissingFigure
+from vik.areopagus.kits import KITS, LENS_KITS, TOOLS, kit_tools, registry_for, run_tool
+from vik.areopagus.kits.cash import simulate
+from vik.areopagus.kits.governance import GEO_DIR, country_code
+from vik.model.context import TruthContext, sample_context
+from vik.model.figures import Figure, MissingFigure
 
 SAMPLES = ["tidewell", "harbor-labs", "services-co"]
 FIG_KEYS = {"id", "value", "formula", "source"}
@@ -393,7 +393,7 @@ def test_governance_rules_differ_by_country():
 
 
 def test_governance_rules_without_playbook(monkeypatch, tmp_path):
-    from vicky.areopagus.kits import governance
+    from vik.areopagus.kits import governance
 
     monkeypatch.setattr(governance, "GEO_DIR", tmp_path)
     r = call("tidewell", "governance_country_rules")
@@ -401,7 +401,7 @@ def test_governance_rules_without_playbook(monkeypatch, tmp_path):
 
 
 def test_parse_playbook_bullets():
-    from vicky.areopagus.kits.governance import parse_playbook
+    from vik.areopagus.kits.governance import parse_playbook
 
     front, rules = parse_playbook(
         "---\ntitle: X\nversion: 2\n---\n# Head\n## Credits\n- A rule that\n  wraps.\n- **Bold** one\n\nText\n"
@@ -435,7 +435,7 @@ def test_input_schema_is_strict(name):
     assert _walk_schema(s) == []
     assert re.fullmatch(r"[a-z][a-z0-9_]{2,63}", t.name)
     assert t.description and len(t.description) < 600
-    assert t.to_tool()["strict"] is True
+    assert t.to_tool()["parameters_json_schema"] == s
     for prop in s["properties"].values():
         assert prop.get("description")
 
@@ -460,7 +460,7 @@ def test_tool_names_unique_and_kits_complete():
 
 
 def test_builtin_persona_kits_resolve():
-    from vicky import PACKAGE_DIR
+    from vik import PACKAGE_DIR
 
     for path in sorted((PACKAGE_DIR / "areopagus" / "builtin").glob("*.yaml")):
         spec = yaml.safe_load(path.read_text(encoding="utf-8"))

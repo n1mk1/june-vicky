@@ -158,7 +158,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
         <CornerMarks />
         {step === 1 && (
           <div className="flex flex-col gap-4">
-            <StepTitle n={1} title="Company profile" body="Vicky uses this for currency, benchmarks and the country rules the panel applies." />
+            <StepTitle n={1} title="Company profile" body="Vik uses this for currency, benchmarks and the country rules the panel applies." />
             <ProfileForm
               key={e.id}
               engagement={e}
@@ -223,7 +223,7 @@ function EngagementFlow({ id, step, setStep }: { id: string; step: Step; setStep
             <StepTitle
               n={4}
               title="Confirm knowledge base"
-              body="What the panel can check you on, and what it can't yet. Confirming makes this the source of truth and rebuilds search over your whole knowledge base, so Ask Vicky, the panel and the pitch room work from it."
+              body="What the panel can check you on, and what it can't yet. Confirming makes this the source of truth and rebuilds search over your whole knowledge base, so Ask Vik, the panel and the pitch room work from it."
             />
             <CoverageList items={e.coverage} />
             <ModelNotes notes={e.model_notes} />

@@ -53,10 +53,10 @@ export async function pageScroll(page: Page): Promise<number> {
 }
 
 export function chatInput(page: Page): Locator {
-  return page.getByTestId("dashboard-chat").getByRole("textbox", { name: /ask vicky/i });
+  return page.getByTestId("dashboard-chat").getByRole("textbox", { name: /ask vik/i });
 }
 
-/** Send a message in the dashboard chat and wait for Vicky's reply (the newest in the overlay) to settle. */
+/** Send a message in the dashboard chat and wait for Vik's reply (the newest in the overlay) to settle. */
 export async function ask(page: Page, text: string): Promise<Locator> {
   const input = chatInput(page);
   await input.fill(text);

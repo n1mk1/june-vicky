@@ -64,7 +64,7 @@ function RangeChip({ range, onReset }: { range: TimeRange; onReset: () => void }
   );
 }
 
-const VIEW_KEY = "vicky:dashboard-currency";
+const VIEW_KEY = "vik:dashboard-currency";
 let viewMemory: string | null | undefined; // this page view's choice, kept even when storage is blocked
 const viewListeners = new Set<() => void>();
 
@@ -244,7 +244,7 @@ export function DashboardView() {
       const p = e.payload as { op?: string; title?: string; by?: string };
       if (next && e.type === "widget.diff" && p.op === "add") {
         const added = next.widgets.find((w) => !before.has(w.id));
-        flash(added?.id ?? null, p.title ? `${p.by === "vicky" ? "Vicky added" : "Added"} “${p.title}” in another tab.` : undefined);
+        flash(added?.id ?? null, p.title ? `${p.by === "vik" ? "Vik added" : "Added"} “${p.title}” in another tab.` : undefined);
       }
     },
     [dash.data, refetch, flash],

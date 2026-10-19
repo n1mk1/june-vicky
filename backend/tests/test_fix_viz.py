@@ -1,6 +1,6 @@
 """Regression tests for the dashboard and visualisation findings of the 2026-10-18 QA sweep (VIZ-1 … VIZ-16).
 
-Each test reproduces the report's repro; the fixes live in `vicky/viz/*`, `services/dashboards.py`,
+Each test reproduces the report's repro; the fixes live in `vik/viz/*`, `services/dashboards.py`,
 `qa.py` and the display rounding in `model/figures.py`.
 """
 
@@ -10,12 +10,12 @@ import math
 
 import pytest
 
-from vicky import qa
-from vicky.model.context import sample_context
-from vicky.model.figures import fmt_money, fmt_value
-from vicky.viz import WidgetSpec, build_option, evaluate_widget
-from vicky.viz.evaluate import _fmt
-from vicky.viz.phrases import interpret
+from vik import qa
+from vik.model.context import sample_context
+from vik.model.figures import fmt_money, fmt_value
+from vik.viz import WidgetSpec, build_option, evaluate_widget
+from vik.viz.evaluate import _fmt
+from vik.viz.phrases import interpret
 
 
 @pytest.fixture(scope="module")
@@ -363,7 +363,7 @@ def test_engine_displays_unchanged(tidewell):
 async def _active(api_client) -> dict:
     from tests.helpers import load_and_confirm
 
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     r = await api_client.get("/dashboards/active")
     if r.status_code == 404:
         await load_and_confirm(api_client, "tidewell")
@@ -382,7 +382,7 @@ def _overlaps(boxes: list[tuple[int, int, int, int]]) -> list[tuple]:
 
 
 def _boxes(layout: list[dict]) -> list[tuple[int, int, int, int]]:
-    from vicky.viz.defaults import RESERVED
+    from vik.viz.defaults import RESERVED
 
     return [(x["x"], x["y"], x["w"], x["h"]) for x in layout] + [
         (r["x"], r["y"], r["w"], r["h"]) for r in RESERVED
@@ -414,8 +414,8 @@ async def test_add_widget_rejects_specs_that_are_not_ok(api_client):
 
 @pytest.mark.db
 async def test_one_broken_widget_does_not_break_the_dashboard(api_client, monkeypatch):
-    from vicky import db
-    from vicky.services import dashboards
+    from vik import db
+    from vik.services import dashboards
 
     d = await _active(api_client)
     bad = {"template": "kpi", "title": "Explodes", "series": [{"ref": "sum(revenue)"}]}
@@ -446,8 +446,8 @@ async def test_one_broken_widget_does_not_break_the_dashboard(api_client, monkey
 
 @pytest.mark.db
 async def test_dismissed_default_widgets_stay_dismissed(api_client):
-    from vicky import db
-    from vicky.services import dashboards, engagements
+    from vik import db
+    from vik.services import dashboards, engagements
 
     d = await _active(api_client)
     roles = {w["role"]: w for w in d["widgets"]}
@@ -479,8 +479,8 @@ async def test_dismissed_default_widgets_stay_dismissed(api_client):
 
 @pytest.mark.db
 async def test_default_layout_is_stored_without_overlaps(api_client):
-    from vicky import db
-    from vicky.services import dashboards, engagements
+    from vik import db
+    from vik.services import dashboards, engagements
 
     d = await _active(api_client)
     eid = d["engagement_id"]

@@ -3,10 +3,10 @@
 import re
 from pathlib import Path
 
-from vicky.areopagus import registry
-from vicky.court import minds, referee
-from vicky.court.referee import Bid
-from vicky.model.context import sample_context
+from vik.areopagus import registry
+from vik.court import minds, referee
+from vik.court.referee import Bid
+from vik.model.context import sample_context
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -85,7 +85,7 @@ def test_no_concession_without_a_matching_figure():
 def test_fr4_no_sample_company_names_in_code():
     names = re.compile(r"tidewell|northern comfort", re.I)
     roots = [
-        REPO / "backend" / "vicky",
+        REPO / "backend" / "vik",
         REPO / "frontend" / "app",
         REPO / "frontend" / "components",
         REPO / "frontend" / "lib",

@@ -6,13 +6,13 @@ import json
 import pytest
 
 from tests.helpers import load_and_confirm
-from vicky import realtime
+from vik import realtime
 
 pytestmark = pytest.mark.db
 
 
 async def _active(api_client) -> dict:
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     r = await api_client.get("/dashboards/active")
     if r.status_code == 404:
         await load_and_confirm(api_client, "tidewell")
@@ -97,7 +97,7 @@ async def test_fr12_chat_adds_a_widget_once_and_zooms(api_client):
     ).json()
     assert r["kind"] == "widget_added" and r["widget_id"], r
     w = next(w for w in r["dashboard"]["widgets"] if w["id"] == r["widget_id"])
-    assert w["created_by"] == "vicky" and w["status"] == "ok" and w["spec"]["group_by"] == "quarter"
+    assert w["created_by"] == "vik" and w["status"] == "ok" and w["spec"]["group_by"] == "quarter"
     assert (
         w["option"]["dataset"]["source"][1][1] == w["evaluated"]["series"][0]["points"][0]["value"]
     )  # code-computed
@@ -173,7 +173,7 @@ async def test_fr16_changes_fan_out_to_every_tab_in_version_order(api_client):
         for tab in (tab_a, tab_b):
             got = await _wait_for(tab, 2)
             assert [e["type"] for e in got[:2]] == ["widget.diff", "layout.diff"]
-            assert got[0]["payload"]["op"] == "add" and got[0]["payload"]["by"] == "vicky"
+            assert got[0]["payload"]["op"] == "add" and got[0]["payload"]["by"] == "vik"
             assert got[0]["channel"] == channel and got[0]["version"] < got[1]["version"]  # dedupe key
             assert got[0]["payload"]["version"] < got[1]["payload"]["version"]  # dashboard version
     finally:

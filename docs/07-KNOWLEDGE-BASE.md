@@ -1,8 +1,8 @@
-# Vicky — Knowledge base
+# Vik — Knowledge base
 
-The founder drops in whatever they have: spreadsheets, decks, board packs, scans, screenshots, exports, a zip of a whole drive. Vicky turns it into one vault of markdown and CSV notes, files and links it, shows it as an Obsidian-style graph, and fills the intake flow (profile, column mappings, document facts) from it. The vault is the readable source the AI works from; the confirmed TruthPack is still what every figure is computed from.
+The founder drops in whatever they have: spreadsheets, decks, board packs, scans, screenshots, exports, a zip of a whole drive. Vik turns it into one vault of markdown and CSV notes, files and links it, shows it as an Obsidian-style graph, and fills the intake flow (profile, column mappings, document facts) from it. The vault is the readable source the AI works from; the confirmed TruthPack is still what every figure is computed from.
 
-Code: `backend/vicky/kb/`, `frontend/components/kb/`. Routes: [API.md §Knowledge base](API.md#knowledge-base). Tables: [05 §2.21–2.22](05-BACKEND-SCHEMA.md).
+Code: `backend/vik/kb/`, `frontend/components/kb/`. Routes: [API.md §Knowledge base](API.md#knowledge-base). Tables: [05 §2.21–2.22](05-BACKEND-SCHEMA.md).
 
 ## Decisions
 
@@ -11,12 +11,12 @@ Code: `backend/vicky/kb/`, `frontend/components/kb/`. Routes: [API.md §Knowledg
 | One global vault, not one per engagement | The founder keeps adding to it across engagements; "Fill dashboard" makes a new draft engagement from whatever is there now. |
 | Notes and originals in Postgres (`kb_notes`, `kb_files`) | Render's disk is ephemeral and the image is read-only; the database is already backed up. |
 | Conversion is code only | Rule 1: numbers come from code. Text layers (pypdf, python-docx, python-pptx, openpyxl), OCR (tesseract) for pages and images without one, and chart values read from the chart XML's cached series. No model writes or reads a number into a note. |
-| The organizer may write prose, never figures | Claude writes titles, tags, summaries, related links and hub notes. `scrub_numbers` drops any sentence whose numbers aren't in the notes it describes. Offline, a keyword heuristic does the same job. |
+| The organizer may write prose, never figures | Gemini 3.8 Flash (`MODEL_FAST`) writes titles, tags, summaries, related links and hub notes. `scrub_numbers` drops any sentence whose numbers aren't in the notes it describes. Offline, a keyword heuristic does the same job. |
 | Every file goes into the vault | A file uploaded anywhere (`POST /uploads` too) is also imported into the knowledge base, deduplicated by its bytes; a file of a type no converter reads still gets a stub note. The pitch deck is the one exception: it is checked against the vault, never added. |
 | Autofill reuses the intake pipeline | Tables go through `POST /uploads` (so the column mapper runs as before), documents through FR-7 fact extraction (PDF/DOCX originals keep page citations; OCR'd ones go as their markdown). The founder still confirms every step. |
 | Profile values carry a quote | Each autofilled field names its note and a verbatim quote; code checks the quote is in the note, and that a round size's number is in the quote. Unverified values are left blank. The intake form shows the source under each field. |
 | Wikilinks are parsed on read | `[[target]]`, `[[target|alias]]`, `[[target#heading]]` resolve like Obsidian (path, path without extension, file name, title). Renames never leave stale edges; unresolved links show as ghost nodes and create the note when clicked. |
-| Export is an Obsidian vault | A zip of `.md` (with YAML frontmatter: title, tags, summary, related) and `.csv` files plus `.vicky/meta.json`. Importing that zip restores paths, titles, tags, summaries, links and authorship. |
+| Export is an Obsidian vault | A zip of `.md` (with YAML frontmatter: title, tags, summary, related) and `.csv` files plus `.vik/meta.json`. Importing that zip restores paths, titles, tags, summaries, links and authorship. |
 
 ## Pipeline
 
@@ -51,22 +51,22 @@ Folders the organizer uses: company, financials, customers, product, market, tea
 
 - **OCR** needs the `tesseract` binary (installed in the API image). Without it every text layer still converts, pages without one are marked unread, and `GET /kb/status` reports `ocr: false`. `TESSERACT_CMD` points at a non-PATH binary.
 - **Limits:** `KB_UPLOAD_MAX_BYTES` per file (50 MB), `KB_UNZIP_MAX_BYTES` per zip (200 MB). The web app sends files in batches of 20 / 40 MB.
-- **Spend:** organize calls Sonnet (medium) once per 40 new notes plus once for the hubs; autofill one Sonnet call for the profile, then the existing mapper and FR-7 calls per file.
+- **Spend:** organize calls Gemini 3.8 Flash (medium thinking; routes `kb_organize`, `kb_hubs`) once per 40 new notes plus once for the hubs; autofill one Gemini 3.8 Flash call for the profile (`kb_profile`), then the existing mapper and FR-7 calls per file. On a paid key (`GEMINI_TIER=paid`) all of it counts against `DAILY_USD_BUDGET`; on the default free key it costs nothing but uses each model's request quota (paced to `GEMINI_RPM` a minute per model).
 
 ## Agents read the vault
 
-`backend/vicky/kb/tools.py` gives the agents two read-only tools for the Claude tool runner: `kb_search(query)` (Postgres full-text search, then an any-word keyword search with prefixes; returns each note's id, title, path, kind, summary, up to three verbatim excerpt lines and its cite token) and `kb_read(note)` (one note by id or path, up to 12 000 characters). A `Vault` object records every note its tools returned in the turn; only those can be cited.
+`backend/vik/kb/tools.py` gives the agents two read-only tools for the Gemini tool loop (`LLM.run_tools`, function declarations run by our code): `kb_search(query)` (Postgres full-text search, then an any-word keyword search with prefixes; returns each note's id, title, path, kind, summary, up to three verbatim excerpt lines and its cite token) and `kb_read(note)` (one note by id or path, up to 12 000 characters). A `Vault` object records every note its tools returned in the turn; only those can be cited.
 
 | Agent | What it gets |
 |---|---|
-| Ask Vicky (`qa.answer_any`) | With a key and notes in the vault, Claude answers through `run_tools` with the kb tools next to the fact sheet. Offline (or when Claude's answer fails the audit), a question the data can't answer (`topic: not_found`) is answered by quoting the best-matching note lines, verbatim and cited (`topic: notes`). |
+| Ask Vik (`qa.answer_any`) | With a key and notes in the vault (and no search index yet), Gemini 3.8 Flash answers through `run_tools` with the kb tools next to the fact sheet. Offline (or when Gemini's answer fails the audit), a question the data can't answer (`topic: not_found`) is answered by quoting the best-matching note lines, verbatim and cited (`topic: notes`). |
 | Court memos (`llm.minds.build_memos`) | The kb tools are added to the investor's kit tools. Thesis, opening question, mind changers and new claims may quote notes; memos that do list them under `kb_notes`. Hypothesis evidence stays figure ids, so the no-concession rule is unchanged. |
 
 The citation rule (rule 4 of `audit_text`, given `notes=`): `[kb:path]` must follow a quote, in double quotes, that is in that note word for word (case, whitespace, curly quotes and markdown marks don't count). Numbers inside that quote are the note's text and pass; the citation (`kind: "note"`) spans the quote and the token. A number restated outside a quote, a quote the note doesn't contain, or a path the tools never returned is a finding, so the reply falls back as before. Valuation and benchmark rules still apply inside note quotes.
 
 ## Search index (RAG)
 
-Confirming the knowledge base (the intake's last step) builds a search index over the vault: chunks, BM25 and (with `VOYAGE_API_KEY` and pgvector) vectors with reranking. Once it exists, `kb_search` returns retrieved passages, Ask Vicky answers through the retrieval ladder (each statement cites a figure or quotes a note, and the whole-vault catch-all runs only when the user accepts an offer), and the live court reads the notes every turn. Edits reach search at the next confirm. Before the first confirm, everything above works as described. Design and results: [08-RAG.md](08-RAG.md).
+Confirming the knowledge base (the intake's last step) builds a search index over the vault: chunks, BM25 and (with `VOYAGE_API_KEY` and pgvector) vectors with reranking. Once it exists, `kb_search` returns retrieved passages, Ask Vik answers through the retrieval ladder (each statement cites a figure or quotes a note, and the whole-vault catch-all runs only when the user accepts an offer), and the live court reads the notes every turn. Edits reach search at the next confirm. Before the first confirm, everything above works as described. Design and results: [08-RAG.md](08-RAG.md).
 
 ## Not built yet
 

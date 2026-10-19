@@ -1,6 +1,19 @@
-# Vicky — Backend Schema
+# Vik — Backend Schema
 
-Version 1.0 — 17 Oct 2026. Companion to [02-TRD](02-TRD.md). Postgres 17 is the only durable store; Redis (Valkey) holds ephemeral state. Migrations live in `backend/migrations/NNNN_*.sql`, applied by `vicky.migrate` (idempotent, `pg_advisory_lock` on startup in the free tier, `preDeployCommand` on paid).
+Version 1.0 — 17 Oct 2026. Companion to [02-TRD](02-TRD.md). Postgres 17 is the only durable store; Redis (Valkey) holds ephemeral state. Migrations live in `backend/migrations/NNNN_*.sql`, applied by `vik.migrate` in order and recorded by file name in `schema_migrations` (idempotent, `pg_advisory_lock` on startup in the free tier, `preDeployCommand` on paid).
+
+| Migration | Does |
+|---|---|
+| `0001_init.sql` | Core tables and enums (§2.1–2.20); enum labels read `vik` |
+| `0002_api.sql` | Columns the API needs that 0001 left out |
+| `0003_kb.sql` | Knowledge base: `kb_files`, `kb_notes` (§2.21–2.22) |
+| `0004_cad_default.sql`, `0005_column_currency.sql` | CAD as the default reporting currency; a mapping's money unit is the column's own currency |
+| `0006_rag.sql` | Search index (§2.23) |
+| `0007_court_chair.sql` | `knowledge_checks` (§2.24). Renamed from `0007_court_vicky.sql`; being idempotent, a database that applied it under the old name runs it again harmlessly |
+| `0008_kb_fts.sql` | GIN index for the notes' full-text search |
+| `0010_dashboard_dismissed_roles.sql` | `dashboards.dismissed_roles` (default widgets the founder removed). There is no 0009 |
+| `0011_retire_founder_memory.sql` | Drops `founder_memory` and the `memory_kind` enum (§2.17), with the Preparation tab |
+| `0012_chair_is_vik.sql` | Renames the enum label `'vicky'` to `'vik'` in `widget_author` and `message_role` on databases made before the rename, and `turns.speaker` `'vicky'` → `'vik'` |
 
 Conventions: `id uuid primary key default gen_random_uuid()`, `created_at timestamptz default now()`, `updated_at` maintained by trigger, soft state in enums, JSON documents validated by pydantic before insert. Everything company-specific carries `engagement_id`.
 
@@ -19,7 +32,6 @@ workspace (implicit, one)
                    ├── dashboards ── widgets, dashboard_messages
                    ├── sessions ──┬── memos, beliefs, turns, claims, scores, chair_decisions
                    │              └── reports
-                   ├── founder_memory
                    └── jobs
 ```
 
@@ -79,7 +91,7 @@ workspace (implicit, one)
 | id | uuid PK | |
 | dataset_id | uuid FK unique | |
 | fingerprint | text indexed | reuse on re-upload |
-| proposed | jsonb | `ColumnMapping[]` from Sonnet with confidence |
+| proposed | jsonb | `ColumnMapping[]` from Gemini (merged over the code heuristics) with confidence |
 | confirmed | jsonb | founder-edited mapping |
 | confirmed_at | timestamptz | |
 
@@ -101,9 +113,11 @@ workspace (implicit, one)
 ### 2.7 `dashboards`, `widgets`, `dashboard_messages`
 `dashboards`: id, engagement_id, name (`default`), layout jsonb (`[{widget_id, x, y, w, h, pinned}]`), time_range jsonb, version int (optimistic concurrency), updated_at.
 
-`widgets`: id, dashboard_id FK, spec jsonb (`WidgetSpec`), spec_hash text, option_cache jsonb (ECharts option, nullable), provenance jsonb (`[{series, points[{period, value, formula, inputs, source}]}]`), status enum `ok | missing | error`, missing jsonb (`MissingFigure`), created_by enum `system | vicky | founder`, order int.
+`widgets`: id, dashboard_id FK, spec jsonb (`WidgetSpec`), spec_hash text, option_cache jsonb (ECharts option, nullable), provenance jsonb (`[{series, points[{period, value, formula, inputs, source}]}]`), status enum `ok | missing | error`, missing jsonb (`MissingFigure`), created_by enum `widget_author` (`system | vik | founder`), order int.
 
-`dashboard_messages`: id, dashboard_id, role enum `founder | vicky | tool`, content text, tool_calls jsonb, citations jsonb, created_at. Append-only.
+`dashboard_messages`: id, dashboard_id, role enum `message_role` (`founder | vik | tool`), content text, tool_calls jsonb, citations jsonb, created_at. Append-only.
+
+Both enums carried the label `vicky` before `0012_chair_is_vik.sql` renamed it in place.
 
 ### 2.8 `vc_personas`
 | Column | Type | Notes |
@@ -121,9 +135,9 @@ workspace (implicit, one)
 |---|---|---|
 | id | uuid PK | |
 | engagement_id, truthpack_id | uuid FK | |
-| mode | enum `prepare \| simulate` | |
+| mode | enum `prepare \| simulate` | new sessions are always `simulate` (the Q&A after a pitch); `prepare` stays only for rows from the removed Preparation tab |
 | panel | text[] | persona ids (built-in slugs or uuids), ≤ 5 |
-| settings | jsonb | `{question_cap, time_cap_s, coaching: coached\|realistic, interrupt_mode: live\|after, drills[]}` |
+| settings | jsonb | `{question_cap, coaching: coached\|realistic, focus, knowledge}`; the Q&A after a pitch sets 6, `coached`, no focus, knowledge off |
 | deck_upload_id | uuid FK | simulation |
 | deck | jsonb | `SlideFinding[]` from pre-scan + per-slide text |
 | agenda | jsonb | chair's agenda `[{hypothesis_id, lens, owner_vc}]` |
@@ -139,15 +153,15 @@ session_id FK, vc_id text, persona_version int, truthpack_version int, memo json
 | id | uuid PK | |
 | session_id | uuid FK | |
 | seq | int | unique per session; append-only |
-| speaker | text | `founder`, `vicky`, or vc_id |
-| kind | enum `question \| answer \| interject \| coach \| debrief \| segment \| interrupt` | |
+| speaker | text | `founder`, `vik` (the chair; `0012_chair_is_vik.sql` renamed older `vicky` rows), or vc_id |
+| kind | enum `question \| answer \| interject \| coach \| debrief \| segment \| interrupt \| intro` | |
 | intent | text | chair intent for VC turns (`follow_up`, `new_topic`, `jump_in`, `knowledge`) |
 | hypothesis_id | text | the hypothesis asked about; a probe id (`k:<vc>.<n>`) on a knowledge check |
 | text | text | final audited text |
 | citations | jsonb | `[{marker, figure_id?, source_id?, formula, source}]` |
 | slide | int | simulation |
 | t_offset_ms | int | simulation |
-| audit | jsonb | `{passed, regenerated, findings[], review?}`; `review` is Vicky's review of the drafted line: `{verdict: approve\|revise, issues[], note, source: code\|llm, revised, final?}` |
+| audit | jsonb | `{passed, regenerated, findings[], review?}`; `review` is Vik's review of the drafted line: `{verdict: approve\|revise, issues[], note, source: code\|llm, revised, final?}` |
 | usage | jsonb | |
 
 ### 2.12 `beliefs`
@@ -160,24 +174,13 @@ id, session_id, after_turn_seq, candidates jsonb (referee-ranked), decision json
 id, session_id, turn_id FK, slide int, t_offset_ms int, text, metric text, value numeric, unit text, period text, is_forecast bool, status enum `matches | contradicts | unsupported | forecast_as_fact`, figure_id text, severity numeric. Index (session_id, status).
 
 ### 2.15 `scores`
-Written by Vicky. turn_id PK/FK (the founder answer), accuracy numeric (code), dims jsonb (`{evidence, clarity, composure, investor_fit}` 0–5), rationale jsonb (`{good, missing, correct_figure, strong_answer, why_asked}`), judge_usage jsonb.
+Written by Vik. turn_id PK/FK (the founder answer), accuracy numeric (code), dims jsonb (`{evidence, clarity, composure, investor_fit}` 0–5), rationale jsonb (`{good, missing, correct_figure, strong_answer, why_asked}`), judge_usage jsonb.
 
 ### 2.16 `reports`
 id, session_id FK unique, engagement_id, report jsonb (`Report`, §4), markdown text, overall numeric, dims jsonb, delta_vs_previous numeric, audit_notes jsonb, sources jsonb (numbered), created_at.
 
-### 2.17 `founder_memory`
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid PK | |
-| engagement_id | uuid FK | |
-| kind | enum `weakness \| answer \| rewrite \| drill` | |
-| lens | text | |
-| topic | text | |
-| payload | jsonb | e.g. `{session_id, question, answer, score, figure_id}`; weakness `{session_id, vc_id, confidence, attack_id, hypothesis_id}`; drill `{session_id, turn_id, seq, mark: repeat\|study, question, vc_id, intent, hypothesis_id, attack_id, note_path, used_by?}` |
-| severity | numeric | weaknesses |
-| last_seen_at | timestamptz | |
-
-`recall(topic)` queries by engagement + lens/topic, newest first.
+### 2.17 `founder_memory` (dropped)
+Dropped with its enum `memory_kind` (`weakness | answer | rewrite | drill`) by `0011_retire_founder_memory.sql`, when the Preparation tab went. It held the weakness ledger, past answers, rewrites and the Repeat / Study drill marks that `recall(topic)` read and the next session started from. `0001_init.sql` still creates both on a fresh database; 0011 drops them. Nothing replaces it: sessions don't carry anything into the next one.
 
 ### 2.18 `jobs`
 id, engagement_id, session_id?, kind enum `memo | prescan | extract | report | persona_gen | audit | kb_ingest | kb_organize`, status enum `queued | running | done | failed | stale`, payload jsonb, result jsonb, error text, attempts int, enqueued_at, started_at, finished_at. `stale` is set by a sweeper on `queued` rows enqueued over 15 min ago (Key Value restart) and `running` rows started over 15 min ago (job timeout 600 s + 5 min margin). A run cancelled mid-way (worker `job_timeout`, redeploy, instance sleep) ends `failed` with error `interrupted`. The UI offers Retry; `POST /jobs/{id}/retry` re-queues only `failed` or `stale` rows (409 otherwise).
@@ -203,17 +206,16 @@ id, path text unique (`folder/name.md|csv`), title, kind (`table | document | no
 - **`uploads.kb_note_id`** → kb_notes (set null): the note Fill dashboard sent to intake, so a figure's citation names its note (`source.kb_note`).
 - `jobs.kind` gains `kb_index`.
 
-### 2.24 `knowledge_checks` (migration 0007)
-One row per knowledge question answered: id, session_id (cascade), turn_id (the answer, cascade), question_turn_id (set null), probe_id, vc_id, lens, verdict (`knows | partial | contradicts | missed | unverified`), explanation (audited; quotes the note word for word with its `[kb:path]`), expected jsonb (`{cite, path, heading, title, quote}`: the passage the question was written from and its verbatim answer key), citations jsonb, retrieval jsonb (`{confidence, build_id, passages, ms}`: Vicky's own search over the answer), source (`offline | llm`), created_at. Index (session_id, created_at).
+### 2.24 `knowledge_checks` (migration `0007_court_chair.sql`)
+One row per knowledge question answered: id, session_id (cascade), turn_id (the answer, cascade), question_turn_id (set null), probe_id, vc_id, lens, verdict (`knows | partial | contradicts | missed | unverified`), explanation (audited; quotes the note word for word with its `[kb:path]`), expected jsonb (`{cite, path, heading, title, quote}`: the passage the question was written from and its verbatim answer key), citations jsonb, retrieval jsonb (`{confidence, build_id, passages, ms}`: Vik's own search over the answer), source (`offline | llm`), created_at. Index (session_id, created_at).
 
-`sessions.state` gains `probes[]` (`{id, vc, lens, topic, question, expected, asked, source}`), `asked_lines[]` (texts Vicky reviews new lines against), `last_knowledge_q` and `knowledge_on`; `sessions.settings` gains `knowledge` (bool).
+`sessions.state` gains `probes[]` (`{id, vc, lens, topic, question, expected, asked, source}`), `asked_lines[]` (texts Vik reviews new lines against), `last_knowledge_q` and `knowledge_on`; `sessions.settings` gains `knowledge` (bool). The Q&A after a pitch runs with knowledge checks off, so new sessions add no rows here; the court engine and its tests still use them.
 
 ## 3. Indexes and constraints
 
 - `engagements`: partial unique on `(status) where status='active'`.
 - `turns`: unique `(session_id, seq)`; index `(session_id, speaker)`.
 - `claims`: index `(session_id, status)`; `widgets`: unique `(dashboard_id, spec_hash)`.
-- `founder_memory`: index `(engagement_id, lens, last_seen_at desc)`.
 - `jobs`: index `(status, enqueued_at)`.
 - FK cascades: deleting an engagement cascades everywhere below it (admin only; the UI never deletes).
 
@@ -269,7 +271,7 @@ One row per knowledge question answered: id, session_id (cascade), turn_id (the 
  "ledger":[{Claim + status + figure}],"slides":[{"slide":2,"note":"…","reword":"…"}],
  "delivery":{"talk_time_s":402,"fillers":14,"slide_seconds":[38,112,74,96,82],"dodged":[…]},
  "knowledge_gaps":[{"term":"NRR","text":"…","source_id":"…"}],
- "action_plan":[{"priority":1,"text":"…","drill_lens":"forecast"}],
+ "action_plan":[{"priority":1,"text":"…","lens":"forecast"}],
  "audit_notes":[{"changed":"…","why":"…"}],
  "sources":[{"n":1,"kind":"csv","ref":"…"},{"n":2,"kind":"url","url":"…","publisher":"…"}]}
 ```
@@ -279,17 +281,17 @@ One row per knowledge question answered: id, session_id (cascade), turn_id (the 
 | Key | Type | TTL | Use |
 |---|---|---|---|
 | `arq:queue` (default) | list/zset | — | arq job queue (`noeviction`) |
-| `vicky:session:{id}` | pub/sub | — | turn deltas, chair decisions, memo snippets, ledger, interrupts |
-| `vicky:dashboard:{id}` | pub/sub | — | widget/layout diffs with version |
-| `vicky:pitch:{id}` | hash | 6 h | current slide, last interrupt time, per-slide interrupt count, live transcript tail |
-| `vicky:series:{spec_hash}:{truthpack_version}` | string (json) | 24 h | evaluated series cache |
-| `vicky:memo:{vc_id}:{persona_version}:{truthpack_version}` | string | 7 d | memo cache pointer (memos also in Postgres) |
-| `vicky:rl:{ip}` | counter | 60 s | rate limit |
-| `vicky:spend:{YYYY-MM-DD}` | float | 48 h | daily USD estimate |
-| `vicky:lock:migrate` | — | — | not used; Postgres advisory lock instead |
+| `vik:session:{id}` | pub/sub | — | turn deltas, chair decisions, memo snippets, ledger, interrupts |
+| `vik:dashboard:{id}` | pub/sub | — | widget/layout diffs with version |
+| `vik:pitch:{id}` | hash | 6 h | current slide, last interrupt time, per-slide interrupt count, live transcript tail |
+| `vik:series:{spec_hash}:{truthpack_version}` | string (json) | 24 h | evaluated series cache |
+| `vik:memo:{vc_id}:{persona_version}:{truthpack_version}` | string | 7 d | memo cache pointer (memos also in Postgres) |
+| `vik:rl:{ip}` | counter | 60 s | rate limit |
+| `vik:spend:{YYYY-MM-DD}` | float | 48 h | daily USD estimate |
+| `vik:lock:migrate` | — | — | not used; Postgres advisory lock instead |
 | `rag:ret:{build}:{kb_v}:{mode}:{k}:{sha}` | string (json) | 1 h | retrieval result (chunk ids, scores, confidence) |
 | `rag:rr:{build}:{model}:{sha}:{sha}` | string (json) | 1 h | rerank scores |
-| `rag:ans:{build}:{kb_v}:{tp_id}:{tp_v}:{sha}` | string (json) | 24 h | audited Ask Vicky answer |
+| `rag:ans:{build}:{kb_v}:{tp_id}:{tp_v}:{sha}` | string (json) | 24 h | audited Ask Vik answer |
 | `rag:emb:{model}:{sha}` | string (json) | 30 d | query embedding (kept across builds) |
 | `rag:offer:{id}` | string (json) | 15 min | pending catch-all offer; deleted when used |
 | `rag:stats:{YYYYMMDD}` | hash | 8 d | cache hits and misses, answer paths, offers made / accepted / declined |
@@ -305,9 +307,9 @@ Losing all Redis data is harmless: queued jobs become `stale` and retryable; eve
 | `samples/services-co/` | Tiny non-recurring fixture; only the generic metric set applies |
 | `sources.yaml` | Benchmark library (see `sources` table) |
 | `glossary.yaml` | Appendix I terms, plain-English definitions |
-| `questions.yaml` | Appendix D 15 questions with weak/strong anchors (Judge rubric) |
+| `questions.yaml` | Appendix D 15 questions with weak/strong anchors (Vik's scoring rubric) |
 | `playbooks/*.md`, `playbooks/geo/{CA,US,UK,generic}.md` | Metric traps, term-sheet mechanics, deck heuristics, per-archetype question banks, country rules ("verify with an advisor") |
-| `../vicky/areopagus/builtin/*.yaml` | 10 built-in persona specs |
+| `../vik/areopagus/builtin/*.yaml` | 5 built-in persona specs (the other archetypes are builder templates in `../vik/areopagus/templates.yaml`) |
 
 ## 7. Event envelopes
 

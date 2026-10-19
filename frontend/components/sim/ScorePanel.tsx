@@ -1,4 +1,4 @@
-import { ClaimChip } from "@/components/prep/ClaimChip";
+import { ClaimChip } from "@/components/court/ClaimChip";
 import { Panel } from "@/components/ui/Panel";
 import type { ClaimStatus, JudgedScore, KbCheck, LedgerRow } from "@/lib/types";
 import { cn } from "@/lib/utils";

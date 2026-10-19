@@ -21,7 +21,7 @@ export function useTheme() {
   const setTheme = useCallback((next: Theme) => {
     document.documentElement.dataset.theme = next;
     try {
-      localStorage.setItem("vicky-theme", next);
+      localStorage.setItem("vik-theme", next);
     } catch {
       // Storage can be blocked; the theme still applies for this page view.
     }

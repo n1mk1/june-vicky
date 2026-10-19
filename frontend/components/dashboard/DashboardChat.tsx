@@ -55,7 +55,7 @@ function Action({ onClick, children, icon }: { onClick: () => void; children: Re
 }
 
 /**
- * "Ask Vicky" on the dashboard. Questions about the data are answered by code with a footnote on
+ * "Ask Vik" on the dashboard. Questions about the data are answered by code with a footnote on
  * every number; chart requests add a widget; "zoom to …" moves every chart. Sending a message opens
  * the conversation as an overlay above the bar, over a dimmed dashboard, so the widgets never give
  * up room to it. Esc, the close button or a click on the dashboard closes it; the thread is kept.
@@ -126,7 +126,7 @@ export function DashboardChat(props: DashboardChatProps) {
     }
   };
 
-  // The catch-all (Haiku over every note) runs only when the user presses "Search all notes".
+  // The catch-all (Gemini Flash-Lite over every note) runs only when the user presses "Search all notes".
   const answerOffer = async (x: Exchange, accept: boolean) => {
     const offer = x.result?.offer;
     if (!offer) return;
@@ -287,14 +287,14 @@ export function DashboardChat(props: DashboardChatProps) {
         )}
       {open && thread.length > 0 && (
         <section
-          aria-label="Conversation with Vicky"
+          aria-label="Conversation with Vik"
           data-testid="chat-thread"
           onPointerEnter={() => setHovered(true)}
           onPointerLeave={() => setHovered(false)}
           className="glass absolute inset-x-0 bottom-full mb-2 flex bg-surface-solid/95 max-h-[min(64vh,640px)] flex-col overflow-hidden rounded-[4px] shadow-[0_24px_80px_-24px_rgba(0,0,0,0.6)]"
         >
           <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-            <span className="label">Ask Vicky</span>
+            <span className="label">Ask Vik</span>
             <span className="flex items-center gap-3">
               <button
                 type="button"
@@ -333,7 +333,7 @@ export function DashboardChat(props: DashboardChatProps) {
         </section>
       )}
       <PromptBar
-        label="Ask Vicky about your data"
+        label="Ask Vik about your data"
         placeholder="Ask anything about your data, e.g. which month had the highest burn?"
         onSubmit={(t) => void send(t)}
         maxLength={500}

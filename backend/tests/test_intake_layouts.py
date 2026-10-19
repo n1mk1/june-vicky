@@ -4,8 +4,8 @@ founder picks."""
 
 import pytest
 
-from vicky.model.loader import parse_number, parse_period, parse_upload
-from vicky.model.mapping import propose_heuristic
+from vik.model.loader import parse_number, parse_period, parse_upload
+from vik.model.mapping import propose_heuristic
 
 
 def one(text: str, name: str = "t.csv"):
@@ -145,7 +145,7 @@ def test_forced_period_column():
 
 @pytest.mark.db
 async def test_choosing_another_date_column_rereads_the_table(api_client):
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     csv = b"Label,Billing period,Revenue\nA,2024/01,100\nB,2024/02,120\nC,2024/03,90\n"
     eng = (await api_client.post("/uploads", files={"file": ("billing.csv", csv, "text/csv")})).json()
     ds = eng["datasets"][0]

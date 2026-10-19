@@ -7,18 +7,16 @@ import { cn } from "@/lib/utils";
 const DURATION = 1600;
 
 /**
- * The VICKY wordmark from brand/vicky/Vicky_Logo.svg, flattened to absolute paths
+ * The VIK wordmark from brand/vik/Vik_Logo.svg, flattened to absolute paths
  * (the file's per-letter translates applied). Order sets the draw stagger.
  */
-const WORDMARK_VIEWBOX = "0 0 677 142";
+const WORDMARK_VIEWBOX = "0 0 366.8 142";
 const WORDMARK_PATHS = [
   "M0 0H30L62 94.7L94 0H124L76 142H48Z", // V
   "M185 0V142H158V33Z", // I, knife-cut top
-  "M349.4 29.3A71 71 0 1 0 349.4 112.7H306A44 44 0 1 1 306 29.3Z", // C
-  "M385 0H412V142H385Z", // K stem
-  "M471 0H509L412 98.7V60Z", // K arm
-  "M443.3 81.1L462.5 61.6L522.8 142H489Z", // K leg, sliced off
-  "M553 0H585L615 45.8L645 0H677L628.5 74V112L605 142H601.5V74Z", // Y, knife-cut foot
+  "M229 0H256V142H229Z", // K stem
+  "M315 0H353L256 98.7V60Z", // K arm
+  "M287.3 81.1L306.5 61.6L366.8 142H333Z", // K leg, sliced off
 ];
 
 function Digit({ value }: { value: number }) {
@@ -39,7 +37,7 @@ function Digit({ value }: { value: number }) {
 function markDone() {
   document.documentElement.dataset.preloaded = "";
   try {
-    sessionStorage.setItem("vicky-preloaded", "1");
+    sessionStorage.setItem("vik-preloaded", "1");
   } catch {
     // Without storage the intro simply plays again next visit.
   }
@@ -95,7 +93,7 @@ export function Preloader() {
       <div className="relative flex h-40 w-72 items-center justify-center border border-[#111214]/15">
         <CornerMarks className="[&_span]:text-[#111214]/60" />
         <span className="absolute -top-px left-0 h-px w-full origin-left animate-[draw-x_1.6s_var(--ease-soft)_both] bg-[#111214]" />
-        <svg viewBox={WORDMARK_VIEWBOX} className="w-52 overflow-visible" aria-hidden>
+        <svg viewBox={WORDMARK_VIEWBOX} className="w-28 overflow-visible" aria-hidden>
           {/* Outline draws first; the fill settles in as the counter nears 100. */}
           <g
             fill="currentColor"

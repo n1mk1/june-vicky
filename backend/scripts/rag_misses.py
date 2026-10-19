@@ -14,7 +14,7 @@ Run from backend/:
 import asyncio
 import sys
 
-from vicky import db
+from vik import db
 
 
 async def main(mark: bool) -> None:

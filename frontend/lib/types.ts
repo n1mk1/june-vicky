@@ -1,5 +1,5 @@
 /**
- * Shapes returned by the Vicky API (docs/API.md, docs/05-BACKEND-SCHEMA.md §4).
+ * Shapes returned by the Vik API (docs/API.md, docs/05-BACKEND-SCHEMA.md §4).
  * Every number in these objects is computed by the backend's metrics engine; the frontend only formats it.
  */
 
@@ -308,7 +308,7 @@ export interface Widget {
   status: "ok" | "missing" | "error";
   evaluated: EvaluatedWidget;
   option: EChartsOptionJson | null;
-  created_by: "system" | "vicky" | "founder";
+  created_by: "system" | "vik" | "founder";
 }
 
 export interface LayoutItem {
@@ -397,7 +397,7 @@ export interface PersonaSummary {
   version: number;
 }
 
-/** The full persona spec (`VCPersona` in backend/vicky/areopagus/schema.py). A type alias so it's a `Json` body. */
+/** The full persona spec (`VCPersona` in backend/vik/areopagus/schema.py). A type alias so it's a `Json` body. */
 export type VCPersonaSpec = {
   id: string;
   name: string;
@@ -428,7 +428,7 @@ export interface PersonaOptions {
 /** A draft from a description (POST /areopagus/generate); `id` is "draft" until saved. */
 export interface GenerateResult {
   persona: VCPersonaSpec;
-  source: "claude" | "heuristic";
+  source: "gemini" | "heuristic";
 }
 
 // ---------------------------------------------------------------- court
@@ -470,7 +470,7 @@ export interface Turn {
   hypothesis_id: string | null;
   intent: string | null;
   citations: Citation[];
-  /** Vicky's review of the drafted line, before it was spoken (questions only). */
+  /** Vik's review of the drafted line, before it was spoken (questions only). */
   review?: LineReview | null;
   created_at: string;
 }
@@ -479,14 +479,14 @@ export interface LineReview {
   verdict: "approve" | "revise";
   issues: string[];
   note: string;
-  /** True when Vicky sent the draft back and the investor rewrote it. */
+  /** True when Vik sent the draft back and the investor rewrote it. */
   revised: boolean;
   source: "code" | "llm";
 }
 
 export type KnowledgeVerdict = "knows" | "partial" | "contradicts" | "missed" | "unverified";
 
-/** Vicky's check of a knowledge answer against the founder's own notes (via retrieval). */
+/** Vik's check of a knowledge answer against the founder's own notes (via retrieval). */
 export interface KnowledgeCheck {
   turn_seq: number | null;
   question_seq: number | null;
@@ -534,7 +534,7 @@ export interface Claim {
 export interface Session {
   id: string;
   status: "live" | "ended";
-  mode: "prepare" | "simulate";
+  mode: "simulate";
   panel: PersonaSummary[];
   settings: { question_cap: number; coaching: "coached" | "realistic"; focus?: string | null; knowledge?: boolean };
   turns: Turn[];
@@ -543,49 +543,11 @@ export interface Session {
   knowledge?: KnowledgeCheck[];
   /** Knowledge questions written from the notes at start (0 when there's no search index), and how many are left. */
   knowledge_ready?: { on: boolean; probes: number; left: number };
-  /** What came back from founder memory: drilled questions and the last reports' weak spots, and where each was asked. */
-  carried?: Carried[];
   question_count: number;
   awaiting: "founder" | "panel" | null;
   next_speaker: string | null;
   report_id: string | null;
   started_at?: string;
-}
-
-export type DrillMark = "repeat" | "study";
-
-export interface Carried {
-  memory_id: string;
-  kind: "drill" | "weakness";
-  mark: DrillMark | null;
-  topic: string | null;
-  lens: string | null;
-  /** The question as it was asked last time (drills only). */
-  question: string | null;
-  vc_id: string | null;
-  hypothesis_id: string | null;
-  probe_id: string | null;
-  /** asked: a question this session covered it; queued: still to come; not_reached: the session ended first;
-   * unmatched: nothing in this session's data or panel covers it any more. */
-  status: "asked" | "queued" | "not_reached" | "unmatched";
-  asked_seq: number | null;
-}
-
-export interface SavedDrill {
-  id: string;
-  seq: number;
-  mark: DrillMark;
-  topic: string | null;
-  lens: string | null;
-}
-
-export interface SessionSummary {
-  id: string;
-  mode: string;
-  status: string;
-  started_at: string;
-  question_count: number;
-  report_id: string | null;
 }
 
 // ---------------------------------------------------------------- reports
@@ -654,10 +616,10 @@ export interface Report {
   slides?: { slide: number; note: string; reword?: string }[];
   delivery?: { talk_time_s?: number; fillers?: number; slide_seconds?: number[]; dodged?: unknown[] } | null;
   knowledge_gaps?: { term: string; text: string; source_id?: string | null }[];
-  /** Knowledge checks: what the founder recalled of their own notes, and Vicky's verdict. */
+  /** Knowledge checks: what the founder recalled of their own notes, and Vik's verdict. */
   knowledge?: { vc_id: string; vc_name: string; question: string; answer: string; verdict: KnowledgeVerdict;
     explanation: string; path?: string | null; citations: Citation[] }[];
-  action_plan: { priority: number; text: string; drill_lens?: string | null }[];
+  action_plan: { priority: number; text: string; lens?: string | null }[];
   audit_notes?: { changed: string; why: string }[];
   sources: ReportSource[];
 }
@@ -764,7 +726,7 @@ export interface KbImportResult {
 
 export interface KbAutofill {
   engagement: Engagement;
-  by: "claude" | "heuristic";
+  by: "gemini" | "heuristic";
   profile: { field: string; value: unknown; evidence: string }[];
   added: { note: string; as: string }[];
   skipped: { note: string; reason: string }[];
@@ -829,7 +791,7 @@ export interface Deck {
   slides: DeckSlide[];
 }
 
-/** A line the room speaks: a persona id or "vicky", and the words. */
+/** A line the room speaks: a persona id or "vik", and the words. */
 export interface SpokenLine {
   speaker: string;
   text: string;

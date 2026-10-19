@@ -21,23 +21,23 @@ const martian = Martian_Mono({
   weight: ["400"],
 });
 
-const TITLE = "Vicky · AI venture capitalist by June";
+const TITLE = "Vik · AI venture capitalist";
 
 // Icons and the share image come from the file conventions in this folder
-// (icon.svg, apple-icon.png, opengraph-image.png), all made from brand/vicky/Vicky_Logo_250x250.
+// (icon.svg, apple-icon.png, opengraph-image.png), all made by brand/build.py.
 export const metadata: Metadata = {
   // Absolute base for the share image URL; Render sets RENDER_EXTERNAL_URL on the web service.
   metadataBase: new URL(process.env.RENDER_EXTERNAL_URL ?? "http://localhost:3000"),
   title: {
     default: TITLE,
-    template: "%s · Vicky",
+    template: "%s · Vik",
   },
   description:
     "Know your numbers before they do. Load your data, face a panel of AI investors and rehearse your pitch against the source of truth.",
   openGraph: {
     title: TITLE,
     description: "Your AI venture capitalist. Know your numbers before they do.",
-    siteName: "JUNE × VICKY",
+    siteName: "Vik",
     type: "website",
   },
   twitter: {
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
 };
 
 // Runs before first paint: restores the saved theme and skips the preloader after its first run.
-const bootScript = `try{var t=localStorage.getItem("vicky-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;if(sessionStorage.getItem("vicky-preloaded"))document.documentElement.dataset.preloaded=""}catch(e){}`;
+const bootScript = `try{var t=localStorage.getItem("vik-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;if(sessionStorage.getItem("vik-preloaded"))document.documentElement.dataset.preloaded=""}catch(e){}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

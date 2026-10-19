@@ -10,9 +10,9 @@ Run from backend/:
 import asyncio
 import logging
 
-from vicky import db, jobs, kv, migrate
-from vicky.config import get_settings
-from vicky.kb import index
+from vik import db, jobs, kv, migrate
+from vik.config import get_settings
+from vik.kb import index
 
 
 async def main() -> None:

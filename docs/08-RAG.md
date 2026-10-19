@@ -1,6 +1,6 @@
-# Vicky — Retrieval (RAG) over the knowledge base
+# Vik — Retrieval (RAG) over the knowledge base
 
-**Status:** built. Decision record: [adr/0001-rag-retrieval-stack.md](adr/0001-rag-retrieval-stack.md). Code: `backend/vicky/kb/` (`chunk.py`, `bm25.py`, `voyage.py`, `index.py`, `rag.py`, `ask.py`, `glossary.yaml`), `backend/vicky/court/session.py`, `frontend/components/kb/SearchIndexStatus.tsx`, `frontend/components/dashboard/DashboardChat.tsx`. Tests: `backend/tests/test_rag.py`, `frontend/e2e/catch-all.spec.ts`. Eval: `backend/evals/rag/run.py`.
+**Status:** built. Decision record: [adr/0001-rag-retrieval-stack.md](adr/0001-rag-retrieval-stack.md). Code: `backend/vik/kb/` (`chunk.py`, `bm25.py`, `voyage.py`, `index.py`, `rag.py`, `ask.py`, `glossary.yaml`), `backend/vik/court/session.py`, `frontend/components/kb/SearchIndexStatus.tsx`, `frontend/components/dashboard/DashboardChat.tsx`. Tests: `backend/tests/test_rag.py`, `frontend/e2e/catch-all.spec.ts`. Eval: `backend/evals/rag/run.py`.
 
 **Retrieval is the main path** for every agent, the live court included:
 - **Hybrid search:** chunks ranked by BM25 and by vectors, fused, then reranked.
@@ -9,7 +9,7 @@
 
 **The index is built when the founder confirms the knowledge base** (step 04 of the intake, *Confirm knowledge base*). The flow is: add files to the knowledge base (any file type; a file uploaded anywhere else in the app lands there too) → **Fill dashboard** autofills a draft (profile, column mappings, facts) → the founder checks it with as little editing as possible → **Confirm knowledge base**. Confirming writes what was confirmed into the vault as a note (`company/Confirmed knowledge base.md`: the profile with its sources, how each table's columns are read, custom fields included, and which facts were kept; no figures) and **rebuilds the index from scratch** from the whole vault, discarding the old one. Chunking, embedding and the BM25 index run then, not on every import or edit.
 
-**A whole-vault LLM call exists only as the worst-case catch-all, and it never runs without the user's go-ahead.** When retrieval can't answer, Vicky says so and offers to search every note; the call runs only if the user accepts. Every offer is logged as a retrieval miss and becomes a regression case, so retrieval improves until the offer is almost never needed.
+**A whole-vault LLM call exists only as the worst-case catch-all, and it never runs without the user's go-ahead.** When retrieval can't answer, Vik says so and offers to search every note; the call runs only if the user accepts. Every offer is logged as a retrieval miss and becomes a regression case, so retrieval improves until the offer is almost never needed.
 
 **Every statement in a chat answer references the knowledge base.** A model-written sentence must quote a note word for word with its `[kb:path]`, or state a computed figure; a figure's footnote names the knowledge-base note its table or document came from. A sentence that cites nothing fails the audit, and the reply isn't used.
 
@@ -45,7 +45,7 @@ The measured rows come from `evals/rag/run.py` on the fixture vault in `backend/
 |---|---|
 | Vectors in the existing Render Postgres with **pgvector** | Render has no vector database service; Postgres already holds the notes, is backed up and is reached with asyncpg. Where the extension can't be created, the migration makes the tables without vector columns and search runs on BM25. |
 | **BM25 in process**, a small inverted index (`kb/bm25.py`) | `ts_rank` has no IDF and no proper length normalization. The BM25 extensions (ParadeDB `pg_search`, `pg_textsearch`) are not expected on Render's managed Postgres. `bm25s` would pull in numpy and scipy; for a few thousand chunks, a dict-based index is a few MB and answers in about a millisecond. |
-| **Voyage** embeddings (`voyage-4`, 1024 dims) and reranker (`rerank-2.5`; `rerank-2.5-lite` in court) over `httpx` | Anthropic has no embeddings endpoint and recommends Voyage. A local model doesn't fit next to the API on a 512 MB instance. |
+| **Voyage** embeddings (`voyage-4`, 1024 dims) and reranker (`rerank-2.5`; `rerank-2.5-lite` in court) over `httpx` | One provider for both embeddings and a cross-encoder reranker, over plain HTTP and independent of the LLM provider: the move to Gemini left the index and its vectors untouched. A local model doesn't fit next to the API on a 512 MB instance. |
 | Hybrid ranking with **reciprocal rank fusion**, then a **reranker** | Fusion needs no score calibration between BM25 and cosine. A cross-encoder reranker is the biggest single precision gain over fused lists. |
 | Query expansion by **code** (`kb/glossary.yaml`), not by an LLM | Deterministic, free and cacheable, and it keeps LLM calls out of the main path. Generic finance vocabulary only: no company-specific terms. |
 | The index is built on **Confirm knowledge base**, not on every note write (and no longer on Fill) | Confirming is the founder's signal that the vault and its reading are right. Embedding once per confirm avoids paying for chunks that are about to change, and gives one clear "search is ready" moment. The build runs in the background, so confirm returns as quickly as before. |
@@ -54,11 +54,11 @@ The measured rows come from `evals/rag/run.py` on the fixture vault in `backend/
 | The confirmed reading is **written into the vault** (`company/Confirmed knowledge base.md`) | What the founder fixed in the wizard (a custom column, a removed fact, a corrected profile field) is knowledge too, so retrieval can quote it. It carries no figures: numbers come from the metrics engine, and a stale copy in a note could be quoted instead. Fill never sends it back to the intake; each confirm rewrites it. |
 | The pitch deck is **checked against** the index, never added to it | A deck is what the founder claims; the vault is what they know. Mixing them would let a claim confirm itself. |
 | The vault version is a **Postgres counter bumped by a trigger** (`kb_meta.version`) | Every insert, update and delete on `kb_notes` bumps it, so no write path (the organizer, hub rewrites, imports, edits) can miss it. Cache keys include it and the build id. |
-| Confidence is **computed by code** | The API returns no token probabilities, and a model's self-rating isn't reliable. Retrieval signals come before the call; the audit and structured output after it. |
-| **Claude Haiku 5.5** (`model_tiny`) writes the answer from passages and runs the catch-all | $0.10 / $0.50 per MTok, cache reads $0.01, 1M context, 512-token cache minimum. Haiku 4.5 is 10× the price, with 200K context and a 4,096-token cache minimum; see the ADR. |
+| Confidence is **computed by code** | Token probabilities aren't requested, and a model's self-rating isn't reliable. Retrieval signals come before the call; the audit and structured output after it. |
+| **Gemini 3.5 Flash-Lite** (`model_tiny`) writes the answer from passages and runs the catch-all | The cheapest tier, and on the free tier a model with its own quota. On a paid key: $0.30 / $2.50 per MTok, cached input $0.03 (the 2027 list rates the budget uses), so a catch-all over a full 300,000-token snapshot costs about $0.10 at most; on the default free key it costs nothing. See the ADR's 2026-10-19 notes. |
 | The **catch-all** is a whole-vault call, offered only after recovery fails, **with the user's permission every time** | It answers what retrieval missed, and its citations reveal which note retrieval should have found. It's the one call that sends the whole vault to the model, so the user decides. A cached answer needs no permission, since no new call is made. |
 | **Every model-written chat statement cites** (audit rule 5, `require_citations`) | The answer is grounded sentence by sentence: a computed figure, a note quote with `[kb:path]`, or a `[src:id]`. Only questions are exempt. A failed reply is regenerated once with the findings, then dropped. |
-| The **Sonnet tool loop leaves Ask Vicky** once an index exists | With hybrid retrieval and recovery, the loop is a slower duplicate. Before the first Fill, Ask Vicky works as before. Court memos keep `kb_search` / `kb_read` as tools, backed by hybrid retrieval. |
+| The **tool loop leaves Ask Vik** once an index exists | With hybrid retrieval and recovery, the loop (route `qa`, Gemini 3.8 Flash) is a slower duplicate. Before the first confirm, Ask Vik works as before. Court memos keep `kb_search` / `kb_read` as tools, backed by hybrid retrieval. |
 | The **live court never uses the catch-all** | A spoken turn can't wait for a large-context call. A turn whose retrieval is unsure runs without notes, as every turn did before. |
 
 ## Data
@@ -68,7 +68,7 @@ Migration `0006_rag.sql` (idempotent). Full column lists are in [05 §2.23](05-B
 | Table | Holds |
 |---|---|
 | `kb_meta` | `version`, bumped by a statement trigger on `kb_notes` |
-| `kb_index_builds` | one row per Fill: status `queued → building → active → superseded \| failed \| cancelled` (one `active` at a time), counts, timings |
+| `kb_index_builds` | one row per build: status `queued → building → active → superseded \| failed \| cancelled` (one `active` at a time), counts, timings |
 | `kb_chunks` | `build_id`, `note_id`, `note_md5`, `ord`, `heading`, `start_char`, `end_char`, `text` (= `content[start:end]`), `text_sha256`, `sha256` (of the embedded text, for reuse); `embedding halfvec(1024)` with pgvector |
 | `qa_cache` | the semantic answer cache, per build; `embedding` with pgvector |
 | `rag_misses` | every catch-all offer and the user's decision |
@@ -111,13 +111,13 @@ job kb_index (inline on the free plan, arq worker later)
      every process throws away its BM25 index and builds the new one on its next search
 ```
 
-- **Full rebuild, then swap.** The old build serves until the swap. A failed build deletes its own chunks and stays `failed`, and the old build stays active. A Fill during a running build cancels it (checked between embedding batches and at the swap).
+- **Full rebuild, then swap.** The old build serves until the swap. A failed build deletes its own chunks and stays `failed`, and the old build stays active. A new build (another confirm, or `POST /kb/index`) cancels a running one (checked between embedding batches and at the swap).
 - **Vector reuse is the one shortcut.** Voyage returns the same vector for the same input, so copying it gives the same index; it only saves time and money. `RAG_REUSE_EMBEDDINGS=false` embeds every chunk fresh.
-- **Before the first confirm** (no active build), `kb_search`, Ask Vicky and the court work as they did before this index existed.
+- **Before the first confirm** (no active build), `kb_search`, Ask Vik and the court work as they did before this index existed.
 - **Between confirms**, chunks of edited notes are skipped and new notes wait. `GET /kb/status` → `index.changed_since` counts notes written since the build read the vault (by `updated_at`, so the call stays cheap; retrieval itself compares content `md5`s, so a note touched without a content change is never skipped), and the knowledge base page says *"12 notes changed since the last Fill. Fill dashboard and confirm the knowledge base to update search."*
 - **A build can't hang:** it waits only for imports started in the last 15 minutes (one left "running" by a dead process doesn't count). A build whose job ended, vanished, or has run for more than 30 minutes is marked failed on the next status call, so the page offers Retry instead of polling forever.
-- **Two Fills at once:** starting and activating builds take one database advisory lock, so exactly one build ends up active and the other is cancelled or superseded, never failed.
-- **Warm start:** the process that ran the build loads its BM25 index right after the swap, so the first search after a Fill doesn't wait for it.
+- **Two builds at once:** starting and activating builds take one database advisory lock, so exactly one build ends up active and the other is cancelled or superseded, never failed.
+- **Warm start:** the process that ran the build loads its BM25 index right after the swap, so the first search after a rebuild doesn't wait for it.
 - **Status** (`SearchIndexStatus`, on the knowledge base and confirm pages) reads one of:
   - *Search builds when you confirm the knowledge base*
   - *Building search…* (polls every 2 s)
@@ -141,7 +141,7 @@ job kb_index (inline on the free plan, arq worker later)
 3. **Search, in parallel:**
    - **BM25** over the active build's chunks (title, tags, heading and text), with a light English stemmer: "hire", "hired" and "hiring" share one key.
    - **pgvector cosine search**, with `hnsw.ef_search` raised per query.
-4. **Fuse** with reciprocal rank fusion (`Σ 1/(60 + rank)`). Drop chunks whose note changed since the Fill. Collapse the same passage in two notes into the more recently updated one.
+4. **Fuse** with reciprocal rank fusion (`Σ 1/(60 + rank)`). Drop chunks whose note changed since the build. Collapse the same passage in two notes into the more recently updated one.
 5. **Graph boost:** +10% for chunks of notes linked to or from the top three.
 6. **Rerank** with Voyage: the top 30 (`ask`), 20 (`court`, fast model) or 60 (`recover`).
 7. **Small-to-big:** a chunk under ~90 words gets its neighbours in the same section as `context`; quotes may come from them too.
@@ -165,21 +165,21 @@ With vectors: `0.40·rerank + 0.20·agree + 0.15·sim + 0.15·cover + 0.10·marg
 
 **Output confidence:** the answer call returns `{answerable, reply}` as structured output. It passes only when `answerable` is true and `audit_text(..., notes=…, require_citations=True)` passes.
 
-## Ask Vicky
+## Ask Vik
 
 Runs in `kb/ask.py`, called by `qa.answer_any` after the deterministic answer whenever an index exists.
 
 ```
 0. Answer cache: exact, then semantic (cosine ≥ 0.95, same build, vault and TruthPack versions, same guard)
-1. retrieve(mode="ask"); confidence ≥ RAG_CONF_MIN → Haiku answers from the passages → passes? cache, return
-   not confident and the data answers it → Haiku phrases the figures alone (same citation rule) → return
-2. retrieve(mode="recover"); confident → Haiku answers from the passages → passes? cache, return
+1. retrieve(mode="ask"); confidence ≥ RAG_CONF_MIN → Flash-Lite answers from the passages → passes? cache, return
+   not confident and the data answers it → Flash-Lite phrases the figures alone (same citation rule) → return
+2. retrieve(mode="recover"); confident → Flash-Lite answers from the passages → passes? cache, return
 3. the notes are needed → OFFER the catch-all with the best answer so far; log the miss; no LLM call
 4. offline: the deterministic answer, plus verbatim quotes of the best passages when they cover most of the question
 ```
 
 - **"The notes are needed"** means the deterministic answer is `not_found`, or the answer from passages came back `answerable = false`.
-- **The answer from passages** (route `qa_rag`, Haiku 5.5, effort `low`) gets the fact sheet, the deterministic draft, the passages as `<passage cite="[kb:…]">…</passage>`, and the question. A reply that fails the audit is regenerated once with the findings, then dropped.
+- **The answer from passages** (route `qa_rag`, Gemini 3.5 Flash-Lite, thinking level `low`) gets the fact sheet, the deterministic draft, the passages as `<passage cite="[kb:…]">…</passage>`, and the question. A reply that fails the audit is regenerated once with the findings, then dropped.
 - **Without an API key**, only paths 0 and 4 run. The offline answer quotes the best passages, verbatim and cited, when they cover at least half of the question's weight. Headings, table rows and fragments under four words are never quoted as an answer.
 - **Every figure citation** carries `source.kb_note: {id, path}` when its dataset or document came from a knowledge-base note through Fill dashboard. The footnote shows *From your knowledge base · financials/Income statement.csv*.
 
@@ -194,20 +194,20 @@ The catch-all never runs on its own. When path 3 is reached, `POST /dashboards/{
            "expires_at": "2026-10-18T14:05:00Z"}}
 ```
 
-- **The chat** shows the prompt under the answer with **Search all notes** and **No thanks**. It names how many notes it will read, but shows no dollar figure (the call costs a fraction of a cent).
+- **The chat** shows the prompt under the answer with **Search all notes** and **No thanks**. It names how many notes it will read, but shows no dollar figure (on a paid key, cents at most: about $0.10 for a full 300,000-token snapshot; nothing on the free tier).
 - **Accept:** `POST /dashboards/{id}/chat/catch-all {offer_id, accept: true}` runs `qa_full` once. The answer shows under *From all your notes*, audited and cached.
 - **Decline:** the same endpoint with `accept: false` returns 204 and runs nothing.
 - **Ignored:** the offer expires after 15 minutes. Its miss is marked `expired` the next time an offer is made.
 - **One offer, one call:** an offer is single-use (`GETDEL`) and tied to its dashboard. An expired, used or other dashboard's offer returns 410, and the chat says *That offer expired. Ask the question again.*
-- **No offer** is made without an API key, over the daily budget, or with an empty vault, since no call could run.
+- **No offer** is made without an API key, over the daily budget (a paid key; the free tier has none), or with an empty vault, since no call could run.
 - **Cache keys include the dashboard's currency** (figures are converted to it), so a USD view never gets a cached CAD answer.
 
-**The catch-all** (route `qa_full`, Haiku 5.5, effort `medium`):
+**The catch-all** (route `qa_full`, Gemini 3.5 Flash-Lite, thinking level `medium`):
 - **Prompt:** system `[RAG_SYSTEM, FULL_RULES, <vault>]`, then the fact sheet and the question. `<vault>` holds every note as `<note path title>content</note>`, sorted by path.
-- **Caching:** the last two system blocks are cache breakpoints, so repeat calls on the same vault read from the prompt cache.
+- **Caching:** no explicit cache. The rules and the vault make up the system instruction, ahead of the fact sheet and the question, so repeat calls on the same vault share a long prefix that Gemini's implicit caching can serve; cached tokens are billed at the cached rate.
 - **Audit:** every note in the snapshot is registered, so any quote can be checked.
 - **Size cap:** over `RAG_FULL_MAX_TOKENS` (300,000), the snapshot fills up in order of relevance: notes the recovery pass found, hubs, the rest of their folders, then the most recently updated notes. It is never empty while the vault isn't. The offer says so up front: *"Search your notes with AI? Your 8,000 notes are more than one read can hold, so this reads as many as fit, starting with the ones closest to your question."*
-- **When nothing could be read**, the reply says why: the daily budget is spent, or the model couldn't be reached. Only a real read that found nothing says *"I read every note and still couldn't find a cited answer to that."*
+- **When nothing could be read**, the reply says why: the daily budget is spent (paid key), or the model couldn't be reached (down, key rejected, or resting after a 429). Only a real read that found nothing says *"I read every note and still couldn't find a cited answer to that."*
 
 ## Live court
 
@@ -215,23 +215,23 @@ The court reads the vault through retrieval only (`court/session.py`), with no r
 
 - **At session start**, after the memos: one `retrieve(mode="court", k=3)` per hypothesis (claim + detail), in parallel. The passages are stored on the hypothesis (`hyp["kb"]`, text capped at 800 characters, still a quotable span) with the build id (`state["kb_build"]`). After a rebuild they are ignored.
 - **On each founder answer:** `retrieve(answer + current hypothesis claim, mode="court")` runs **in parallel with claim extraction** (an LLM call), so it adds no time. Below `RAG_CONF_MIN`, the turn gets no notes.
-- **Vicky's scoring** (the `judge` route) gets the passages. When the answer contradicts the founder's own notes, she says so in `missing`, quoting the note with its cite token (audited with the notes).
+- **Vik's scoring** (the `judge` route) gets the passages. When the answer contradicts the founder's own notes, she says so in `missing`, quoting the note with its cite token (audited with the notes).
 - **The belief updates** get the passages in their prompt. Hypothesis evidence stays figure ids, so the no-concession rule is unchanged.
 - **The speaker** gets the passages for the hypothesis being asked plus the turn's own, and a line may quote one (*Your plan says "…" [kb:team/Hiring plan.md]. How will you fund that?*). The turn's audit gets `notes=`, so a quote from a note it wasn't given fails; the speaker then regenerates, or falls back to its code line.
 - Each turn's retrieval time and confidence are logged (`court retrieval: … ms`).
 
-**Knowledge checks** (Vicky's; [ADR 0002](adr/0002-vicky-chairs-the-court.md)):
+**Knowledge checks** (Vik's; [ADR 0002](adr/0002-vik-chairs-the-court.md)):
 - **At session start**, in parallel with the memos, `retrieve(mode="court", k=3)` runs on each seated investor's top two lens labels. Passages from notes and documents (not tables or hub notes) become recall questions; each answer key is a verbatim span of its passage, stored on the probe with the chunk.
-- **On the answer to a knowledge question**, `retrieve(question + answer, mode="court", k=4)` runs in parallel with claim extraction. Vicky verifies the answer against the key passage and those passages; their notes are the audit's `notes=`, so her explanation can quote them. The retrieval's confidence, build id and passage count are stored on the `knowledge_checks` row. Below `RAG_CONF_MIN` she still has the key passage to check against.
-- **No active build**, or no prose in the vault, means no knowledge checks, and the Preparation tab says so.
+- **On the answer to a knowledge question**, `retrieve(question + answer, mode="court", k=4)` runs in parallel with claim extraction. Vik verifies the answer against the key passage and those passages; their notes are the audit's `notes=`, so her explanation can quote them. The retrieval's confidence, build id and passage count are stored on the `knowledge_checks` row. Below `RAG_CONF_MIN` she still has the key passage to check against.
+- **Where they run:** knowledge checks are a setting of the court engine, and the Simulation's Q&A opens the court with them off. With them on, no active build or no prose in the vault means no knowledge checks, and the session's `knowledge_ready` says so.
 
 ## Pitch room
 
-The Simulation tab checks the founder's pitch against the vault the way an investor who has read the data room would (`backend/vicky/pitch/verify.py`). A deck (PDF or PowerPoint) is read but never imported.
+The Simulation tab checks the founder's pitch against the vault the way an investor who has read the data room would (`backend/vik/pitch/verify.py`). A deck (PDF or PowerPoint) is read but never imported.
 
-- **Statements:** each slide and each spoken segment is split into checkable statements (route `pitch_assertions`, Haiku; each must be a verbatim span of the text; offline, sentences with a number or a name).
+- **Statements:** each slide and each spoken segment is split into checkable statements (route `pitch_assertions`, Gemini 3.5 Flash-Lite; each must be a verbatim span of the text; offline, sentences with a number or a name).
 - **Retrieval:** `retrieve(statement, mode="court", k=4)` for each, in parallel, beside the figure checks by `check_claim`.
-- **Verdict:** one call per slide or segment (route `pitch_kb`, Sonnet, effort low) rates every statement `supported`, `contradicted`, `new` (the notes don't cover it) or `unclear`. A supported or contradicted verdict must quote one passage word for word: code checks the quote is in that passage and drops any sentence of the reason with a number from elsewhere; otherwise it is `unclear`. Offline: `supported` when every number of the statement is in a confident passage, `new` when nothing is found.
+- **Verdict:** one call per slide or segment (route `pitch_kb`, Gemini 3.8 Flash, thinking level low) rates every statement `supported`, `contradicted`, `new` (the notes don't cover it) or `unclear`. A supported or contradicted verdict must quote one passage word for word: code checks the quote is in that passage and drops any sentence of the reason with a number from elsewhere; otherwise it is `unclear`. Offline: `supported` when every number of the statement is in a confident passage, `new` when nothing is found.
 - **Live mode:** a contradicted statement can interrupt (severity 0.9 × the investor's interrupt tendency × lane fit), with a line written by code that quotes the note and its cite token, audited against the note.
 - **After the pitch:** up to four discrepancies (contradicted first, then new) become doubts in the Q&A court, each with a code-written question (*Your pitch says "…", but your own notes say "…". Which is right, and what changed since you wrote it?*) and its passage, so the speaker can quote it and the judge sees it. The founder may well be right: the claim can be newer than the notes; the panel asks them to explain it.
 - **No index yet:** the statement checks return nothing and the pitch runs on figure checks alone.
@@ -254,9 +254,9 @@ The Simulation tab checks the founder's pitch against the vault the way an inves
 | Var | Default | Notes |
 |---|---|---|
 | `VOYAGE_API_KEY` | unset | `sync: false` in `render.yaml`. Unset: BM25 and expansion only; no vectors, rerank or semantic cache. |
-| `EMBED_MODEL` | `voyage-4` | 1024 dims. After a change, the next Fill embeds everything fresh. |
-| `RERANK_MODEL` / `RERANK_MODEL_FAST` | `rerank-2.5` / `rerank-2.5-lite` | Ask Vicky and recovery / court turns. |
-| `RAG_CONF_MIN` | `0.55` | Below it: recovery (Ask Vicky) or no notes (court). |
+| `EMBED_MODEL` | `voyage-4` | 1024 dims. After a change, the next build embeds everything fresh. |
+| `RERANK_MODEL` / `RERANK_MODEL_FAST` | `rerank-2.5` / `rerank-2.5-lite` | Ask Vik and recovery / court turns. |
+| `RAG_CONF_MIN` | `0.55` | Below it: recovery (Ask Vik) or no notes (court). |
 | `RAG_FULL_MAX_TOKENS` | `300000` | Catch-all snapshot cap. |
 | `RAG_REUSE_EMBEDDINGS` | `true` | Copy vectors of byte-identical chunks on a rebuild. |
 
@@ -305,8 +305,8 @@ Also fixed in the test setup: every test run shared Redis db 15, so concurrent r
   - every note is indexed and `kb_search` runs on chunks
   - a rebuild discards the old chunks and caches
   - edited notes are skipped and new notes wait
-  - a new Fill cancels a running build, a failed build keeps the old one, and exactly one build is active
-  - Fill starts a build and status reports it
+  - a new build cancels a running one, a failed build keeps the old one, and exactly one build is active
+  - Fill drafts, confirming the knowledge base starts a build, and status reports it
 - vectors, rerank and reuse with pgvector and a fake Voyage (skipped without pgvector)
 - answers:
   - answers from passages are cached
@@ -332,5 +332,5 @@ Also fixed in the test setup: every test run shared Redis db 15, so concurrent r
 
 - **Calibration:** the confidence weights and `RAG_CONF_MIN` are starting values. With a Voyage key, run the eval's hybrid rows and watch `offer_rate`, then raise or lower the threshold.
 - **Rerank latency in court:** if the fast reranker ever outlasts claim extraction, court mode should drop reranking and use fused order.
-- **Haiku 5.5 vs Sonnet 5.5 for `qa_rag`:** Haiku is the default. Compare them on real questions once there's traffic.
+- **Flash-Lite vs Flash for `qa_rag`:** Gemini 3.5 Flash-Lite (the tiny tier) is the default. Compare it with Gemini 3.8 Flash on real questions once there's traffic.
 - **"Don't ask again" for a session:** the design asks every time. Decide after the offer rate is known.

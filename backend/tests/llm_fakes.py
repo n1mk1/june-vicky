@@ -1,48 +1,64 @@
-"""Recorded Anthropic API responses for the LLM-path tests. No network: a real `AsyncAnthropic`
-client runs over an `httpx2.MockTransport`, so the SDK's request building, beta headers, response
-parsing and `messages.parse()` validation are all exercised against canned JSON.
+"""Recorded Gemini API responses for the LLM-path tests. No network: a real `google.genai.Client` runs over an
+`httpx.MockTransport`, so the SDK's request building, response parsing and error mapping are all exercised
+against canned JSON.
+
+Each request is kept twice: as sent (`raw_body`, Gemini's wire format) and as a neutral view (`body`):
+`model`, `system` (one string), `messages` (`role` user / assistant; `content` a string when every part is text,
+else blocks: `tool_use` {name, input}, `tool_result` {name, content (JSON)}, `document` {mime_type, data}), `tools`
+({name, description, input_schema}), `thinking_level`, `max_tokens` and `response_schema`.
 """
 
+import base64
 import inspect
 import json
 from collections.abc import Callable
 from typing import Any
 
-import httpx2
-from anthropic import AsyncAnthropic, DefaultAsyncHttpxClient
+import httpx
+from google import genai
+from google.genai import types
 
-from vicky.llm.client import LLM
+from vik.llm.client import LLM
 
-USAGE = {
-    "input_tokens": 1000,
-    "output_tokens": 200,
-    "cache_read_input_tokens": 0,
-    "cache_creation_input_tokens": 0,
+USAGE = {"promptTokenCount": 1000, "candidatesTokenCount": 200}
+
+FINISH = {
+    "end_turn": "STOP",
+    "tool_use": "STOP",
+    "max_tokens": "MAX_TOKENS",
+    "refusal": "SAFETY",
 }
 
 
-def text_block(text: str, citations: list[dict] | None = None) -> dict:
-    return {"type": "text", "text": text, "citations": citations}
+def text_block(text: str) -> dict:
+    return {"text": text}
 
 
 def message(
-    content: list[dict],
+    parts: list[dict],
     *,
     stop_reason: str = "end_turn",
-    model: str = "claude-sonnet-5-5",
+    model: str = "gemini-3.8-flash",
     usage: dict | None = None,
-    stop_details: dict | None = None,
+    blocked: str | None = None,
 ) -> dict:
+    """A `generateContent` response. `stop_reason` takes the old names too (end_turn, tool_use, max_tokens,
+    refusal) or a Gemini finish reason; `blocked` makes it a blocked prompt (no candidates)."""
+    if blocked:
+        return {
+            "promptFeedback": {"blockReason": blocked},
+            "usageMetadata": usage or USAGE,
+            "modelVersion": model,
+        }
     return {
-        "id": "msg_recorded",
-        "type": "message",
-        "role": "assistant",
-        "model": model,
-        "content": content,
-        "stop_reason": stop_reason,
-        "stop_sequence": None,
-        "stop_details": stop_details,
-        "usage": usage or USAGE,
+        "candidates": [
+            {
+                "content": {"role": "model", "parts": parts},
+                "finishReason": FINISH.get(stop_reason, stop_reason),
+            }
+        ],
+        "usageMetadata": usage or USAGE,
+        "modelVersion": model,
     }
 
 
@@ -54,68 +70,107 @@ def text_reply(text: str, **kw: Any) -> dict:
     return message([text_block(text)], **kw)
 
 
-def tool_use_reply(name: str, tool_input: dict, tool_id: str = "toolu_1", **kw: Any) -> dict:
-    return message(
-        [{"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}], stop_reason="tool_use", **kw
-    )
+def tool_use_reply(name: str, tool_input: dict, **kw: Any) -> dict:
+    return message([{"functionCall": {"name": name, "args": tool_input}, "thoughtSignature": "c2ln"}], **kw)
 
 
-def page_cite(text: str, page: int, title: str = "doc.pdf") -> dict:
+def api_error(status: int, message_: str = "error") -> tuple[int, dict]:
+    names = {400: "INVALID_ARGUMENT", 403: "PERMISSION_DENIED", 429: "RESOURCE_EXHAUSTED", 503: "UNAVAILABLE"}
+    return status, {"error": {"code": status, "message": message_, "status": names.get(status, "INTERNAL")}}
+
+
+def _b64(data: str) -> bytes:
+    """Inline data as the SDK sends it (URL-safe base64, padding optional)."""
+    return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+
+
+def _blocks(parts: list[dict]) -> str | list[dict]:
+    if all("text" in p for p in parts):
+        return "".join(p["text"] for p in parts)
+    out: list[dict] = []
+    for p in parts:
+        if "text" in p:
+            out.append({"type": "text", "text": p["text"]})
+        elif "functionCall" in p:
+            fc = p["functionCall"]
+            out.append({"type": "tool_use", "name": fc.get("name"), "input": fc.get("args") or {}})
+        elif "functionResponse" in p:
+            fr = p["functionResponse"]
+            out.append(
+                {"type": "tool_result", "name": fr.get("name"), "content": json.dumps(fr.get("response"))}
+            )
+        elif "inlineData" in p:
+            d = p["inlineData"]
+            out.append(
+                {
+                    "type": "document",
+                    "mime_type": d.get("mimeType") or d.get("mime_type"),
+                    "data": _b64(d.get("data", "")),
+                }
+            )
+        elif "fileData" in p:
+            out.append({"type": "file", "uri": p["fileData"].get("fileUri")})
+    return out
+
+
+def view(path: str, body: Any) -> dict | None:
+    """The neutral view of a `generateContent` request (None for anything else)."""
+    if not isinstance(body, dict) or ":generateContent" not in path:
+        return None
+    gen = body.get("generationConfig") or {}
+    thinking = gen.get("thinkingConfig") or {}
+    level = thinking.get("thinking_level") or thinking.get("thinkingLevel")
     return {
-        "type": "page_location",
-        "cited_text": text,
-        "document_index": 0,
-        "document_title": title,
-        "start_page_number": page,
-        "end_page_number": page + 1,
+        "model": path.rsplit("/models/", 1)[-1].split(":", 1)[0],
+        "system": "".join(p.get("text", "") for p in (body.get("systemInstruction") or {}).get("parts", [])),
+        "messages": [
+            {
+                "role": "assistant" if c.get("role") == "model" else "user",
+                "content": _blocks(c.get("parts", [])),
+            }
+            for c in body.get("contents", [])
+        ],
+        "tools": [
+            {
+                "name": d.get("name"),
+                "description": d.get("description"),
+                "input_schema": d.get("parameters_json_schema") or d.get("parametersJsonSchema"),
+            }
+            for t in body.get("tools", [])
+            for d in t.get("functionDeclarations", [])
+        ],
+        "thinking_level": str(level).lower() if level else None,
+        "max_tokens": gen.get("maxOutputTokens"),
+        "response_schema": gen.get("responseJsonSchema"),
     }
-
-
-def char_cite(text: str, start: int, title: str = "doc.docx") -> dict:
-    return {
-        "type": "char_location",
-        "cited_text": text,
-        "document_index": 0,
-        "document_title": title,
-        "start_char_index": start,
-        "end_char_index": start + len(text),
-    }
-
-
-FILE_META = {
-    "id": "file_recorded",
-    "type": "file",
-    "filename": "doc.pdf",
-    "mime_type": "application/pdf",
-    "size_bytes": 10,
-    "created_at": "2026-10-01T00:00:00Z",
-    "downloadable": False,
-}
 
 
 class Recorder:
     """Answers each request with `responder(call)`; keeps every call for assertions.
 
-    `responder` gets a dict {method, path, body, headers, task} and returns a response body (dict),
-    or a `(status, body)` tuple, or an awaitable of either (to simulate a slow API). `task` is a short tag for which agent prompt the call carries.
+    `responder` gets a dict {method, path, body, raw_body, headers, task} and returns a response body (dict),
+    or a `(status, body)` tuple, or an awaitable of either (to simulate a slow API). `task` is a short tag for
+    which agent prompt the call carries.
     """
 
     def __init__(self, responder: Callable[[dict], Any]):
         self.responder = responder
         self.calls: list[dict] = []
 
-    async def handler(self, request: httpx2.Request) -> httpx2.Response:
+    async def handler(self, request: httpx.Request) -> httpx.Response:
         raw = request.content
         try:
             body = json.loads(raw) if raw else None
         except (ValueError, UnicodeDecodeError):
-            body = None  # multipart (Files API upload)
+            body = None
+        neutral = view(request.url.path, body)
         call = {
             "method": request.method,
             "path": request.url.path,
-            "body": body,
+            "body": neutral,
+            "raw_body": body,
             "headers": dict(request.headers),
-            "task": task_of(body),
+            "task": task_of(neutral),
             "raw": raw,
         }
         self.calls.append(call)
@@ -123,7 +178,7 @@ class Recorder:
         if inspect.isawaitable(out):
             out = await out
         status, payload = out if isinstance(out, tuple) else (200, out)
-        return httpx2.Response(status, json=payload)
+        return httpx.Response(status, json=payload)
 
     def tasks(self) -> list[str]:
         return [c["task"] for c in self.calls]
@@ -148,7 +203,6 @@ TASK_MARKERS = [
     ("judge", "score the founder's answer"),
     ("claims", "quantitative claim"),
     ("mapper", "map the columns"),
-    ("doc_parse", "cited fact list"),
     ("doc_facts", "extract facts"),
     ("persona", "investor persona card"),
     ("review", "review the investor's draft line"),
@@ -161,20 +215,21 @@ TASK_MARKERS = [
 def task_of(body: Any) -> str:
     if not isinstance(body, dict):
         return "file"
-    system = body.get("system") or ""
-    text = " ".join(b.get("text", "") for b in system) if isinstance(system, list) else str(system)
+    text = str(body.get("system") or "").lower()
     for tag, marker in TASK_MARKERS:
-        if marker in text.lower():
+        if marker in text:
             return tag
     return "other"
 
 
 def make_llm(recorder: Recorder) -> LLM:
-    client = AsyncAnthropic(
+    client = genai.Client(
         api_key="test-key",
-        max_retries=0,
-        base_url="https://api.anthropic.test",
-        http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(recorder.handler)),
+        http_options=types.HttpOptions(
+            base_url="https://gemini.test",
+            httpx_async_client=httpx.AsyncClient(transport=httpx.MockTransport(recorder.handler)),
+            retry_options=types.HttpRetryOptions(attempts=1),
+        ),
     )
     return LLM(client)
 

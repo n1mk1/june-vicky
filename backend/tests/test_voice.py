@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from vicky.areopagus import registry
-from vicky.config import get_settings
-from vicky.pitch import voice
+from vik.areopagus import registry
+from vik.config import get_settings
+from vik.pitch import voice
 
 KEY = "xi-test-key-never-in-a-response"
 AUDIO = b"ID3\x04fake-mp3-frames" * 64
@@ -21,7 +21,7 @@ AUDIO = b"ID3\x04fake-mp3-frames" * 64
 def eleven(monkeypatch):
     """Records each ElevenLabs request; `eleven.reply` picks the response."""
     monkeypatch.setenv("ELEVENLABS_API_KEY", KEY)
-    monkeypatch.delenv("VICKY_VOICE_ID", raising=False)
+    monkeypatch.delenv("VIK_VOICE_ID", raising=False)
     get_settings.cache_clear()
     state = SimpleNamespace(seen=[], reply=None)
 
@@ -49,7 +49,7 @@ def test_every_builtin_investor_has_its_own_valid_voice():
     ids = {pid: p.voice_id for pid, p in registry.builtins().items()}
     assert all(v and voice.VOICE_ID.fullmatch(v) for v in ids.values()), ids
     assert len(set(ids.values())) == len(ids)  # nobody shares a voice
-    assert voice.DEFAULT_VICKY_VOICE not in ids.values()  # Vicky's default is hers alone
+    assert voice.DEFAULT_VIK_VOICE not in ids.values()  # Vik's default is hers alone
 
 
 def test_templates_have_their_own_archetype_voices():
@@ -57,7 +57,7 @@ def test_templates_have_their_own_archetype_voices():
     tvoices = {t.id: t.voice_id for t in registry.templates()}
     assert all(v and v in voice.PREMADE for v in tvoices.values()), tvoices
     assert len(set(tvoices.values())) == len(tvoices)
-    assert not builtin & set(tvoices.values()) and voice.DEFAULT_VICKY_VOICE not in tvoices.values()
+    assert not builtin & set(tvoices.values()) and voice.DEFAULT_VIK_VOICE not in tvoices.values()
     for t in registry.templates():
         assert voice.ARCHETYPE_VOICES[t.archetype][0] == t.voice_id, t.id
 
@@ -79,7 +79,7 @@ def test_cast_gives_every_seat_its_own_voice():
     b = registry.builtins()
     panel = [b["aristotle"], b["socrates"], b["thales"], b["plato"], b["xenophon"]]
     out = voice.cast(panel)
-    assert out["vicky"] == voice.DEFAULT_VICKY_VOICE
+    assert out["vik"] == voice.DEFAULT_VIK_VOICE
     assert {pid: out[pid] for pid in b} == {pid: p.voice_id for pid, p in b.items()}
     assert len(set(out.values())) == len(out)
 
@@ -99,29 +99,28 @@ def test_cast_never_lets_two_investors_share_a_voice():
     assert voice.cast([*twins, copycat, b["socrates"], _custom("blank")]) == out
 
 
-def test_cast_keeps_vickys_configured_voice_to_herself(monkeypatch):
-    monkeypatch.setenv("VICKY_VOICE_ID", registry.builtins()["aristotle"].voice_id)
+def test_cast_keeps_viks_configured_voice_to_herself(monkeypatch):
+    monkeypatch.setenv("VIK_VOICE_ID", registry.builtins()["aristotle"].voice_id)
     get_settings.cache_clear()
     try:
         out = voice.cast([registry.builtins()["aristotle"]])
-        assert out["vicky"] == registry.builtins()["aristotle"].voice_id
+        assert out["vik"] == registry.builtins()["aristotle"].voice_id
         assert (
-            out["aristotle"] != out["vicky"]
-            and out["aristotle"] in voice.ARCHETYPE_VOICES["lead_seed_partner"]
+            out["aristotle"] != out["vik"] and out["aristotle"] in voice.ARCHETYPE_VOICES["lead_seed_partner"]
         )
     finally:
         monkeypatch.undo()
         get_settings.cache_clear()
 
 
-async def test_voice_for_vicky_uses_the_configured_voice_then_a_premade_one(monkeypatch):
-    monkeypatch.delenv("VICKY_VOICE_ID", raising=False)
+async def test_voice_for_vik_uses_the_configured_voice_then_a_premade_one(monkeypatch):
+    monkeypatch.delenv("VIK_VOICE_ID", raising=False)
     get_settings.cache_clear()
-    assert await voice.voice_for("vicky") == voice.DEFAULT_VICKY_VOICE
-    assert await voice.voice_for(None) == voice.DEFAULT_VICKY_VOICE
-    monkeypatch.setenv("VICKY_VOICE_ID", "abcdefghij1234567890")
+    assert await voice.voice_for("vik") == voice.DEFAULT_VIK_VOICE
+    assert await voice.voice_for(None) == voice.DEFAULT_VIK_VOICE
+    monkeypatch.setenv("VIK_VOICE_ID", "abcdefghij1234567890")
     get_settings.cache_clear()
-    assert await voice.voice_for("vicky") == "abcdefghij1234567890"
+    assert await voice.voice_for("vik") == "abcdefghij1234567890"
     get_settings.cache_clear()
 
 
@@ -198,7 +197,7 @@ async def test_tts_streams_mp3_in_the_speakers_voice(api_client, eleven):
 
 
 @db
-async def test_tts_voice_id_wins_and_no_speaker_means_vicky(api_client, eleven):
+async def test_tts_voice_id_wins_and_no_speaker_means_vik(api_client, eleven):
     await _login(api_client)
     assert (
         await api_client.get("/voice/tts", params={"text": "Hi", "voice_id": "abcdefghij1234567890"})
@@ -206,7 +205,7 @@ async def test_tts_voice_id_wins_and_no_speaker_means_vicky(api_client, eleven):
     assert (await api_client.get("/voice/tts", params={"text": "Hi"})).status_code == 200
     assert [r.url.path for r in eleven.seen] == [
         "/v1/text-to-speech/abcdefghij1234567890/stream",
-        f"/v1/text-to-speech/{voice.DEFAULT_VICKY_VOICE}/stream",
+        f"/v1/text-to-speech/{voice.DEFAULT_VIK_VOICE}/stream",
     ]
 
 

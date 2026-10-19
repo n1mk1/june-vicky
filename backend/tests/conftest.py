@@ -10,7 +10,7 @@ import asyncpg
 import httpx
 import pytest
 
-from vicky.config import get_settings
+from vik.config import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +25,7 @@ def _no_real_voyage(monkeypatch):
 def _test_dsn() -> tuple[str, str, str]:
     base = os.environ.get("DATABASE_URL", get_settings().database_url)
     u = urlparse(base)
-    name = (u.path or "/vicky").lstrip("/") or "vicky"
+    name = (u.path or "/vik").lstrip("/") or "vik"
     test_name = f"{name}_test"
     admin = urlunparse(u._replace(path="/postgres"))
     return admin, urlunparse(u._replace(path=f"/{test_name}")), test_name
@@ -36,16 +36,19 @@ def live_llm(monkeypatch):
     """Switch the app to the LLM path with a recorded transport (no network, no real key).
 
     `live_llm.install(responder)` returns the `Recorder`; spend goes to `live_llm.spend` instead of Redis.
+    The key is a paid-tier one, so the dollar budget applies; a test of the free tier sets GEMINI_TIER=free.
     """
     from types import SimpleNamespace
 
     from tests.llm_fakes import Recorder, make_llm
-    from vicky import kv
-    from vicky.llm import client
+    from vik import kv
+    from vik.llm import client
 
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("LLM_MODE", "auto")
+    monkeypatch.setenv("GEMINI_TIER", "paid")
     get_settings.cache_clear()
+    client.PACER.reset()
     state = SimpleNamespace(spend=0.0, recorder=None)
 
     async def add_spend(usd: float, calls: int = 1) -> float:
@@ -66,6 +69,7 @@ def live_llm(monkeypatch):
     state.install = install
     yield state
     client.set_llm(None)
+    client.PACER.reset()
     monkeypatch.undo()
     get_settings.cache_clear()
 
@@ -85,14 +89,14 @@ async def api_client():
     os.environ["LLM_MODE"] = "offline"
     redis = urlparse(os.environ.get("REDIS_URL", get_settings().redis_url))
     # Own Redis DB, so rate limits start clean; one per test database, so test runs from different checkouts
-    # or sessions (DATABASE_URL=…/vicky_<name>) don't share rate limits, caches or offers.
-    rdb = 15 if name == "vicky_test" else 2 + zlib.crc32(name.encode()) % 12
+    # or sessions (DATABASE_URL=…/vik_<name>) don't share rate limits, caches or offers.
+    rdb = 15 if name == "vik_test" else 2 + zlib.crc32(name.encode()) % 12
     os.environ["REDIS_URL"] = urlunparse(redis._replace(path=f"/{rdb}"))
     # The whole suite makes more requests a minute than the per-IP limit allows a real client.
     os.environ.setdefault("RATE_LIMIT_PER_MIN", "100000")
     get_settings.cache_clear()
-    from vicky import kv
-    from vicky.api import app
+    from vik import kv
+    from vik.api import app
 
     async with app.router.lifespan_context(app):
         try:

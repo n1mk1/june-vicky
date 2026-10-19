@@ -19,7 +19,7 @@ import * as echarts from "echarts/core";
 import { LegacyGridContainLabel } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
-import { registerVickyThemes, themeName } from "@/lib/echarts-theme";
+import { registerVikThemes, themeName } from "@/lib/echarts-theme";
 import { useTheme } from "@/lib/use-theme";
 import { cn } from "@/lib/utils";
 
@@ -80,7 +80,7 @@ export function EChart({ option, onPointClick, onZoom, className, ariaLabel }: E
   useEffect(() => {
     const node = el.current;
     if (!node) return;
-    registerVickyThemes(echarts);
+    registerVikThemes(echarts);
     const inst = echarts.init(node, themeName(theme), { renderer: "canvas" });
     chart.current = inst;
     let handled = false;

@@ -1,4 +1,4 @@
-"""Red-team corpus for the truth audit: every Phase 0 repro from docs/qa/QA-REPORT-2026-10-18.md.
+"""Red-team corpus for the truth audit: every Phase 0 repro from the 2026-10-18 QA report (in git history).
 
 Each `BLOCKED` line slipped past `audit_text` before the fix (LLM-1, LLM-2, MET-1, MET-6, MET-21, MET-22);
 each `ALLOWED` line is a correctly cited figure or a founder quote that must keep passing. The claim
@@ -7,10 +7,10 @@ tolerance (MET-5), cross-currency claims (MET-21) and the autofill round size (K
 
 import pytest
 
-from vicky.audit import audit_text
-from vicky.kb.autofill import Evidence, verify
-from vicky.model.figures import Figure, Source
-from vicky.model.truth import _tolerance, check_claim
+from vik.audit import audit_text
+from vik.kb.autofill import Evidence, verify
+from vik.model.figures import Figure, Source
+from vik.model.truth import _tolerance, check_claim
 
 
 def fig(id_: str, value: float, unit: str) -> Figure:

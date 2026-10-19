@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, FileUp, Loader2, X } from "lucide-react";
 import { useRef, useState } from "react";
-import { ClaimChip, worstStatus } from "@/components/prep/ClaimChip";
+import { ClaimChip, worstStatus } from "@/components/court/ClaimChip";
 import { CornerMarks } from "@/components/ui/Panel";
 import { VcGlyph } from "@/components/ui/VcGlyph";
 import type { Deck, DeckSlide, KbCheck, LedgerRow } from "@/lib/types";
@@ -52,7 +52,7 @@ interface SlideStageProps {
   deck: Deck | null;
   index: number;
   onIndex: (i: number) => void;
-  /** The seated investors, Vicky first. */
+  /** The seated investors, Vik first. */
   seats: { id: string; name: string; glyph: string; role: string }[];
   speaking: string | null;
   status: { label: string; tone: "live" | "paused" | "idle" };

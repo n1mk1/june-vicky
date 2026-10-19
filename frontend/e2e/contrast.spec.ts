@@ -45,15 +45,15 @@ async function contrast(target: Locator): Promise<number> {
 }
 
 function asTheme(page: Page, theme: "dark" | "light") {
-  return page.addInitScript((t) => localStorage.setItem("vicky-theme", t), theme);
+  return page.addInitScript((t) => localStorage.setItem("vik-theme", t), theme);
 }
 
 for (const theme of ["light", "dark"] as const) {
   test.describe(`${theme} theme`, () => {
     test("unselected roster cards keep AA text", async ({ page }) => {
       await asTheme(page, theme);
-      // The default panel seats every built-in investor; seat one so the rest show unselected.
-      await page.goto("/preparation?panel=aristotle");
+      // Seat one investor so the rest of the Areopagus shows unselected.
+      await page.goto("/simulation?panel=aristotle");
       const card = page.locator('aside button[aria-pressed="false"]').first();
       await expect(card).toBeVisible();
       for (const part of [card.locator(".font-display").first(), card.locator("span.truncate").first()]) {

@@ -1,5 +1,5 @@
 """The pitch against the founder's own knowledge base: PowerPoint decks, the statement checker
-(vicky.pitch.verify), notes interrupts and the discrepancy questions after the pitch."""
+(vik.pitch.verify), notes interrupts and the discrepancy questions after the pitch."""
 
 import io
 
@@ -7,12 +7,12 @@ import pytest
 from pptx import Presentation
 from pptx.util import Inches
 
-from vicky.areopagus import registry
-from vicky.court import minds as court_minds
-from vicky.court import session as court
-from vicky.model.context import sample_context
-from vicky.pitch import session as pitch
-from vicky.pitch import verify
+from vik.areopagus import registry
+from vik.court import minds as court_minds
+from vik.court import session as court
+from vik.model.context import sample_context
+from vik.pitch import session as pitch
+from vik.pitch import verify
 
 
 def _pptx() -> bytes:

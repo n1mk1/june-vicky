@@ -1,7 +1,7 @@
 /**
  * Where the web server reaches the API. Read at request time, never baked into the build,
  * so one image works locally (http://localhost:8000), in compose (http://api:8000) and on
- * Render, whose `hostport` reference has no scheme (vicky-api:10000).
+ * Render, whose `hostport` reference has no scheme (vik-api:10000).
  */
 export function apiOrigin(): string {
   const raw = (process.env.API_INTERNAL_URL || "http://localhost:8000").trim().replace(/\/+$/, "");

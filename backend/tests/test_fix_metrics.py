@@ -1,16 +1,16 @@
-"""Regression tests for the metrics-engine findings of the 2026-10-18 QA sweep (docs/qa/QA-REPORT-2026-10-18.md,
+"""Regression tests for the metrics-engine findings of the 2026-10-18 QA sweep (its report is in git history,
 section 3.1). Each test reproduces the report's repro; the test name carries the finding id."""
 
 import pytest
 
-from vicky.model.context import build_context, sample_context
-from vicky.model.figures import Fact, Figure, MissingFigure, Source
-from vicky.model.financials import DatasetInput
-from vicky.model.fx import Rates
-from vicky.model.loader import parse_number, parse_upload, scale_of
-from vicky.model.mapping import _rule_match, propose_heuristic
-from vicky.model.metrics import facts_by_metric
-from vicky.model.truth import check_claim, quick_claims
+from vik.model.context import build_context, sample_context
+from vik.model.figures import Fact, Figure, MissingFigure, Source
+from vik.model.financials import DatasetInput
+from vik.model.fx import Rates
+from vik.model.loader import parse_number, parse_upload, scale_of
+from vik.model.mapping import _rule_match, propose_heuristic
+from vik.model.metrics import facts_by_metric
+from vik.model.truth import check_claim, quick_claims
 
 
 def inputs_of(*files: tuple[str, str], currency: str = "cad") -> list[DatasetInput]:

@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-// The Areopagus builder (FR-13) and the Preparation roster's "+" round trip. Expectations are generic
-// so the suite passes whether Claude drafts the persona or the keyword heuristic does.
+// The Areopagus builder (FR-13) and the Simulation roster's "+" round trip. Expectations are generic
+// so the suite passes whether Gemini drafts the persona or the keyword heuristic does.
 
 const GENERATE_MS = 45_000;
 let before = new Set<string>();
@@ -76,21 +76,21 @@ test.describe("Areopagus builder", () => {
     await expect(card(page, "Builder Test")).toContainText("Team before traction");
   });
 
-  test("the Preparation “+” builds an investor and seats them", async ({ page }) => {
-    await page.goto("/preparation");
+  test("the Simulation “+” builds an investor and seats them", async ({ page }) => {
+    await page.goto("/simulation");
     const count = page.getByText(/^Panel · \d\/5$/);
-    // All five built-ins sit by default: free a seat first.
+    // A full panel has no seat for the new investor: free one first.
     if ((await count.textContent())?.includes("5/5")) {
-      await page.getByText("Socrates", { exact: true }).click();
+      await page.getByRole("list", { name: "Investors on the panel" }).getByText("Socrates", { exact: true }).click();
       await expect(count).toHaveText("Panel · 4/5");
     }
     const seated = Number((await count.textContent())?.match(/(\d)\/5/)?.[1] ?? 0);
     await page.getByTestId("roster-add").click();
-    await expect(page).toHaveURL(/\/areopagus\?build=1&return=preparation/);
+    await expect(page).toHaveURL(/\/areopagus\?build=1&return=simulation/);
     const dialog = await draft(page, "A blunt growth investor who grills founders on the forecast and the burn.");
     await dialog.getByLabel("Name").fill("Roster Test");
     await dialog.getByRole("button", { name: "Save investor" }).click();
-    await expect(page).toHaveURL(/\/preparation$/);
+    await expect(page).toHaveURL(/\/simulation$/);
     await expect(page.getByTestId("added-note")).toContainText("Built Roster Test and seated them");
     await expect(count).toHaveText(`Panel · ${seated + 1}/5`);
   });

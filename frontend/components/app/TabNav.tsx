@@ -6,14 +6,13 @@ import { RollLabel } from "@/components/ui/RollLabel";
 import { cn } from "@/lib/utils";
 
 /**
- * `flagship` tabs (the dashboard, the prep court and the simulator) are the product. In black and
+ * Five tabs. The `flagship` ones (the dashboard and the simulator) are the product. In black and
  * white they stand out by contrast: a full-ink outline, a bright label and an orange square marker,
  * against the dim outlines of the rest. The open tab is filled, like the landing's button.
  */
 export const TABS = [
   { href: "/knowledge", label: "Knowledge base", flagship: false },
   { href: "/dashboard", label: "Dashboard", flagship: true },
-  { href: "/preparation", label: "Preparation", flagship: true },
   { href: "/simulation", label: "Simulation", flagship: true },
   { href: "/areopagus", label: "Areopagus", flagship: false },
   { href: "/reports", label: "Reports", flagship: false },

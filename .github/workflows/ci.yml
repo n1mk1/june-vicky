@@ -23,13 +23,13 @@ jobs:
         # pgvector, as in docker-compose.yml and on Render: the vector search path runs in CI too.
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_USER: vicky
-          POSTGRES_PASSWORD: vicky
-          POSTGRES_DB: vicky
+          POSTGRES_USER: vik
+          POSTGRES_PASSWORD: vik
+          POSTGRES_DB: vik
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U vicky -d vicky"
+          --health-cmd "pg_isready -U vik -d vik"
           --health-interval 3s
           --health-timeout 3s
           --health-retries 20
@@ -43,7 +43,7 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgresql://vicky:vicky@localhost:5432/vicky
+      DATABASE_URL: postgresql://vik:vik@localhost:5432/vik
       REDIS_URL: redis://localhost:6379
       JOBS_MODE: inline
       LLM_MODE: offline
@@ -105,13 +105,13 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_USER: vicky
-          POSTGRES_PASSWORD: vicky
-          POSTGRES_DB: vicky
+          POSTGRES_USER: vik
+          POSTGRES_PASSWORD: vik
+          POSTGRES_DB: vik
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U vicky -d vicky"
+          --health-cmd "pg_isready -U vik -d vik"
           --health-interval 3s
           --health-timeout 3s
           --health-retries 20
@@ -126,7 +126,7 @@ jobs:
           --health-retries 20
     env:
       # api
-      DATABASE_URL: postgresql://vicky:vicky@localhost:5432/vicky
+      DATABASE_URL: postgresql://vik:vik@localhost:5432/vik
       REDIS_URL: redis://localhost:6379
       JOBS_MODE: inline
       LLM_MODE: offline
@@ -173,7 +173,7 @@ jobs:
           cp -r .next/static .next/standalone/.next/static
       - name: Start api
         working-directory: backend
-        run: nohup uv run uvicorn vicky.api:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
+        run: nohup uv run uvicorn vik.api:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
       - name: Start web
         working-directory: frontend
         run: PORT=3000 HOSTNAME=127.0.0.1 nohup node .next/standalone/server.js > "$RUNNER_TEMP/web.log" 2>&1 &
@@ -223,9 +223,9 @@ jobs:
           context: ${{ matrix.context }}
           push: false
           load: true
-          tags: vicky-${{ matrix.name }}:ci
+          tags: vik-${{ matrix.name }}:ci
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
       - name: Smoke test api image
         if: matrix.name == 'api'
-        run: docker run --rm vicky-api:ci python -c "import vicky, fastapi, asyncpg, pandas, arq"
+        run: docker run --rm vik-api:ci python -c "import vik, fastapi, asyncpg, pandas, arq"

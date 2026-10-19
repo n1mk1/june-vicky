@@ -1,4 +1,4 @@
-"""Pitch room (offline): the deck reader, the live-interrupt policy and Vicky's wrap-up."""
+"""Pitch room (offline): the deck reader, the live-interrupt policy and Vik's wrap-up."""
 
 import io
 import re
@@ -6,10 +6,10 @@ import re
 import pytest
 from pypdf import PdfWriter
 
-from vicky.areopagus import registry
-from vicky.model.context import sample_context
-from vicky.model.truth import check_claim
-from vicky.pitch import session as pitch
+from vik.areopagus import registry
+from vik.model.context import sample_context
+from vik.model.truth import check_claim
+from vik.pitch import session as pitch
 
 
 def _pdf(pages: int) -> bytes:

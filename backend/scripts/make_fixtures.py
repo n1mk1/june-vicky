@@ -1,4 +1,4 @@
-"""Generate the synthetic sample companies used as Vicky test fixtures.
+"""Generate the synthetic sample companies used as Vik test fixtures.
 
 Writes two fully fictional companies under ``backend/data/samples/``:
 
@@ -689,7 +689,7 @@ def build_harbor():
 
 ## Purpose
 
-Test fixture proving Vicky is startup-agnostic. Compared with the Tidewell sample it differs in
+Test fixture proving Vik is startup-agnostic. Compared with the Tidewell sample it differs in
 almost every dimension the ingestion and metrics engine care about:
 
 | | Tidewell | Harbor Labs |
@@ -969,7 +969,7 @@ any resemblance to a real business is coincidental.
 ## Purpose
 
 The smallest possible non-SaaS fixture: a UK project-based design studio (GBP, monthly, fiscal
-year starting in April). It has no recurring revenue, customers or cohort data, so Vicky must
+year starting in April). It has no recurring revenue, customers or cohort data, so Vik must
 compute **only** the generic metric set (revenue growth, gross margin, burn or profit, runway if
 burning, opex mix) and return `MissingFigure` for every SaaS metric (ARR, MRR, NRR, GRR, CAC
 payback, burn multiple, magic number). In the latest month the studio is profitable, which

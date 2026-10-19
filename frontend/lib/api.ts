@@ -1,5 +1,5 @@
 /**
- * Browser client for the Vicky API. Every call goes through the same-origin proxy at
+ * Browser client for the Vik API. Every call goes through the same-origin proxy at
  * /api/v1/*, so the access cookie is sent automatically.
  */
 

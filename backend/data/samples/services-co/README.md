@@ -6,7 +6,7 @@ any resemblance to a real business is coincidental.
 ## Purpose
 
 The smallest possible non-SaaS fixture: a UK project-based design studio (GBP, monthly, fiscal
-year starting in April). It has no recurring revenue, customers or cohort data, so Vicky must
+year starting in April). It has no recurring revenue, customers or cohort data, so Vik must
 compute **only** the generic metric set (revenue growth, gross margin, burn or profit, runway if
 burning, opex mix) and return `MissingFigure` for every SaaS metric (ARR, MRR, NRR, GRR, CAC
 payback, burn multiple, magic number). In the latest month the studio is profitable, which

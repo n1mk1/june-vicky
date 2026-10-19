@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 459 248" width="459" height="248">
+  <title>VIK</title>
+  <g fill="#000" transform="translate(46 53)">
+    <!-- V -->
+    <polygon transform="translate(0 0)" points="0,0 30,0 62,94.7 94,0 124,0 76,142 48,142"/>
+    <!-- I: knife-cut top -->
+    <polygon transform="translate(158 0)" points="27,0 27,142 0,142 0,33"/>
+    <!-- K: leg sliced off by a "/" gap -->
+    <g transform="translate(229 0)">
+      <polygon points="0,0 27,0 27,142 0,142"/>
+      <polygon points="86,0 124,0 27,98.7 27,60"/>
+      <polygon points="58.3,81.1 77.5,61.6 137.8,142 104,142"/>
+    </g>
+  </g>
+</svg>

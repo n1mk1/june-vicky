@@ -7,14 +7,14 @@ from datetime import date
 import httpx
 import pytest
 
-from vicky.model.context import build_context
-from vicky.model.currencies import CURRENCIES, currency_in, norm_currency
-from vicky.model.figures import Fact, Source, fmt_money
-from vicky.model.financials import DatasetInput, build_model
-from vicky.model.fx import FOREIGN, Rates, period_range, series_id
-from vicky.model.loader import parse_number, parse_upload
-from vicky.model.mapping import propose_heuristic
-from vicky.services import fx as fx_service
+from vik.model.context import build_context
+from vik.model.currencies import CURRENCIES, currency_in, norm_currency
+from vik.model.figures import Fact, Source, fmt_money
+from vik.model.financials import DatasetInput, build_model
+from vik.model.fx import FOREIGN, Rates, period_range, series_id
+from vik.model.loader import parse_number, parse_upload
+from vik.model.mapping import propose_heuristic
+from vik.services import fx as fx_service
 
 USD = {"2025-01-02": 1.40, "2025-01-15": 1.44, "2025-01-31": 1.45, "2025-02-03": 1.42, "2025-02-28": 1.38}
 GBP = {"2025-01-02": 1.80, "2025-01-15": 1.80, "2025-01-31": 1.80, "2025-02-03": 1.75, "2025-02-28": 1.75}
@@ -290,7 +290,7 @@ async def test_dashboard_shows_any_currency_at_cited_rates(api_client, monkeypat
         return Rates(daily={c: dict(flat) for c in codes})
 
     monkeypatch.setattr(fx_service, "load", fake_load)
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     r = await api_client.get("/dashboards/active")
     if r.status_code == 404:
         await load_and_confirm(api_client, "tidewell")

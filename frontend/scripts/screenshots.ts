@@ -12,7 +12,6 @@ const OUT = path.join(process.cwd(), "docs", "screenshots", "pages");
 const PAGES = [
   { slug: "landing", path: "/" },
   { slug: "dashboard", path: "/dashboard" },
-  { slug: "preparation", path: "/preparation" },
   { slug: "simulation", path: "/simulation" },
 ];
 const THEMES = ["dark", "light"] as const;
@@ -46,8 +45,8 @@ async function main() {
       });
       // Pick the theme and skip the intro before any page script runs.
       await context.addInitScript((t) => {
-        localStorage.setItem("vicky-theme", t);
-        sessionStorage.setItem("vicky-preloaded", "1");
+        localStorage.setItem("vik-theme", t);
+        sessionStorage.setItem("vik-preloaded", "1");
       }, theme);
       const page = await context.newPage();
       for (const p of PAGES) {

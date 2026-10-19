@@ -39,7 +39,7 @@ async function proxy(req: NextRequest, ctx: RouteContext<"/api/v1/[...path]">): 
     } as RequestInit);
   } catch {
     return Response.json(
-      { detail: "The Vicky API is not reachable. It may be waking up; try again in a minute." },
+      { detail: "The Vik API is not reachable. It may be waking up; try again in a minute." },
       { status: 502 },
     );
   }

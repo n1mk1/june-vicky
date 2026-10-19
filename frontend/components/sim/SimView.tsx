@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2, Maximize2, Mic, Minimize2, RotateCcw, Square } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MAX_PANEL, VcRoster } from "@/components/app/VcRoster";
 import { CornerMarks, Panel } from "@/components/ui/Panel";
@@ -23,7 +24,7 @@ type Gate =
   | { kind: "no-truth"; detail: string }
   | { kind: "error"; detail: string };
 /**
- * setup → opening (Vicky) → presenting ⇄ [live: asking → answering → handing] → End →
+ * setup → opening (Vik) → presenting ⇄ [live: asking → answering → handing] → End →
  *   live: closing → done;  after: conferring → qa-speaking ⇄ qa-listening → qa-thinking … → done.
  */
 type Phase =
@@ -48,9 +49,10 @@ const QA: Phase[] = ["conferring", "qa-speaking", "qa-listening", "qa-thinking"]
 const SEGMENT_PAUSE_MS = 900;
 const ANSWER_PAUSE_MS = 1800;
 const CONFER_LINE = "Thank you. Give the panel a moment to compare notes.";
+const DEFAULT_PANEL = ["aristotle", "thales", "socrates"];
 
 /** Notice laid over the stage: the TruthPack gate (409) or a pitch room that didn't open. */
-function StageNotice({ gate }: { gate: Gate }) {
+function StageNotice({ gate, onRetry }: { gate: Gate; onRetry: () => void }) {
   if (gate.kind === "checking" || gate.kind === "ready") return null;
   const noTruth = gate.kind === "no-truth";
   return (
@@ -68,7 +70,7 @@ function StageNotice({ gate }: { gate: Gate }) {
           {noTruth ? "The panel checks every claim on your slides against your data, so it needs data to check against." : gate.detail}
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
-          {noTruth ? <PillLink href="/knowledge" label="Open the knowledge base" variant="solid" /> : <PillLink href="/preparation" label="Go to Preparation" variant="solid" />}
+          {noTruth ? <PillLink href="/knowledge" label="Open the knowledge base" variant="solid" /> : <PillButton label="Try again" variant="solid" onClick={onRetry} />}
         </div>
       </div>
     </div>
@@ -94,10 +96,24 @@ const clock = (ms: number) => {
 
 export function SimView() {
   const guard = useAccessGuard();
+  const router = useRouter();
+  const params = useSearchParams();
   const personas = useApi<PersonaSummary[]>("areopagus");
-  const [chosen, setChosen] = useState<string[]>(["aristotle", "thales", "socrates"]);
+  // Back from the Areopagus builder: `?panel=` carries the seats (new investor included), `?added=` who was built.
+  // The page's state survives navigation (cacheComponents keeps it), so take each new hand-off as it arrives.
+  const panelParam = () => params.get("panel")?.split(",").filter(Boolean).slice(0, MAX_PANEL) ?? null;
+  const handoff = params.get("added");
+  const [chosen, setChosen] = useState<string[]>(() => panelParam() ?? DEFAULT_PANEL);
+  const [added, setAdded] = useState(handoff);
+  const [taken, setTaken] = useState(handoff);
+  if (handoff && handoff !== taken) {
+    setTaken(handoff);
+    setAdded(handoff);
+    setChosen(panelParam() ?? DEFAULT_PANEL);
+  }
   const [mode, setMode] = useState<Mode>("after");
   const [gate, setGate] = useState<Gate>({ kind: "checking" });
+  const [attempt, setAttempt] = useState(0);
   const [deck, setDeck] = useState<Deck | null>(null);
   const [uploading, setUploading] = useState(false);
   const [slide, setSlide] = useState(0);
@@ -141,7 +157,13 @@ export function SimView() {
     setSession(s);
   }, []);
 
+  // Drop the builder's hand-off params once they're in state, so a reload starts clean.
+  useEffect(() => {
+    if (params.has("panel") || params.has("added")) router.replace("/simulation", { scroll: false });
+  }, [params, router]);
+
   // May the room open? 409 without a confirmed TruthPack; `voice` says whether ElevenLabs is on.
+  // `attempt` bumps on Try again.
   useEffect(() => {
     let live = true;
     apiPost<{ voice: boolean }>("pitch/start").then(
@@ -155,7 +177,7 @@ export function SimView() {
     return () => {
       live = false;
     };
-  }, [guard]);
+  }, [guard, attempt]);
 
   // Leaving the page closes the mic and silences the room.
   useEffect(
@@ -179,8 +201,9 @@ export function SimView() {
   const byId = useMemo(() => new Map((personas.data ?? []).map((p) => [p.id, p])), [personas.data]);
   const known = personas.data?.map((p) => p.id);
   const seated = pitch ? pitch.panel : chosen.filter((id) => !known || known.includes(id)).slice(0, MAX_PANEL);
-  const nameOf = useCallback((id: string) => (id === CHAIR ? "Vicky" : id === "founder" ? "You" : (byId.get(id)?.name ?? id)), [byId]);
-  const glyphOf = (id: string) => (id === CHAIR ? "vicky" : id === "founder" ? "custom" : (byId.get(id)?.glyph ?? "custom"));
+  const addedName = added ? byId.get(added)?.name : undefined;
+  const nameOf = useCallback((id: string) => (id === CHAIR ? "Vik" : id === "founder" ? "You" : (byId.get(id)?.name ?? id)), [byId]);
+  const glyphOf = (id: string) => (id === CHAIR ? "vik" : id === "founder" ? "custom" : (byId.get(id)?.glyph ?? "custom"));
 
   const fail = useCallback(
     (err: unknown) => {
@@ -228,7 +251,7 @@ export function SimView() {
         for (const l of lines) {
           if (ctl.signal.aborted) break;
           setSpeaking(l.speaker);
-          setCaption({ speaker: l.speaker, name: nameOf(l.speaker), glyph: l.speaker === CHAIR ? "vicky" : (byId.get(l.speaker)?.glyph ?? "custom"), text: l.text });
+          setCaption({ speaker: l.speaker, name: nameOf(l.speaker), glyph: l.speaker === CHAIR ? "vik" : (byId.get(l.speaker)?.glyph ?? "custom"), text: l.text });
           if (voiceOn) {
             try {
               await speak(l.text, l.speaker, ctl.signal, pitchRef.current?.voices?.[l.speaker]);
@@ -596,7 +619,7 @@ export function SimView() {
       case "setup":
         return { label: blocked ? (gate.kind === "checking" ? "Opening the room" : "Room closed") : mode === "live" ? "Ready · interruptions on" : "Ready · questions after", tone: "idle" };
       case "opening":
-        return { label: "Vicky is opening", tone: "paused" };
+        return { label: "Vik is opening", tone: "paused" };
       case "presenting":
         return { label: `Presenting · ${clock(elapsed)}`, tone: "live" };
       case "asking":
@@ -620,7 +643,7 @@ export function SimView() {
     }
   })();
 
-  const seats = [{ id: CHAIR, name: "Vicky", glyph: "vicky", role: "Chair" }, ...seated.map((id) => ({ id, name: nameOf(id), glyph: glyphOf(id), role: byId.get(id)?.firm ?? "" }))];
+  const seats = [{ id: CHAIR, name: "Vik", glyph: "vik", role: "Chair" }, ...seated.map((id) => ({ id, name: nameOf(id), glyph: glyphOf(id), role: byId.get(id)?.firm ?? "" }))];
   const spoken = pitch?.ledger ?? deck?.slides.flatMap((s) => s.claims) ?? [];
   const ledger = session ? [...spoken, ...session.claims.map((c, i): LedgerRow => ({ id: `qa-${i}-${c.turn_seq}`, slide: null, source: "spoken", t_ms: null, text: c.text, metric: c.metric, value: c.value, unit: c.unit, status: c.status, explanation: c.explanation, figure_id: c.figure_id, truth: null, truth_label: null }))] : spoken;
   const kbRows = pitch?.kb ?? deck?.slides.flatMap((s) => s.kb ?? []) ?? [];
@@ -656,7 +679,14 @@ export function SimView() {
         selected={seated}
         locked={phase !== "setup"}
         speaking={speaking ?? undefined}
-        onToggle={(id) => setChosen((s) => (s.includes(id) ? s.filter((x) => x !== id) : s.length >= MAX_PANEL ? s : [...s, id]))}
+        onToggle={(id) =>
+          setChosen((cur) => {
+            // Ids the Areopagus no longer has (an old link, a deleted custom investor) don't hold a seat.
+            const s = cur.filter((x) => !known || known.includes(x));
+            if (s.includes(id)) return s.filter((x) => x !== id);
+            return s.length >= MAX_PANEL ? s : [...s, id];
+          })
+        }
       />
 
       <div ref={room} className={cn("flex min-h-[620px] min-w-0 flex-col gap-3 lg:min-h-0", full && "bg-bg p-4")}>
@@ -689,7 +719,13 @@ export function SimView() {
           }
           bodyClassName="relative flex min-h-0 flex-col p-3 md:p-4"
         >
-          <StageNotice gate={gate} />
+          <StageNotice
+            gate={gate}
+            onRetry={() => {
+              setGate({ kind: "checking" });
+              setAttempt((n) => n + 1);
+            }}
+          />
           <div className={cn("flex min-h-0 flex-1 flex-col transition-opacity duration-500", blocked && gate.kind !== "checking" && "opacity-45")}>
             <SlideStage
               deck={deck}
@@ -726,6 +762,16 @@ export function SimView() {
           </div>
         </Panel>
 
+        {addedName && phase === "setup" && (
+          <p role="status" className="flex items-center justify-between gap-3 px-2 text-[12px] text-ink-2" data-testid="added-note">
+            <span>
+              {seated.includes(added!) ? `Built ${addedName} and seated them on the panel.` : `Built ${addedName}. The panel is full; swap someone out to seat them.`}
+            </span>
+            <button type="button" onClick={() => setAdded(null)} className="text-ink underline underline-offset-2 hover:text-ember">
+              Dismiss
+            </button>
+          </p>
+        )}
         {error && <ErrorNote message={error} className="px-2" />}
 
         {/* One button runs the room: Start, then End. */}

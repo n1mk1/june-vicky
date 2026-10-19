@@ -1,7 +1,7 @@
-# Vicky web (Next.js standalone).
+# Vik web (Next.js standalone).
 #
-#   docker build -t vicky-web ./frontend                 # production image (last stage)
-#   docker run --rm -p 3000:3000 -e PORT=3000 vicky-web
+#   docker build -t vik-web ./frontend                 # production image (last stage)
+#   docker run --rm -p 3000:3000 -e PORT=3000 vik-web
 #   docker build --target dev ./frontend                 # dev image used by docker-compose (next dev)
 #
 # API_INTERNAL_URL and API_PUBLIC_WS_URL are read at request time, so nothing is baked in here.

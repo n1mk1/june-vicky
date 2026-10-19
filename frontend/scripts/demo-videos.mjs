@@ -75,6 +75,6 @@ for (const name of names) {
 // One tour: every tab back to back.
 const list = join(RAW, "tour.txt");
 writeFileSync(list, mp4s.map((f) => `file '${f.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n"));
-const tour = join(ROOT, "vicky-tour.mp4");
+const tour = join(ROOT, "vik-tour.mp4");
 ff(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", tour]);
-console.log(`vicky-tour: ${mb(tour)}`);
+console.log(`vik-tour: ${mb(tour)}`);

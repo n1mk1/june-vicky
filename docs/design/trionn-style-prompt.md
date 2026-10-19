@@ -3,7 +3,7 @@
 > Reference studied: https://trionn.com (home, services, menu, footer — Oct 2026).
 > This prompt captures the **look, feel and interaction concept** only. Use your own brand, logo, copy, imagery and 3D assets — do not reuse Trionn's logo, text, photos or models.
 >
-> Fill in the `[BRACKETS]` before pasting into Claude / v0 / Lovable / Cursor.
+> Fill in the `[BRACKETS]` before pasting into an AI design tool (v0, Lovable, Cursor…).
 
 ---
 

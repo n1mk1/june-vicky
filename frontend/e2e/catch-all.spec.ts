@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import { ask, openDashboard } from "./helpers";
 
 // The catch-all offer (docs/08-RAG.md §Asking permission): when retrieval can't find the answer in the
-// notes, Vicky offers to read every note with AI. Nothing is sent until the user presses a button.
+// notes, Vik offers to read every note with AI. Nothing is sent until the user presses a button.
 // The chat API is stubbed here so the test doesn't depend on a model or on what the vault holds.
 
 const OFFER = {

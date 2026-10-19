@@ -4,9 +4,9 @@ import { Download } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { EChart } from "@/components/charts/EChart";
 import { SourceChip } from "@/components/dashboard/SourceChip";
-import { DimBars, type Dim } from "@/components/prep/ChatFeed";
-import { ClaimChip } from "@/components/prep/ClaimChip";
-import { KnowledgeChip } from "@/components/prep/KnowledgeChip";
+import { DimBars, type Dim } from "@/components/court/DimBars";
+import { ClaimChip } from "@/components/court/ClaimChip";
+import { KnowledgeChip } from "@/components/court/KnowledgeChip";
 import { CitedText } from "@/components/ui/Footnote";
 import { CornerMarks } from "@/components/ui/Panel";
 import { PillLink } from "@/components/ui/Pill";
@@ -127,12 +127,12 @@ export function ReportDoc({ id }: { id: string }) {
               <div className="flex flex-wrap gap-2">
                 <a
                   href={`/api/v1/reports/${encodeURIComponent(r.id)}.md`}
-                  download={`vicky-report-${r.id.slice(0, 8)}.md`}
+                  download={`vik-report-${r.id.slice(0, 8)}.md`}
                   className="group inline-flex h-8 items-center gap-2 rounded-[3px] border border-line-strong px-3.5 font-mono text-[11px] uppercase tracking-[0.02em] text-ink transition-colors hover:border-ink"
                 >
                   <Download className="size-3.5" strokeWidth={1.5} /> Download Markdown
                 </a>
-                <PillLink href="/preparation" label="Start drill session" variant="solid" />
+                <PillLink href="/simulation" label="Pitch again" variant="solid" />
               </div>
             </div>
             <h1 className="display text-[clamp(40px,5vw,76px)]">{humanize(v.readiness || "Report")}.</h1>
@@ -369,9 +369,9 @@ export function ReportDoc({ id }: { id: string }) {
                     <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13.5px] leading-snug">
                       <span className="font-mono text-[11px] tabular-nums text-dim">{String(i + 1).padStart(2, "0")}</span>
                       <span className="min-w-0 flex-1">{a.text}</span>
-                      {a.drill_lens && (
+                      {a.lens && (
                         <span className="rounded-[3px] border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] text-ink-2">
-                          {humanize(a.drill_lens)}
+                          {humanize(a.lens)}
                         </span>
                       )}
                     </li>

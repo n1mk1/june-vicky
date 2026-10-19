@@ -1,4 +1,4 @@
-# Only pyproject.toml, uv.lock, entrypoint.sh, vicky/, migrations/ and data/ belong in the image.
+# Only pyproject.toml, uv.lock, entrypoint.sh, vik/, migrations/ and data/ belong in the image.
 .venv/
 **/__pycache__/
 **/*.py[cod]

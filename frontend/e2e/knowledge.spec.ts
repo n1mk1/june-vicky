@@ -3,7 +3,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 // The knowledge base end to end in the browser: the landing's way in, the tab order, importing,
 // reading and following links, editing (autosave), renaming, tags, ghost links, search, organize,
 // export, delete, drag-and-drop and "Fill dashboard". Every note this run makes carries RUN in its
-// name and is deleted afterwards. Expectations hold for both organizers (Claude or offline rules).
+// name and is deleted afterwards. Expectations hold for both organizers (Gemini or offline rules).
 
 const RUN = `e2e${Date.now().toString(36)}`;
 const JOB_MS = 60_000;
@@ -91,7 +91,7 @@ test.afterAll(async ({ request }) => {
 
 test("landing is black and white, has no chat, and GET STARTED opens the knowledge base", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1, name: "JUNE × VICKY" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "VIK" })).toBeVisible();
   await expect(page.getByText("Know Your Numbers Before They Do")).toBeVisible();
   await expect(page.locator("main textarea, main input")).toHaveCount(0);
   expect(await page.locator("main").evaluate((m) => getComputedStyle(m).backgroundColor)).toBe("rgb(0, 0, 0)");
@@ -109,9 +109,9 @@ test("landing is black and white, has no chat, and GET STARTED opens the knowled
 test("tabs run Knowledge base → Reports and the flagships stand out", async ({ page }) => {
   await page.goto("/knowledge");
   const tabs = page.getByRole("navigation", { name: "Sections" }).getByRole("link");
-  await expect(tabs).toHaveText([/knowledge base/i, /dashboard/i, /preparation/i, /simulation/i, /areopagus/i, /reports/i]);
+  await expect(tabs).toHaveText([/knowledge base/i, /dashboard/i, /simulation/i, /areopagus/i, /reports/i]);
   const flagship = await tabs.evaluateAll((els) => els.map((e) => e.hasAttribute("data-flagship")));
-  expect(flagship).toEqual([false, true, true, true, false, false]);
+  expect(flagship).toEqual([false, true, true, false, false]);
   const colour = (i: number) => tabs.nth(i).evaluate((e) => getComputedStyle(e).borderColor);
   expect(await colour(1)).not.toEqual(await colour(4));
   await expect(tabs.first()).toHaveAttribute("aria-current", "page");
@@ -243,7 +243,7 @@ test("organize re-files everything and export downloads the vault", async ({ pag
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export", exact: true }).click();
   const file = await download;
-  expect(file.suggestedFilename()).toMatch(/^vicky-knowledge-base-\d{4}-\d{2}-\d{2}\.zip$/);
+  expect(file.suggestedFilename()).toMatch(/^vik-knowledge-base-\d{4}-\d{2}-\d{2}\.zip$/);
 });
 
 test("drag-and-drop imports, delete removes a note", async ({ page, request }) => {

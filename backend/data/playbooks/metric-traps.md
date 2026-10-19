@@ -99,7 +99,7 @@ in the data, and what a strong answer does. Values always come from `get_metric`
 - **Strong answer:** labels plan figures as plan, ties each driver to history, and shows
   a downside case built on achieved rates.
 
-## Rules for Vicky and the panel
+## Rules for Vik and the panel
 
 - Quote the founder's figure and the computed Figure side by side; never "correct" with
   a number that is not a Figure.

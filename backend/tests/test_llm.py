@@ -8,41 +8,39 @@ import pytest
 from fastapi import HTTPException
 
 from tests.llm_fakes import (
-    FILE_META,
-    char_cite,
+    api_error,
     json_reply,
     make_pdf,
     message,
-    page_cite,
     queue,
-    text_block,
     text_reply,
     tool_use_reply,
 )
-from vicky import auth, llm
-from vicky.areopagus import builder, registry
-from vicky.audit import audit_text
-from vicky.config import get_settings
-from vicky.court import minds as offline
-from vicky.court import referee
-from vicky.llm import docs, mapper
-from vicky.llm import minds as agents
-from vicky.llm.client import (
-    FALLBACK_BETA,
+from vik import auth, llm
+from vik.areopagus import builder, registry
+from vik.audit import audit_text
+from vik.config import get_settings
+from vik.court import minds as offline
+from vik.court import referee
+from vik.llm import docs, mapper
+from vik.llm import minds as agents
+from vik.llm.client import (
     INVESTOR_ROUTES,
     ROUTES,
-    VICKY_ROUTES,
+    VIK_ROUTES,
     BudgetExceeded,
     LLMError,
     LLMRefusal,
     LLMUnavailable,
     get_llm,
     model_for,
+    over_budget,
     usage_usd,
+    with_timeout,
 )
-from vicky.llm.schemas import ChairDecision, ClaimList, DocFact, DocFactList, Memo, MemoHypothesis
-from vicky.model.context import sample_context
-from vicky.model.loader import parse_upload
+from vik.llm.schemas import ChairDecision, ClaimList, DocFact, DocFactList, Memo, MemoHypothesis
+from vik.model.context import sample_context
+from vik.model.loader import parse_upload
 
 INVENTED = "Your ARR is $9.9M, so why is growth stalling?"
 
@@ -78,27 +76,34 @@ def by_task(**handlers):
 
 
 async def test_parse_sends_route_settings_and_records_spend(live_llm):
-    rec = live_llm.install(queue(json_reply({"claims": []}, model="claude-haiku-5-5")))
+    rec = live_llm.install(queue(json_reply({"claims": []}, model="gemini-3.5-flash-lite")))
     out = await get_llm().parse(
         "claims", ClaimList, system="Task: list claims", messages=[{"role": "user", "content": "hi"}]
     )
     assert out.claims == []
     body = rec.calls[0]["body"]
-    assert body["model"] == "claude-haiku-5-5" and body["output_config"]["effort"] == "low"
-    assert body["output_config"]["format"]["type"] == "json_schema"
-    assert "fallbacks" not in body  # no server-side fallback for Haiku
-    assert body["system"][-1]["cache_control"] == {"type": "ephemeral"}
-    assert live_llm.spend == pytest.approx((1000 * 0.10 + 200 * 0.50) / 1e6)
+    assert body["model"] == "gemini-3.5-flash-lite" and body["thinking_level"] == "low"
+    assert body["system"] == "Task: list claims" and body["max_tokens"] == ROUTES["claims"].max_tokens
+    assert body["response_schema"]["type"] == "object" and "claims" in body["response_schema"]["properties"]
+    assert "$defs" not in json.dumps(body["response_schema"])  # references are inlined
+    assert rec.calls[0]["raw_body"]["generationConfig"]["responseMimeType"] == "application/json"
+    assert live_llm.spend == pytest.approx((1000 * 0.30 + 200 * 2.50) / 1e6)
 
 
-def test_vicky_runs_on_opus_and_the_investors_on_sonnet_at_low_effort():
-    for name in VICKY_ROUTES:
-        assert (model_for(ROUTES[name]), ROUTES[name].effort) == ("claude-opus-5-5", "low"), name
+def test_the_default_models_are_all_on_the_free_tier_and_spread_over_three_quotas():
+    for name in VIK_ROUTES:
+        assert (model_for(ROUTES[name]), ROUTES[name].effort) == ("gemini-3.8-flash", "low"), name
     for name in INVESTOR_ROUTES:
-        assert (model_for(ROUTES[name]), ROUTES[name].effort) == ("claude-sonnet-5-5", "low"), name
+        assert (model_for(ROUTES[name]), ROUTES[name].effort) == ("gemini-3.6-flash", "low"), name
+    assert (
+        model_for(ROUTES["claims"]) == "gemini-3.5-flash-lite"
+        and model_for(ROUTES["doc_facts"]) == "gemini-3.8-flash"
+    )
+    assert get_settings().gemini_tier == "free"
+    assert "gemini-4-argon" not in {model_for(r) for r in ROUTES.values()}  # not on the free tier
 
 
-async def test_vicky_chairs_on_opus_with_fallbacks_and_adaptive_thinking(live_llm):
+async def test_vik_chairs_at_a_low_thinking_level(live_llm):
     decision = {
         "action": "call_on",
         "vc_id": "a",
@@ -106,53 +111,131 @@ async def test_vicky_chairs_on_opus_with_fallbacks_and_adaptive_thinking(live_ll
         "hypothesis_id": "a.h1",
         "note": None,
     }
-    rec = live_llm.install(queue(json_reply(decision, model="claude-opus-5-5")))
+    rec = live_llm.install(queue(json_reply(decision)))
     await get_llm().parse("chair", ChairDecision, system="chair", messages=[{"role": "user", "content": "x"}])
     call = rec.calls[0]
-    assert call["body"]["fallbacks"] == "default" and FALLBACK_BETA in call["headers"].get(
-        "anthropic-beta", ""
-    )
-    # Thinking can't be turned off on Opus 5.5: effort is the only control.
-    assert call["body"]["model"] == "claude-opus-5-5" and "thinking" not in call["body"]
-    assert call["body"]["output_config"]["effort"] == "low"
+    # Thinking can't be turned off on these models: the thinking level is the only control.
+    assert call["body"]["model"] == "gemini-3.8-flash" and call["body"]["thinking_level"] == "low"
+    assert call["headers"].get("x-goog-api-key") == "test-key"
 
 
-async def test_investor_lines_go_to_sonnet_with_the_investor_role(live_llm):
+async def test_investor_lines_go_to_flash_with_the_investor_role(live_llm):
     rec = live_llm.install(queue(text_reply("Which months is that?")))
     await get_llm().text("speak", system="speak", messages=[{"role": "user", "content": "x"}])
     body = rec.calls[0]["body"]
-    assert body["model"] == "claude-sonnet-5-5" and body["output_config"]["effort"] == "low"
+    assert body["model"] == "gemini-3.6-flash" and body["thinking_level"] == "low"
     assert "Your role" in agents.INVESTOR_ROLE and "foresight" in agents.INVESTOR_ROLE
-    assert "Vicky" in agents.VICKY_ROLE
+    assert "Vik" in agents.VIK_ROLE
 
 
 async def test_refusal_is_checked_before_content(live_llm):
     live_llm.install(
         queue(
-            message(
-                [],
-                stop_reason="refusal",
-                stop_details={"type": "refusal", "category": "cyber", "explanation": "no"},
-            )
+            message([], stop_reason="SAFETY"),
+            message([], blocked="PROHIBITED_CONTENT"),
         )
     )
     with pytest.raises(LLMRefusal) as e:
         await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
-    assert e.value.category == "cyber"
+    assert e.value.category == "safety"
     assert live_llm.spend > 0  # the declined call is still accounted
+    with pytest.raises(LLMRefusal) as e:
+        await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+    assert e.value.category == "PROHIBITED_CONTENT"  # a blocked prompt has no candidate at all
 
 
 async def test_truncated_output_and_server_errors_are_llm_errors(live_llm):
     live_llm.install(
         queue(
-            message([text_block('{"claims": [')], stop_reason="max_tokens"),
-            (529, {"type": "error", "error": {"type": "overloaded_error", "message": "busy"}}),
+            message([{"text": '{"claims": ['}], stop_reason="max_tokens"),
+            api_error(503, "busy"),
+            api_error(400, "bad schema"),
+            api_error(400, "API key not valid. Please pass a valid API key."),
+            api_error(429, "quota"),
         )
     )
     with pytest.raises(LLMError):
         await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
     with pytest.raises(LLMUnavailable):
         await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+    with pytest.raises(LLMError, match="bad request") as e:
+        await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+    assert not isinstance(e.value, LLMUnavailable)
+    with pytest.raises(LLMUnavailable, match="credentials rejected"):  # how Gemini reports a bad key
+        await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+    with pytest.raises(LLMUnavailable, match="rate limited"):
+        await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+
+
+# ---------------------------------------------------------------- free tier
+
+
+def _free(monkeypatch, rpm: int = 10) -> None:
+    monkeypatch.setenv("GEMINI_TIER", "free")
+    monkeypatch.setenv("GEMINI_RPM", str(rpm))
+    get_settings.cache_clear()
+
+
+async def test_a_free_key_costs_nothing_and_no_dollar_budget_blocks_it(live_llm, monkeypatch):
+    _free(monkeypatch)
+    rec = live_llm.install(lambda _call: json_reply({"claims": []}))
+    live_llm.spend = get_settings().daily_usd_budget + 1  # a paid day's spend left over
+    await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+    assert len(rec.calls) == 1 and live_llm.spend == get_settings().daily_usd_budget + 1  # nothing added
+    assert not await over_budget()
+    await auth.require_budget()  # LLM routes stay open (no 402)
+
+
+async def test_the_pacer_keeps_each_model_under_its_requests_per_minute(live_llm, monkeypatch):
+    from vik.llm.client import PACER
+
+    _free(monkeypatch, rpm=2)
+    await PACER.acquire("gemini-3.8-flash")
+    await PACER.acquire("gemini-3.8-flash")
+    with pytest.raises(TimeoutError):  # the third request waits for a slot
+        await asyncio.wait_for(PACER.acquire("gemini-3.8-flash"), 0.2)
+    await asyncio.wait_for(
+        PACER.acquire("gemini-3.5-flash-lite"), 0.2
+    )  # another model has its own quota (1 of 2)
+    rec = live_llm.install(lambda _call: json_reply({"claims": []}))
+    await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+    with pytest.raises(
+        LLMUnavailable, match="no answer within|timed out"
+    ):  # its route timeout bounds the wait
+        await with_timeout(
+            get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}]), 0.2
+        )
+    assert len(rec.calls) == 1
+
+
+async def test_a_429_rests_that_model_and_honours_retry_delay(live_llm, monkeypatch):
+    from vik.llm.client import PACER
+
+    _free(monkeypatch)
+    quota = (
+        429,
+        {
+            "error": {
+                "code": 429,
+                "message": "Quota exceeded",
+                "status": "RESOURCE_EXHAUSTED",
+                "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "37s"}],
+            }
+        },
+    )
+    rec = live_llm.install(
+        lambda call: quota if call["body"]["model"] == "gemini-3.5-flash-lite" else text_reply("ok")
+    )
+    with pytest.raises(LLMUnavailable, match="rate limited"):
+        await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+    import time
+
+    assert 30 < PACER.rest_until["gemini-3.5-flash-lite"] - time.monotonic() <= 37
+    with pytest.raises(LLMUnavailable, match="rests for"):  # no request is sent while it rests
+        await get_llm().parse("claims", ClaimList, system="s", messages=[{"role": "user", "content": "x"}])
+    assert len(rec.calls) == 1
+    assert await get_llm().text("speak", system="s", messages=[{"role": "user", "content": "x"}]) == "ok"
+    assert await agents.extract_claims("We have 40 customers.") == offline_claims("We have 40 customers.")
 
 
 async def test_budget_blocks_calls_and_routes(live_llm, monkeypatch):
@@ -170,11 +253,16 @@ async def test_budget_blocks_calls_and_routes(live_llm, monkeypatch):
 
 
 def test_enabled_needs_a_key_and_respects_offline(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # beats a key in a local .env
+    monkeypatch.setenv("GEMINI_API_KEY", "")  # beats a key in a local .env
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
     monkeypatch.setenv("LLM_MODE", "auto")
     get_settings.cache_clear()
     assert llm.enabled() is False
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    get_settings.cache_clear()
+    assert llm.enabled() is True
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GOOGLE_API_KEY", "k")  # the Google SDKs' name works too
     get_settings.cache_clear()
     assert llm.enabled() is True
     monkeypatch.setenv("LLM_MODE", "offline")
@@ -184,18 +272,28 @@ def test_enabled_needs_a_key_and_respects_offline(monkeypatch):
     get_settings.cache_clear()
 
 
-def test_usage_is_priced_at_list_rates():
+def test_usage_is_priced_at_list_rates(monkeypatch):
     from types import SimpleNamespace
 
+    monkeypatch.setenv("GEMINI_TIER", "paid")
+    get_settings.cache_clear()
+
+    # The prompt count includes the cached tokens; thinking is billed as output.
     u = SimpleNamespace(
-        input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        cache_read_input_tokens=1_000_000,
-        cache_creation_input_tokens=0,
+        prompt_token_count=2_000_000,
+        cached_content_token_count=1_000_000,
+        candidates_token_count=500_000,
+        thoughts_token_count=500_000,
     )
-    assert usage_usd("claude-opus-5-5", u) == pytest.approx(4 + 20 + 0.2)
-    assert usage_usd("claude-sonnet-5-5", u) == pytest.approx(2 + 10 + 0.2)
-    assert usage_usd("some-new-model", u) > usage_usd("claude-opus-5-5", u)  # unknown → dearest
+    assert usage_usd("gemini-4-argon", u) == pytest.approx(4 + 20 + 0.2)
+    assert usage_usd("gemini-3.8-flash", u) == pytest.approx(1.5 + 7.5 + 0.15)
+    assert usage_usd("gemini-3.8-flash-001", u) == usage_usd("gemini-3.8-flash", u)  # a pinned version
+    assert usage_usd("some-new-model", u) >= usage_usd("gemini-4-argon", u)  # unknown → dearest
+    monkeypatch.setenv("GEMINI_TIER", "free")
+    get_settings.cache_clear()
+    assert usage_usd("gemini-3.8-flash", u) == 0  # a free key costs nothing
+    monkeypatch.undo()
+    get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------- minds: offline passthrough
@@ -217,7 +315,7 @@ async def test_without_a_key_the_minds_are_the_offline_minds(ctx, james, monkeyp
 
 
 def offline_claims(answer):
-    from vicky.model.truth import quick_claims
+    from vik.model.truth import quick_claims
 
     return quick_claims(answer)
 
@@ -263,8 +361,8 @@ async def test_memo_uses_kit_tools_and_code_keeps_only_anchored_hypotheses(live_
     rec = live_llm.install(
         by_task(
             memo=[
-                tool_use_reply("get_metric", {"id": "arr"}, model="claude-opus-5-5"),
-                json_reply(memo, model="claude-opus-5-5"),
+                tool_use_reply("get_metric", {"id": "arr"}, model="gemini-4-argon"),
+                json_reply(memo, model="gemini-4-argon"),
             ]
         )
     )
@@ -288,9 +386,12 @@ async def test_memo_uses_kit_tools_and_code_keeps_only_anchored_hypotheses(live_
         if b.get("type") == "tool_result"
     )
     assert json.loads(result["content"])["id"] == "arr"
-    # the investor researches on Sonnet, in role; its framing of an attack-list doubt is kept as its angle
-    assert rec.calls[0]["body"]["model"] == "claude-sonnet-5-5"
-    assert "Your role" in rec.calls[0]["body"]["system"][0]["text"]
+    # the investor researches on Gemini 3.6 Flash (its own free quota), in role; its framing of an attack-list doubt is kept as its angle
+    assert rec.calls[0]["body"]["model"] == "gemini-3.6-flash"
+    assert "Your role" in rec.calls[0]["body"]["system"]
+    assert "get_metric" in {t["name"] for t in rec.calls[0]["body"]["tools"]}
+    # the model's turn went back as it came, thought signature included
+    assert rec.calls[1]["raw_body"]["contents"][1]["parts"][0]["thoughtSignature"] == "c2ln"
     assert first["angle"] == "Growth is decelerating" and "angle" not in new
 
 
@@ -322,7 +423,7 @@ async def test_an_angle_with_a_number_is_dropped_and_a_kept_one_reaches_the_line
 
 
 async def test_memo_failure_falls_back_per_investor(live_llm, ctx, james):
-    live_llm.install(by_task(memo=[(500, {"type": "error", "error": {"type": "api_error", "message": "x"}})]))
+    live_llm.install(by_task(memo=[api_error(500, "x")]))
     assert (await agents.build_memos([james], ctx))["aristotle"] == offline.build_memos([james], ctx)[
         "aristotle"
     ]
@@ -517,7 +618,7 @@ async def test_judge_scores_are_clamped_and_rewrites_audited(live_llm, ctx, jame
         "missing": "The growth figure and its window.",
         "strong_answer": "Our ARR is $9.9M and growing 40% a month.",
     }
-    live_llm.install(by_task(judge=[json_reply(js, model="claude-opus-5-5")]))
+    live_llm.install(by_task(judge=[json_reply(js, model="gemini-4-argon")]))
     base = offline.judge(answer, hyp, [], ctx, "q")
     out = await agents.judge(answer, hyp, [], ctx, "q")
     assert out["dims"] == {"evidence": 5.0, "clarity": 3.0, "composure": 0.0, "investor_fit": 4.0}
@@ -569,7 +670,7 @@ async def test_claims_must_quote_the_founder_with_the_number(live_llm):
             },
         ]
     }
-    live_llm.install(by_task(claims=[json_reply(claims, model="claude-haiku-5-5")]))
+    live_llm.install(by_task(claims=[json_reply(claims, model="gemini-3.5-flash-lite")]))
     out = await agents.extract_claims(answer)
     assert out[: len(offline_claims(answer))] == offline_claims(answer)  # code's own extraction comes first
     assert [c["metric"] for c in out].count("arr") == 1  # no duplicate of what code found
@@ -586,7 +687,7 @@ CSV = (
 )
 
 
-async def test_mapper_merges_claude_with_the_heuristic(live_llm):
+async def test_mapper_merges_gemini_with_the_heuristic(live_llm):
     ds = parse_upload(CSV, "numbers.csv")[0]
     proposal = {
         "columns": [
@@ -623,7 +724,7 @@ async def test_mapper_merges_claude_with_the_heuristic(live_llm):
     rec = live_llm.install(by_task(mapper=[json_reply(proposal)]))
     out, proposer = await mapper.propose(ds, "cad")
     by = {m.source_column: m for m in out}
-    assert proposer == "claude" and rec.calls[0]["body"]["model"] == "claude-sonnet-5-5"
+    assert proposer == "gemini" and rec.calls[0]["body"]["model"] == "gemini-3.8-flash"
     assert (
         by["Mystery Col"].canonical_field == "opex.g_and_a" and by["Mystery Col"].unit == "cad"
     )  # unit set by code
@@ -634,7 +735,7 @@ async def test_mapper_merges_claude_with_the_heuristic(live_llm):
 
 
 async def test_mapper_without_a_key_is_the_heuristic():
-    from vicky.model.mapping import propose_heuristic
+    from vik.model.mapping import propose_heuristic
 
     ds = parse_upload(CSV, "numbers.csv")[0]
     out, proposer = await mapper.propose(ds, "cad")
@@ -669,10 +770,10 @@ DRAFT = {
 }
 
 
-async def test_builder_drafts_a_persona_with_claude(live_llm):
+async def test_builder_drafts_a_persona_with_gemini(live_llm):
     rec = live_llm.install(by_task(persona=[json_reply(DRAFT)]))
     p, source = await builder.generate("A blunt SaaS partner obsessed with NRR who hates services revenue")
-    assert source == "claude" and rec.calls[0]["body"]["model"] == "claude-sonnet-5-5"
+    assert source == "gemini" and rec.calls[0]["body"]["model"] == "gemini-3.8-flash"
     assert p.id == "draft" and p.name == "Rhea" and p.archetype == "nrr_obsessed_saas_partner"
     assert p.priorities["retention"] == 1.0 and p.priorities["team"] == 0.0 and p.priorities["market"] == 0.2
     assert p.style.interrupt_tendency == 1.0 and p.style.follow_up_depth == 3 and p.style.tone == "blunt"
@@ -706,21 +807,6 @@ def test_builder_options_cover_every_lens_and_role():
 PAGE2 = ["ARR reached $1.2M in December 2025.", "Monthly burn was $85,000.", "We plan 40% growth in 2026."]
 
 
-def _doc_responder(pass1: dict, facts: list[dict]):
-    def respond(call):
-        if call["path"].endswith("/v1/files") and call["method"] == "POST":
-            return FILE_META
-        if call["method"] == "DELETE":
-            return {"id": FILE_META["id"], "type": "file_deleted"}
-        if call["task"] == "doc_facts":
-            return pass1
-        if call["task"] == "doc_parse":
-            return json_reply({"facts": facts}, model="claude-opus-5-5")
-        raise AssertionError(call["task"])
-
-    return respond
-
-
 def _fact(name, value, unit, cited, kind="historical", page=None, currency=None, period=None):
     return {
         "name": name,
@@ -735,49 +821,36 @@ def _fact(name, value, unit, cited, kind="historical", page=None, currency=None,
     }
 
 
-async def test_pdf_facts_are_cited_verified_on_the_page_and_pending(live_llm):
+async def test_pdf_facts_are_found_on_their_page_verified_and_pending(live_llm):
     pdf = make_pdf([["Board update"], PAGE2])
-    pass1 = message(
-        [
-            text_block("ARR: $1.2M, December 2025", [page_cite(PAGE2[0], 2)]),
-            text_block("\nBurn: $85,000 a month", [page_cite(PAGE2[1], 1)]),  # cites the wrong page
-            text_block("\nPlan: 40% growth in 2026", [page_cite(PAGE2[2], 2)]),
-            text_block("\nCustomers: 75", [page_cite(PAGE2[0], 2)]),
-            text_block("\nNo citation here: 12 things"),
-        ],
-        model="claude-opus-5-5",
-    )
     facts = [
         _fact("arr", 1200000, "money", PAGE2[0], page=2, currency="CAD", period="2025-12"),
-        _fact("burn", 85000, "money", PAGE2[1], page=2),  # the model's page is ignored; the citation says 1
-        _fact("growth", 40, "pct", PAGE2[2], kind="forecast", period="2026"),
-        _fact("customers", 75, "count", PAGE2[0]),
-    ]  # 75 isn't in the cited text: model-supplied, dropped
-    rec = live_llm.install(_doc_responder(pass1, facts))
+        _fact("burn", 85000, "money", PAGE2[1], page=1),  # the wrong page: code finds it on page 2
+        _fact("growth", 40, "pct", PAGE2[2], kind="forecast", period="2026", page=2),
+        _fact("customers", 75, "count", PAGE2[0], page=2),  # 75 isn't in the passage: model-supplied, dropped
+        _fact("headcount", 12, "count", "We have 12 people.", page=2),  # a passage that isn't in the document
+        _fact("deck_arr", 1200000, "money", PAGE2[0], page=2),  # labelled as a deck's claim: never a record
+    ]
+    rec = live_llm.install(by_task(doc_facts=[json_reply({"facts": facts}, model="gemini-4-argon")]))
     out = await docs.extract_facts(pdf, "board.pdf", "pdf", upload_id="u1", currency="cad")
     got = {f.name: f for f in out["facts"]}
-    assert set(got) == {"arr", "burn", "plan.growth"} and out["dropped"] == 1 and out["lines"] == 4
+    assert (
+        set(got) == {"arr", "burn", "plan.growth", "headcount"} and out["dropped"] == 2 and out["lines"] == 6
+    )
     arr = got["arr"]
     assert arr.status == "pending" and arr.unit == "cad" and arr.value == 1200000
     assert arr.source.kind == "pdf" and arr.source.page == 2 and arr.source.verified is True
     assert arr.source.ref == "board.pdf, p. 2" and arr.source.cited_text == PAGE2[0]
-    assert got["burn"].source.verified is False and "page 1" in got["burn"].note
+    assert got["burn"].source.page == 2 and got["burn"].source.verified is True  # the page is code's
+    assert got["headcount"].source.verified is False and "not found" in got["headcount"].note
     assert got["plan.growth"].value == pytest.approx(0.4) and got["plan.growth"].kind == "forecast"
-    paths = [(c["method"], c["path"]) for c in rec.calls]
-    assert paths[0] == ("POST", "/v1/files") and paths[2] == (
-        "DELETE",
-        f"/v1/files/{FILE_META['id']}",
-    )  # after pass 1
-    doc = rec.calls[1]["body"]["messages"][0]["content"][0]
-    assert rec.calls[1]["task"] == "doc_facts" and rec.calls[3]["task"] == "doc_parse"
-    assert doc["source"] == {"type": "file", "file_id": FILE_META["id"]} and doc["citations"] == {
-        "enabled": True
-    }
-    assert "format" not in rec.calls[1]["body"]["output_config"]  # citations can't use structured outputs
-    assert rec.calls[3]["body"]["output_config"]["format"]["type"] == "json_schema"
+    (call,) = rec.calls  # a small PDF goes inline, in one call: no Files API
+    doc = call["body"]["messages"][0]["content"][0]
+    assert doc["type"] == "document" and doc["mime_type"] == "application/pdf" and doc["data"] == pdf
+    assert call["body"]["model"] == "gemini-3.8-flash" and call["body"]["response_schema"]["type"] == "object"
 
 
-async def test_docx_facts_use_char_citations(live_llm):
+async def test_docx_facts_get_their_char_span_from_code(live_llm):
     import docx
 
     d = docx.Document()
@@ -786,25 +859,50 @@ async def test_docx_facts_use_char_citations(live_llm):
     buf = io.BytesIO()
     d.save(buf)
     data = buf.getvalue()
-    text = docs.document_text(data, "docx")
     cited = "Cash in the bank was $483,000 at the end of September 2026."
-    pass1 = message([text_block("Cash: $483,000 (Sep 2026)", [char_cite(cited, text.index(cited))])])
     rec = live_llm.install(
-        _doc_responder(pass1, [_fact("cash_balance", 483000, "money", cited, period="2026-09")])
+        by_task(
+            doc_facts=[
+                json_reply({"facts": [_fact("cash_balance", 483000, "money", cited, period="2026-09")]})
+            ]
+        )
     )
     out = await docs.extract_facts(data, "letter.docx", "docx", upload_id="u2", currency="usd")
     (f,) = out["facts"]
     assert f.unit == "usd" and f.source.kind == "docx" and f.source.verified is True and f.source.page is None
-    assert (
-        rec.calls[0]["body"]["messages"][0]["content"][0]["source"]["type"] == "text"
-    )  # no Files API for text
+    content = rec.calls[0]["body"]["messages"][0]["content"]
+    assert isinstance(content, str) and cited in content  # text documents go in as text
 
 
-def test_cited_lines_and_merge_pending():
-    msg = type(
-        "M", (), {"content": [type("B", (), {"type": "text", "text": "a 1\nb 2", "citations": None})()]}
-    )()
-    assert docs.cited_lines(msg) == []  # lines without citations are not facts
+async def test_a_long_document_is_read_in_parts_and_an_overflowing_part_is_halved(live_llm, monkeypatch):
+    monkeypatch.setattr(docs, "PDF_PART_PAGES", 2)
+    pdf = make_pdf([[f"Page {i} has {i} customers."] for i in range(1, 6)])
+    seen = []
+
+    def respond(call):
+        doc = call["body"]["messages"][0]["content"][0]
+        from pypdf import PdfReader
+
+        n = len(PdfReader(io.BytesIO(doc["data"])).pages)
+        first = int(PdfReader(io.BytesIO(doc["data"])).pages[0].extract_text().split()[1])
+        seen.append((first, n))
+        if n == 2 and first == 3:  # pages 3-4 overflow once, then are read a page at a time
+            return message([{"text": '{"facts": ['}], stop_reason="max_tokens")
+        return json_reply(
+            {"facts": [_fact("customers", first, "count", f"Page {first} has {first} customers.", page=1)]}
+        )
+
+    live_llm.install(respond)
+    out = await docs.extract_facts(pdf, "pack.pdf", "pdf", upload_id="u3", currency="usd")
+    assert sorted(seen) == [(1, 2), (3, 1), (3, 2), (4, 1), (5, 1)]
+    pages = sorted(f.source.page for f in out["facts"])
+    assert pages == [1, 3, 4, 5] and all(f.source.verified for f in out["facts"])
+
+
+def test_text_parts_and_merge_pending():
+    text = "\n\n".join(f"Paragraph {i}. " + "x" * 50 for i in range(10))
+    parts = docs.text_parts(text, size=200)
+    assert "".join(parts) == text and all(len(p) <= 200 for p in parts)
     f = docs.to_fact(
         DocFact(**_fact("arr", 1, "money", "ARR 1")),
         docs.CitedSpan("ARR 1", 1, 2),

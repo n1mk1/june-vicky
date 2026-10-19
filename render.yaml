@@ -1,23 +1,26 @@
-# Render Blueprint for Vicky (docs/02-TRD.md §10). Free phase: api and web; worker commented out.
+# Render Blueprint for Vik (docs/02-TRD.md §10). Free phase: api and web; worker commented out.
 # Paths are repo-root-relative and rootDir is not used.
 #
 # The database and the cache already exist (created 2026-10-18, Ohio, free plan), so this Blueprint wires them
 # by connection string instead of declaring them (declaring them would create a second copy):
-#   vicky-db  Postgres 17  dpg-dbaalam1egvs73a0cnu0-a  https://dashboard.render.com/d/dpg-dbaalam1egvs73a0cnu0-a
-#             pgvector: the API's startup migration creates the extension and the embedding columns.
-#             Free Postgres expires 2026-11-17: upgrade it (dashboard) before then.
-#   vicky-kv  Key Value    red-dbaalb5g1s2s73bdgmn0   internal URL redis://red-dbaalb5g1s2s73bdgmn0:6379
-# On the first Blueprint sync, paste vicky-db's *Internal Database URL* (its Connect menu) as DATABASE_URL.
+#   Postgres 17  dpg-dbaalam1egvs73a0cnu0-a  https://dashboard.render.com/d/dpg-dbaalam1egvs73a0cnu0-a
+#                pgvector: the API's startup migration creates the extension and the embedding columns.
+#                Free Postgres expires 2026-11-17: upgrade it (dashboard) before then.
+#   Key Value    red-dbaalb5g1s2s73bdgmn0   internal URL redis://red-dbaalb5g1s2s73bdgmn0:6379
+# On the first Blueprint sync, paste the database's *Internal Database URL* (its Connect menu) as DATABASE_URL.
 # Spec: https://render.com/docs/blueprint-spec  (schema: https://render.com/schema/render.yaml.json)
 #
-# Demo-phase switch (day before judging): plan 0.5c-512mb for api and web, uncomment vicky-worker,
-# set JOBS_MODE=worker, add `preDeployCommand: python -m vicky.migrate` to vicky-api, raise
-# DAILY_USD_BUDGET; in the dashboard: vicky-db -> basic-256mb, vicky-kv -> starter.
-# Fallback: if the free web plan refuses runtime: docker, put vicky-api on 0.5c-512mb.
+# After the first sync: if Render gave vik-api or vik-web a suffixed hostname (vik-api-xxxx.onrender.com),
+# put the real ones in API_INTERNAL_URL (vik-web) and WEB_ORIGIN (vik-shared) below, and in API_PUBLIC_WS_URL.
+#
+# Demo-phase switch (day before judging): plan 0.5c-512mb for api and web, uncomment vik-worker,
+# set JOBS_MODE=worker, add `preDeployCommand: python -m vik.migrate` to vik-api, raise
+# DAILY_USD_BUDGET; in the dashboard: the database -> basic-256mb, the Key Value -> starter.
+# Fallback: if the free web plan refuses runtime: docker, put vik-api on 0.5c-512mb.
 
 services:
   - type: web
-    name: vicky-api
+    name: vik-api
     runtime: docker
     plan: free
     region: ohio
@@ -35,16 +38,16 @@ services:
         - backend/tests/**
         - backend/evals/**
     envVars:
-      # vicky-db's Internal Database URL (see the header). A secret: entered on the first sync.
+      # The database's Internal Database URL (see the header). A secret: entered on the first sync.
       - key: DATABASE_URL
         sync: false
-      # vicky-kv on the private network (free Key Value has no password; reachable only inside Render).
+      # The Key Value on the private network (free Key Value has no password; reachable only inside Render).
       - key: REDIS_URL
         value: redis://red-dbaalb5g1s2s73bdgmn0:6379
       - key: JOBS_MODE
         value: inline
-      # WEB_ORIGIN, LLM_MODE, DAILY_USD_BUDGET and COOKIE_SECRET (shared with the worker).
-      - fromGroup: vicky-shared
+      # WEB_ORIGIN, LLM_MODE, GEMINI_TIER, DAILY_USD_BUDGET and COOKIE_SECRET (shared with the worker).
+      - fromGroup: vik-shared
       # Secure cookie, and no /docs, /redoc or /openapi.json.
       - key: COOKIE_SECURE
         value: "true"
@@ -54,9 +57,8 @@ services:
       #   value: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7
       # Secrets: `sync: false` is ignored inside an environment group, so each service lists its own
       # and Render asks for them on the first Blueprint sync.
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: ANTHROPIC_WORKSPACE_ID
+      # Gemini API key (Google AI Studio; a free key works with GEMINI_TIER=free). Unset = the offline agents.
+      - key: GEMINI_API_KEY
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
@@ -67,17 +69,17 @@ services:
       - key: ACCESS_CODE
         sync: false
 
-  # Workers have no free plan; uncomment for the demo phase (and set vicky-api JOBS_MODE=worker).
-  # Shared settings come from the vicky-shared group; the secrets the jobs use (Claude for memos and
-  # extraction, Voyage for kb_index embeddings) are listed here, so enter the same values as the api.
+  # Workers have no free plan; uncomment for the demo phase (and set vik-api JOBS_MODE=worker).
+  # Shared settings come from the vik-shared group; the secrets the jobs use (Gemini for document facts and
+  # the organizer, Voyage for kb_index embeddings) are listed here, so enter the same values as the api.
   # - type: worker
-  #   name: vicky-worker
+  #   name: vik-worker
   #   runtime: docker
   #   plan: 0.5c-512mb
   #   region: ohio
   #   dockerfilePath: ./backend/Dockerfile
   #   dockerContext: ./backend
-  #   dockerCommand: arq vicky.jobs.WorkerSettings
+  #   dockerCommand: arq vik.jobs.WorkerSettings
   #   maxShutdownDelaySeconds: 60
   #   autoDeployTrigger: checksPass
   #   buildFilter:
@@ -94,8 +96,8 @@ services:
   #       value: redis://red-dbaalb5g1s2s73bdgmn0:6379
   #     - key: JOBS_MODE
   #       value: worker
-  #     - fromGroup: vicky-shared
-  #     - key: ANTHROPIC_API_KEY
+  #     - fromGroup: vik-shared
+  #     - key: GEMINI_API_KEY
   #       sync: false
   #     - key: ELEVENLABS_API_KEY
   #       sync: false
@@ -103,7 +105,7 @@ services:
   #       sync: false
 
   - type: web
-    name: vicky-web
+    name: vik-web
     runtime: docker
     plan: free
     region: ohio
@@ -120,24 +122,28 @@ services:
         - frontend/**/*.md
     envVars:
       # Address of the API. Free web services can't receive private-network traffic, so on the free plan
-      # this is the API's public URL (fix it if Render gave vicky-api a suffixed hostname). On a paid plan use
-      # the private address instead: fromService {type: web, name: vicky-api, property: hostport}.
+      # this is the API's public URL (fix it if Render gave vik-api a suffixed hostname). On a paid plan use
+      # the private address instead: fromService {type: web, name: vik-api, property: hostport}.
       - key: API_INTERNAL_URL
-        value: https://vicky-api-g9ud.onrender.com
-      # Public WebSocket base for the browser, e.g. wss://vicky-api.onrender.com (set after first deploy).
+        value: https://vik-api.onrender.com
+      # Public WebSocket base for the browser, e.g. wss://vik-api.onrender.com (set after first deploy).
       - key: API_PUBLIC_WS_URL
         sync: false
 
 # Settings the api and the worker must agree on. Moving COOKIE_SECRET here generates a new value once,
 # which signs everyone out a single time.
 envVarGroups:
-  - name: vicky-shared
+  - name: vik-shared
     envVars:
-      # Public origin of vicky-web: the CORS allow-origin (the cookie sets no Domain; the browser only
-      # talks to vicky-web, which proxies /api/v1). Fix it after the first deploy if Render gave the web
+      # Public origin of vik-web: the CORS allow-origin (the cookie sets no Domain; the browser only
+      # talks to vik-web, which proxies /api/v1). Fix it after the first deploy if Render gave the web
       # service a suffixed hostname.
       - key: WEB_ORIGIN
-        value: https://vicky-web-apog.onrender.com
+        value: https://vik-web.onrender.com
+      # free: a free AI Studio key (no dollar budget; requests are paced per model). paid: list prices
+      # against DAILY_USD_BUDGET. On the free tier Google may use what is sent to improve its products.
+      - key: GEMINI_TIER
+        value: free
       - key: DAILY_USD_BUDGET
         value: "20"
       - key: LLM_MODE

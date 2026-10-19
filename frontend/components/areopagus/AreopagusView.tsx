@@ -223,8 +223,8 @@ function PersonaCard({
 
 /**
  * The Areopagus: every investor persona the panel can seat (UI doc §3.7), and the builder.
- * The URL opens the builder: `?build=1` (new) or `?edit=<id>`. `return=preparation&panel=a,b` marks
- * a trip from the Preparation roster's "+": saving goes back there with the new investor seated.
+ * The URL opens the builder: `?build=1` (new) or `?edit=<id>`. `return=simulation&panel=a,b` marks
+ * a trip from the Simulation roster's "+": saving goes back there with the new investor seated.
  */
 export function AreopagusView() {
   const guard = useAccessGuard();
@@ -233,7 +233,7 @@ export function AreopagusView() {
   const list = useApi<PersonaSummary[]>("areopagus");
   const editId = params.get("edit");
   const building = params.get("build") === "1" || !!editId;
-  const fromPrep = params.get("return") === "preparation";
+  const fromSim = params.get("return") === "simulation";
   const panel = (params.get("panel") ?? "").split(",").filter(Boolean).slice(0, MAX_PANEL);
   const [busy, setBusy] = useState<string | null>(null);
   const [fresh, setFresh] = useState<string | null>(null);
@@ -266,22 +266,22 @@ export function AreopagusView() {
     }
   };
 
-  const prepUrl = (ids: string[], added?: string) => {
+  const simUrl = (ids: string[], added?: string) => {
     const q = new URLSearchParams();
     if (ids.length) q.set("panel", ids.join(","));
     if (added) q.set("added", added);
     const qs = q.toString();
-    return qs ? `/preparation?${qs}` : "/preparation";
+    return qs ? `/simulation?${qs}` : "/simulation";
   };
 
   const closeBuilder = () => {
-    if (fromPrep) router.push(prepUrl(panel));
+    if (fromSim) router.push(simUrl(panel));
     else router.replace("/areopagus", { scroll: false });
   };
 
   const onSaved = (id: string) => {
-    if (fromPrep) {
-      router.push(prepUrl(panel.length < MAX_PANEL ? [...panel, id] : panel, id));
+    if (fromSim) {
+      router.push(simUrl(panel.length < MAX_PANEL ? [...panel, id] : panel, id));
       return;
     }
     setFresh(id);

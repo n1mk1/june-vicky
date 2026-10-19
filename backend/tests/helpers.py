@@ -5,11 +5,11 @@ import hashlib
 
 import yaml
 
-from vicky import db
-from vicky.model.financials import DatasetInput, build_model
-from vicky.model.metrics import compute_metrics
-from vicky.samples import SAMPLES_DIR, load_sample
-from vicky.services import engagements
+from vik import db
+from vik.model.financials import DatasetInput, build_model
+from vik.model.metrics import compute_metrics
+from vik.samples import SAMPLES_DIR, load_sample
+from vik.services import engagements
 
 
 def sample_model(sample_id: str):
@@ -86,3 +86,37 @@ async def load_and_confirm(api_client, sample_id: str) -> dict:
     r = await api_client.post(f"/engagements/{eid}/confirm")
     assert r.status_code == 200, r.text
     return r.json()
+
+
+class Started:
+    """What starting a court returns, shaped like the API's response (`status_code`, `json()`, `text`)."""
+
+    def __init__(self, status_code: int, body: dict):
+        self.status_code, self.body = status_code, body
+        self.text = str(body)
+
+    def json(self) -> dict:
+        return self.body
+
+
+async def start_court(
+    panel: list[str] | None = None,
+    question_cap: int | None = None,
+    knowledge: bool = True,
+    coaching: str = "coached",
+    focus: str | None = None,
+) -> Started:
+    """Open the court the way Simulation does after a pitch (`pitch.end` → `court.start`), returning its view;
+    409 without a confirmed source of truth, 422 for a bad panel."""
+    from vik.areopagus.registry import PersonaError
+    from vik.court import session as court
+
+    try:
+        await engagements.require_confirmed()
+    except engagements.NotFound as e:
+        return Started(409, {"detail": str(e)})
+    try:
+        sid = await court.start(panel, question_cap, coaching, focus, knowledge)
+    except (PersonaError, court.CourtError) as e:
+        return Started(422, {"detail": str(e)})
+    return Started(200, await court.view(sid))

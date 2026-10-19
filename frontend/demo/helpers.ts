@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 /** Where each recording lands, with a sidecar JSON of the cuts `scripts/demo-videos.mjs` applies. */
 export const RAW = join(process.cwd(), "..", "docs", "demo", "raw");
-export const ACCESS_CODE = process.env.DEMO_ACCESS_CODE ?? process.env.ACCESS_CODE ?? "vicky-demo";
+export const ACCESS_CODE = process.env.DEMO_ACCESS_CODE ?? process.env.ACCESS_CODE ?? "vik-demo";
 
 /** A stretch of the recording to play faster (waiting on the panel, a fill, a draft). */
 interface Fast {
@@ -225,7 +225,7 @@ export async function signIn(context: BrowserContext, baseURL: string) {
 export async function skipIntro(context: BrowserContext) {
   await context.addInitScript(() => {
     try {
-      sessionStorage.setItem("vicky-preloaded", "1");
+      sessionStorage.setItem("vik-preloaded", "1");
     } catch {}
   });
 }

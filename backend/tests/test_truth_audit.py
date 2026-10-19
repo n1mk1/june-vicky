@@ -1,9 +1,9 @@
 """Claim checks (FR-5), the attack list and the audit (FR-6)."""
 
 from tests.helpers import sample_metrics
-from vicky.audit import audit_text, extract_numbers
-from vicky.model.figures import Figure
-from vicky.model.truth import attack_list, check_claim, quick_claims
+from vik.audit import audit_text, extract_numbers
+from vik.model.figures import Figure
+from vik.model.truth import attack_list, check_claim, quick_claims
 
 
 def figs(metrics):

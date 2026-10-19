@@ -1,6 +1,6 @@
-# JUNE × VICKY frontend
+# Vik frontend
 
-Next.js 16 app for Vicky, the AI venture capitalist. Its look is inspired by trionn.com: dark space scenes with light streaks, grey "paper" light mode, tight grotesk type and a 3D wireframe mark. No Trionn assets or copy are used. Screens follow the wireframe in `../docs/design/wireframe.png`.
+Next.js 16 app for Vik, the AI venture capitalist. Its look is inspired by trionn.com: dark space scenes with light streaks, grey "paper" light mode, tight grotesk type and a 3D wireframe mark. No Trionn assets or copy are used.
 
 ## Run
 
@@ -15,14 +15,16 @@ Open http://localhost:3000.
 
 | Route | What it shows |
 |---|---|
-| `/` | Landing page: 3D VICKY mark, headline, "Insights · Prep · Sim" links, prompt bar |
+| `/` | Landing page: VIK mark, headline, Get started |
+| `/knowledge` | Knowledge base: imported files as notes, folders, graph, Fill dashboard |
 | `/dashboard` | Gross-margin ring, ARR card, readiness orb, MRR/burn chart, what the panel will ask first |
-| `/preparation` | VC panel, court chat filtered by feedback, slide design and knowledge, Q&A list to repeat or study |
-| `/simulation` | VC panel, slide view with claim checks, live/after interruption toggle, scoring and metrics |
+| `/simulation` | VC panel, slide view with claim checks, live/after interruption toggle, scoring and metrics, Q&A after the pitch |
+| `/areopagus` | Investor personas and the builder |
+| `/reports` | Every session written up, with the score trend per company |
 
 ## Screenshots
 
-`docs/screenshots/pages/` holds every page in dark and light at desktop (1440px) and phone (390px) width, plus the preloader. To regenerate, start the app, then capture:
+`npm run screenshots` captures every page in dark and light at desktop (1440px) and phone (390px) width, plus the preloader, into `docs/screenshots/pages/`. Start the app first:
 
 ```bash
 npm run build && npm start
@@ -44,11 +46,11 @@ The script uses your installed Edge or Chrome. Set `BASE_URL` if the app isn't o
 npm run test:e2e
 ```
 
-Global setup signs in with `ACCESS_CODE` (default `vicky-demo`) and, if nothing is confirmed, imports a sample company's files (`E2E_SAMPLE`, default `harbor-labs`) into the knowledge base, fills the dashboard from it and confirms. Tests share the dashboard, run one at a time, and remove any widget they add and restore the time range afterwards. Set `BASE_URL` if the app isn't on port 3000.
+Global setup signs in with `ACCESS_CODE` (default `vik-demo`) and, if nothing is confirmed, imports a sample company's files (`E2E_SAMPLE`, default `harbor-labs`) into the knowledge base, fills the dashboard from it and confirms. Tests share the dashboard, run one at a time, and remove any widget they add and restore the time range afterwards. Set `BASE_URL` if the app isn't on port 3000.
 
 ## Demo videos
 
-`demo/` holds one Playwright spec per tab that clicks through the app at a human pace, with a visible cursor and captions. `npm run demo:record` saves the recordings and `npm run demo:videos` encodes the MP4s and GIFs in `../docs/demo/` (needs ffmpeg). See "Recording the demos" in the [repo README](../README.md).
+`demo/` holds one Playwright spec per tab that clicks through the app at a human pace, with a visible cursor and captions. `npm run demo:record` saves the recordings and `npm run demo:videos` encodes the MP4s and GIFs in `../docs/demo/` (needs ffmpeg). See "Recording demos" in the [repo README](../README.md).
 
 ## The dashboard's building blocks
 
@@ -58,8 +60,9 @@ Global setup signs in with `ACCESS_CODE` (default `vicky-demo`) and, if nothing 
 
 ## Where things live
 
-- `lib/tidewell.ts`: Tidewell monthly actuals from CSV 01, and every derived figure with its formula and source.
-- `lib/court.ts`: maps a court session from the API (turns, scores, claims, knowledge checks) to the Preparation feed and Q&A list.
-- `components/fx`: the preloader, light streaks and WebGL scenes (the VICKY mark and readiness orb).
-- `components/ui`: pills with letter roll, panels with corner marks, the VICKY mark, VC glyphs.
+- `lib/court.ts`: the court engine's chair id, used by the Simulation's Q&A after the pitch.
+- `components/court`: claim and knowledge chips and the score bars, shared by the Simulation and Reports.
+- `components/fx`: the preloader, light streaks and WebGL scenes (the VIK mark and readiness orb).
+- `components/ui`: pills with letter roll, panels with corner marks, VC glyphs.
+- `public/brand/`: the VIK wordmark the lockup and landing use, written by `../brand/build.py` (as are `app/icon.svg`, `app/apple-icon.png` and `app/opengraph-image.png`).
 - `app/globals.css`: theme tokens for `data-theme="dark"` and `data-theme="light"`.

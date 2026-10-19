@@ -10,14 +10,14 @@
     {
       "name": "api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["--directory", "backend", "run", "uvicorn", "vicky.api:app", "--host", "127.0.0.1", "--port", "8000", "--reload", "--reload-dir", "vicky"],
+      "runtimeArgs": ["--directory", "backend", "run", "uvicorn", "vik.api:app", "--host", "127.0.0.1", "--port", "8000", "--reload", "--reload-dir", "vik"],
       "port": 8000,
       "autoPort": false
     },
     {
       "name": "api-demo",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["--directory", "backend", "run", "uvicorn", "vicky.api:app", "--host", "127.0.0.1", "--port", "8100"],
+      "runtimeArgs": ["--directory", "backend", "run", "uvicorn", "vik.api:app", "--host", "127.0.0.1", "--port", "8100"],
       "env": { "RATE_LIMIT_PER_MIN": "100000", "WEB_ORIGIN": "http://localhost:3100" },
       "port": 8100,
       "autoPort": false

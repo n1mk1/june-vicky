@@ -96,7 +96,7 @@ function batches(files: Picked[]): Picked[][] {
 }
 
 /**
- * The knowledge base tab: drop any files in, Vicky converts them to markdown and CSV notes, files and
+ * The knowledge base tab: drop any files in, Vik converts them to markdown and CSV notes, files and
  * links them, and the vault shows as a tree, a graph and an editor. "Fill dashboard" builds a draft
  * source of truth from it for the founder to check; "Confirm knowledge base" (its last step) rebuilds search.
  */
@@ -313,10 +313,10 @@ export function KnowledgeView() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <span className="label">Knowledge base</span>
-          <h1 className="display text-[clamp(28px,3.2vw,44px)]">Everything Vicky knows.</h1>
+          <h1 className="display text-[clamp(28px,3.2vw,44px)]">Everything Vik knows.</h1>
           {s && (
             <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-ink-2">
-              <span title={`${s.files} original${s.files === 1 ? "" : "s"} (${fmtBytes(s.bytes)}) · organizer: ${s.llm ? "Claude" : "offline rules"}`}>
+              <span title={`${s.files} original${s.files === 1 ? "" : "s"} (${fmtBytes(s.bytes)}) · organizer: ${s.llm ? "Gemini" : "offline rules"}`}>
                 {s.notes} note{s.notes === 1 ? "" : "s"} · {s.tables} table{s.tables === 1 ? "" : "s"} · {s.documents} doc
                 {s.documents === 1 ? "" : "s"}
               </span>
@@ -525,7 +525,7 @@ function DropHero({ onPick, onFolder, onNew }: { onPick: () => void; onFolder: (
       <span className="label">Empty vault</span>
       <p className="display max-w-[16ch] text-[clamp(32px,4vw,56px)]">Dump everything here.</p>
       <p className="max-w-[58ch] text-[13.5px] leading-snug text-ink-2">
-        Drop files or whole folders anywhere on this page: {ACCEPTS}. Vicky turns each one into a markdown or CSV note (scanned
+        Drop files or whole folders anywhere on this page: {ACCEPTS}. Vik turns each one into a markdown or CSV note (scanned
         pages and chart images are read with OCR, chart values come straight from the file), files it, tags it, links it to the
         rest and writes a hub for each area. Then <span className="text-ink">Fill dashboard</span> autofills your source of
         truth from it, and <span className="text-ink">Confirm knowledge base</span> updates search for every agent.

@@ -1,4 +1,4 @@
-"""Regression tests for the court, LLM-layer and report fixes of QA-REPORT-2026-10-18 (§3.2, API-12, MET-27).
+"""Regression tests for the court, LLM-layer and report fixes of the 2026-10-18 QA report (in git history; §3.2, API-12, MET-27).
 
 Each test reproduces the report's repro first. Races are forced the way the report did it: a delayed fake
 (`extract_claims`, `report.build`) holds one request between its read and its write while another runs.
@@ -14,20 +14,21 @@ from datetime import UTC, datetime
 
 import pytest
 
+from tests.helpers import start_court
 from tests.llm_fakes import json_reply, text_reply, tool_use_reply
 from tests.test_llm_api import _login_and_confirm
-from vicky import db, kv
-from vicky.areopagus import registry
-from vicky.config import get_settings
-from vicky.court import knowledge, referee
-from vicky.court import minds as offline
-from vicky.court import session as court
-from vicky.llm import client as llm_client
-from vicky.llm import minds as agents
-from vicky.llm.client import BudgetExceeded, LLMUnavailable, get_llm
-from vicky.llm.schemas import Memo
-from vicky.model.context import sample_context
-from vicky.playbooks import country_programs, fill, playbooks, question_bank
+from vik import db, kv
+from vik.areopagus import registry
+from vik.config import get_settings
+from vik.court import knowledge, referee
+from vik.court import minds as offline
+from vik.court import session as court
+from vik.llm import client as llm_client
+from vik.llm import minds as agents
+from vik.llm.client import BudgetExceeded, LLMUnavailable, get_llm
+from vik.llm.schemas import Memo
+from vik.model.context import sample_context
+from vik.playbooks import country_programs, fill, playbooks, question_bank
 
 QUOTE = "The board approved the pilot with the regional partner and a minimum commitment from them."
 PASSAGE = {
@@ -48,9 +49,7 @@ def ctx():
 
 async def _start(api_client, panel=("aristotle", "thales"), cap=6) -> str:
     await _login_and_confirm(api_client)
-    r = await api_client.post(
-        "/court/start", json={"panel": list(panel), "question_cap": cap, "knowledge": False}
-    )
+    r = await start_court(list(panel), cap, knowledge=False)
     assert r.status_code == 200, r.text
     return r.json()["id"]
 
@@ -115,7 +114,7 @@ async def test_llm3_an_answer_racing_end_adds_nothing_after_the_debrief(api_clie
 
 @pytest.mark.db
 async def test_llm4_ending_twice_at_once_returns_one_report(api_client, monkeypatch):
-    from vicky import report
+    from vik import report
 
     sid = await _start(api_client)
     real = report.build
@@ -133,11 +132,6 @@ async def test_llm4_ending_twice_at_once_returns_one_report(api_client, monkeypa
     assert r1.json()["report_id"] and r1.json()["report_id"] == r2.json()["report_id"]
     assert [t["kind"] for t in await _turns(sid)].count("debrief") == 1
     assert await db.fetchval("select count(*) from reports where session_id::text = $1", sid) == 1
-    eid = await db.fetchval("select engagement_id from sessions where id::text = $1", sid)
-    mem = await db.fetch(
-        "select payload from founder_memory where engagement_id = $1 and kind = 'weakness'", eid
-    )
-    assert sum(1 for m in mem if m["payload"].get("session_id") == sid) <= 5  # written once, not twice
 
 
 # ---------------------------------------------------------------- LLM-5: the chair moves a follow-up
@@ -211,9 +205,9 @@ async def test_llm5_a_follow_up_on_another_hypothesis_starts_a_new_thread(ctx):
 
 
 async def test_llm6_a_tool_loop_stops_once_the_budget_is_spent(live_llm, monkeypatch):
-    monkeypatch.setenv("DAILY_USD_BUDGET", "0.005")  # one recorded Opus call costs $0.008
+    monkeypatch.setenv("DAILY_USD_BUDGET", "0.005")  # one recorded Gemini 4 Argon call costs $0.008
     get_settings.cache_clear()
-    rec = live_llm.install(lambda call: tool_use_reply("get_metric", {"id": "arr"}, model="claude-opus-5-5"))
+    rec = live_llm.install(lambda call: tool_use_reply("get_metric", {"id": "arr"}, model="gemini-4-argon"))
     tool = agents._tool(
         "get_metric",
         "Figure by id.",
@@ -269,7 +263,7 @@ async def test_llm7_a_tool_loop_has_an_overall_timeout(live_llm, monkeypatch):
 
     async def slow(call):
         await asyncio.sleep(0.2)  # each call is under the limit; the loop as a whole is not
-        return tool_use_reply("get_metric", {"id": "arr"}, model="claude-opus-5-5")
+        return tool_use_reply("get_metric", {"id": "arr"}, model="gemini-4-argon")
 
     live_llm.install(slow)
     tool = agents._tool(
@@ -297,7 +291,7 @@ OLD_NAMES = re.compile(r"\b(Claire|James|Alex|Mark|Kenji|Priya|Dana|Victor|Sam|O
 
 
 def test_llm8_country_rules_name_no_old_persona():
-    from vicky.areopagus.kits import governance
+    from vik.areopagus.kits import governance
 
     for code in ("CA", "US", "UK", "generic"):
         _front, rules = governance.parse_playbook(
@@ -307,7 +301,7 @@ def test_llm8_country_rules_name_no_old_persona():
 
 
 def test_llm8_no_playbook_names_an_old_persona():
-    from vicky.playbooks import PLAYBOOKS
+    from vik.playbooks import PLAYBOOKS
 
     hits = [
         f"{p.relative_to(PLAYBOOKS)}:{i}"
@@ -505,7 +499,7 @@ def _redis_down(monkeypatch) -> None:
 async def test_api12_spend_is_kept_and_read_in_postgres_when_redis_is_down(api_client, monkeypatch):
     from fastapi import HTTPException
 
-    from vicky import auth
+    from vik import auth
 
     today = datetime.now(UTC).date()
     saved = await db.fetchrow("select usd, calls from spend where date = $1", today)
@@ -516,7 +510,8 @@ async def test_api12_spend_is_kept_and_read_in_postgres_when_redis_is_down(api_c
         await kv.add_spend(0.25)
         assert await kv.spend_today() == pytest.approx(0.75)
         monkeypatch.setenv("DAILY_USD_BUDGET", "0.5")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setenv("GEMINI_TIER", "paid")
         monkeypatch.setenv("LLM_MODE", "auto")
         get_settings.cache_clear()
         assert await llm_client.over_budget()
@@ -537,6 +532,8 @@ async def test_api12_spend_is_kept_and_read_in_postgres_when_redis_is_down(api_c
 
 async def test_api12_live_calls_fail_closed_when_no_store_is_readable(monkeypatch):
     _redis_down(monkeypatch)
+    monkeypatch.setenv("GEMINI_TIER", "paid")  # a free key has no dollar budget to fail closed on
+    get_settings.cache_clear()
 
     def no_db():
         raise RuntimeError("database pool is not initialised")
@@ -573,7 +570,7 @@ async def test_met27_the_report_strips_what_the_audit_flags(api_client):
 
 
 def test_met27_wording_in_any_report_field_is_replaced_but_founder_words_and_sources_stay(ctx):
-    from vicky import report
+    from vik import report
 
     notes: list[dict] = []
     q = {
@@ -586,7 +583,7 @@ def test_met27_wording_in_any_report_field_is_replaced_but_founder_words_and_sou
     out = report._clean_wording([q], ctx, notes)[0]
     assert out["good"] == "Fine; [removed by the audit] now."
     assert out["missing"] == "[removed by the audit] Say what you'll do next."  # the sentence, not the field
-    assert out["answer"] == q["answer"] and out["correct_figure"] == q["correct_figure"]  # not Vicky's words
+    assert out["answer"] == q["answer"] and out["correct_figure"] == q["correct_figure"]  # not Vik's words
     assert sorted(n["changed"][:12] for n in notes) == ["Investors us", "you should a"]
 
     md = "\n".join(

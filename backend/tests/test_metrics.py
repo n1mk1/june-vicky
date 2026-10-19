@@ -4,10 +4,10 @@ import pytest
 import yaml
 
 from tests.helpers import sample_metrics, sample_model
-from vicky.model.figures import Figure, MissingFigure
-from vicky.model.loader import parse_number, parse_period, parse_upload
-from vicky.model.mapping import mapping_accuracy, propose_heuristic
-from vicky.samples import SAMPLES_DIR
+from vik.model.figures import Figure, MissingFigure
+from vik.model.loader import parse_number, parse_period, parse_upload
+from vik.model.mapping import mapping_accuracy, propose_heuristic
+from vik.samples import SAMPLES_DIR
 
 
 def approx(fig, value, rel=0.02):

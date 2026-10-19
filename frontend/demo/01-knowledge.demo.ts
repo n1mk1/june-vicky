@@ -1,6 +1,6 @@
 import { expect, signIn, skipIntro, test } from "./helpers";
 
-// Knowledge base: the vault, its graph, a table and a document Vicky read, and search.
+// Knowledge base: the vault, its graph, a table and a document Vik read, and search.
 test.beforeEach(async ({ context, baseURL }) => {
   await signIn(context, baseURL!);
   await skipIntro(context);
@@ -42,7 +42,7 @@ test("01-knowledge", async ({ page, demo }) => {
   // A long document, read into markdown.
   const doc = tree.getByRole("button", { name: /pack|deck|memo|report/i }).first();
   if (await doc.count()) {
-    await demo.caption("Documents", "PDFs and decks are converted to markdown (with OCR for scans) so Vicky can cite them.");
+    await demo.caption("Documents", "PDFs and decks are converted to markdown (with OCR for scans) so Vik can cite them.");
     await demo.click(doc);
     await demo.pause(1600);
     await demo.moveTo(820, 560, 700);

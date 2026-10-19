@@ -245,7 +245,7 @@ function MappingEditor({ data, currency, register, onSaved }: EditorProps) {
                     )}
                     {newAxis && (
                       <span className="mt-0.5 block text-[11px] text-ink">
-                        Vicky reads this table again with this column as its dates when you save.
+                        Vik reads this table again with this column as its dates when you save.
                       </span>
                     )}
                     {isCurrency(r.unit) && r.unit !== currency && (

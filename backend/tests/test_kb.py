@@ -9,11 +9,11 @@ import pytest
 
 from tests import llm_fakes
 from tests.llm_fakes import json_reply, queue
-from vicky.kb import autofill, convert
-from vicky.kb.autofill import Evidence, heuristic_profile, number_in, propose_profile, verify
-from vicky.kb.organize import claude_plan, guess_folder, heuristic_hubs, scrub_numbers
-from vicky.kb.store import Resolver, clean_path, wikilinks
-from vicky.samples import SAMPLES_DIR
+from vik.kb import autofill, convert
+from vik.kb.autofill import Evidence, heuristic_profile, number_in, propose_profile, verify
+from vik.kb.organize import guess_folder, heuristic_hubs, llm_plan, scrub_numbers
+from vik.kb.store import Resolver, clean_path, wikilinks
+from vik.samples import SAMPLES_DIR
 
 
 def make_pdf(lines: list[str]) -> bytes:
@@ -201,10 +201,10 @@ def test_profile_heuristic_and_evidence_check():
     assert number_in(2_500_000, "raise 2.5 million") and not number_in(25, "raise 2.5 million")
 
 
-# ---------------------------------------------------------------- Claude path (recorded responses)
+# ---------------------------------------------------------------- Gemini path (recorded responses)
 
 
-async def test_claude_plan_keeps_known_paths_and_drops_invented_numbers(live_llm):
+async def test_llm_plan_keeps_known_paths_and_drops_invented_numbers(live_llm):
     batch = [
         {
             "path": "inbox/a.csv",
@@ -244,17 +244,17 @@ async def test_claude_plan_keeps_known_paths_and_drops_invented_numbers(live_llm
         ]
     }
     rec = live_llm.install(queue(json_reply(reply)))
-    plans, dropped = await claude_plan(batch, batch)
+    plans, dropped = await llm_plan(batch, batch)
     by = {p["path"]: p for p in plans}
     a = by["inbox/a.csv"]
     assert a["folder"] == "financials" and a["title"] == "Monthly revenue"
     assert "1000" in a["summary"] and "35%" not in a["summary"] and dropped == 1  # 35 isn't in the table
     assert a["related"] == ["inbox/b.md"]  # unknown paths and itself are dropped
     assert "made/up.md" not in by and "inbox/b.md" in by  # a note the model skipped gets the heuristic plan
-    assert rec.calls[0]["body"]["output_config"]["effort"] == "medium"
+    assert rec.calls[0]["body"]["thinking_level"] == "medium"
 
 
-async def test_claude_profile_values_must_quote_their_note(live_llm):
+async def test_gemini_profile_values_must_quote_their_note(live_llm):
     notes = [
         {
             "path": "deck.md",
@@ -279,7 +279,7 @@ async def test_claude_profile_values_must_quote_their_note(live_llm):
     }
     live_llm.install(queue(json_reply(reply)))
     found, by = await propose_profile(notes)
-    assert by == "claude"
+    assert by == "gemini"
     values = {k: v for k, (v, _) in found.items()}
     assert (
         values["name"] == "Northwind Labs Inc." and values["country"] == "CA" and values["city"] == "Toronto"
@@ -287,7 +287,7 @@ async def test_claude_profile_values_must_quote_their_note(live_llm):
     assert values["round_type"] == "safe" and "currency" not in values
     assert (
         values["round_size"] == 2_500_000
-    )  # the heuristic's verified value stands; Claude's $3M was rejected
+    )  # the heuristic's verified value stands; Gemini's $3M was rejected
     assert "stage" not in values and "one_liner" not in values  # unquoted, and an invented figure
     assert found["name"][1] == "From [[deck.md]]: “Northwind Labs Inc. builds”"
 
@@ -313,7 +313,7 @@ def test_profile_batches_carry_every_note_in_full():
     assert joined.index("deck.md") < joined.index("pl.csv")  # documents before tables
 
 
-async def test_claude_profile_reads_every_batch_and_takes_the_majority(live_llm, monkeypatch):
+async def test_gemini_profile_reads_every_batch_and_takes_the_majority(live_llm, monkeypatch):
     monkeypatch.setattr(autofill, "BATCH_CHARS", 12_000)
     pad = "Notes. " * 1500  # each note fills its own batch, well past the old 6,000-character cut
     notes = [
@@ -343,7 +343,7 @@ async def test_claude_profile_reads_every_batch_and_takes_the_majority(live_llm,
 
     rec = live_llm.install(respond)
     found, by = await propose_profile(notes)
-    assert by == "claude" and len(rec.calls) == 3
+    assert by == "gemini" and len(rec.calls) == 3
     assert found["name"][0] == "Acme Labs Inc."  # two batches agree over one
     assert found["city"][0] == "Lyon"  # found past the old cut, in the last batch
 
@@ -354,7 +354,7 @@ pytestmark_db = pytest.mark.db
 
 
 async def _wait(api_client, job_id):
-    from vicky import jobs
+    from vik import jobs
 
     await jobs.wait_for([job_id], timeout_s=60)
     r = await api_client.get(f"/jobs/{job_id}")
@@ -365,9 +365,9 @@ async def _wait(api_client, job_id):
 @pytestmark_db
 async def test_kb_import_organize_graph_edit_export_autofill(api_client):
     if not (await api_client.get("/auth/session")).json()["ok"]:  # run alone: no cookie from test_api yet
-        assert (await api_client.post("/auth/access", json={"code": "vicky-demo"})).status_code == 200
+        assert (await api_client.post("/auth/access", json={"code": "vik-demo"})).status_code == 200
     # Files posted to /uploads by earlier tests are mirrored into the vault: start from an empty one.
-    from vicky import db
+    from vik import db
 
     await db.execute("delete from kb_notes")
     await db.execute("delete from kb_files")
@@ -441,7 +441,7 @@ async def test_kb_import_organize_graph_edit_export_autofill(api_client):
     assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
         names = set(z.namelist())
-        assert ".vicky/meta.json" in names and table["path"] in names
+        assert ".vik/meta.json" in names and table["path"] in names
         assert z.read("company/Plan.md").decode().startswith("---\ntitle: Plan")
     before = {n["path"]: n for n in (await api_client.get("/kb/notes")).json()}
     for n in before.values():

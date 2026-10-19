@@ -1,4 +1,4 @@
-"""QA regressions for the dashboard chat ("Ask Vicky"): defects found in the 2026-10-18 QA pass.
+"""QA regressions for the dashboard chat ("Ask Vik"): defects found in the 2026-10-18 QA pass.
 
 Each test pins a defect found then (now fixed) or guards the behaviour around it.
 """
@@ -8,10 +8,10 @@ import re
 import pytest
 
 from tests.helpers import load_and_confirm
-from vicky.model.context import sample_context
-from vicky.qa import answer
-from vicky.viz import evaluate_widget
-from vicky.viz.phrases import interpret
+from vik.model.context import sample_context
+from vik.qa import answer
+from vik.viz import evaluate_widget
+from vik.viz.phrases import interpret
 
 
 @pytest.fixture(scope="module")
@@ -139,7 +139,7 @@ def test_chart_it_is_only_offered_when_it_can_be_drawn(ctx):
 
 
 async def _dash(api_client) -> dict:
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     r = await api_client.get("/dashboards/active")
     if r.status_code == 404:
         await load_and_confirm(api_client, "tidewell")

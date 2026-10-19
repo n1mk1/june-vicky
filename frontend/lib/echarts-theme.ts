@@ -1,5 +1,5 @@
 /**
- * Registers the `vicky-dark` and `vicky-light` ECharts themes from the CSS tokens in
+ * Registers the `vik-dark` and `vik-light` ECharts themes from the CSS tokens in
  * app/globals.css. The backend's options carry no colours (viz/echarts.py); the theme does.
  *
  * Tokens are read by mounting a hidden probe with `data-theme="dark|light"` (the selectors in
@@ -9,7 +9,7 @@
 import type { Theme } from "./use-theme";
 import { palette } from "./use-theme";
 
-export const themeName = (t: Theme) => (t === "light" ? "vicky-light" : "vicky-dark");
+export const themeName = (t: Theme) => (t === "light" ? "vik-light" : "vik-dark");
 
 interface Tokens {
   ink: string;
@@ -151,9 +151,9 @@ function build(theme: Theme): Record<string, unknown> {
 let registered = false;
 
 /** Register both themes once per page (re-reading tokens is cheap but not needed per chart). */
-export function registerVickyThemes(echarts: { registerTheme: (name: string, theme: object) => void }) {
+export function registerVikThemes(echarts: { registerTheme: (name: string, theme: object) => void }) {
   if (registered || typeof document === "undefined") return;
-  echarts.registerTheme("vicky-dark", build("dark"));
-  echarts.registerTheme("vicky-light", build("light"));
+  echarts.registerTheme("vik-dark", build("dark"));
+  echarts.registerTheme("vik-light", build("light"));
   registered = true;
 }

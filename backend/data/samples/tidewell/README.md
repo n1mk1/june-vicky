@@ -1,6 +1,6 @@
 # Tidewell sample data
 
-Sample and test fixture only. Vicky is startup-agnostic; Tidewell is the demo company from the Catalyst brief.
+Sample and test fixture only. Vik is startup-agnostic; Tidewell is the demo company from the Catalyst brief.
 
 | File | Original name (as provided by the organizers) |
 |---|---|

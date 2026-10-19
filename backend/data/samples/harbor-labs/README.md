@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Test fixture proving Vicky is startup-agnostic. Compared with the Tidewell sample it differs in
+Test fixture proving Vik is startup-agnostic. Compared with the Tidewell sample it differs in
 almost every dimension the ingestion and metrics engine care about:
 
 | | Tidewell | Harbor Labs |

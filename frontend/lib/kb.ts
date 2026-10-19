@@ -1,6 +1,6 @@
 /**
  * Knowledge base helpers shared by the tree, the graph and the editor. The wikilink resolver mirrors
- * the API's (backend/vicky/kb/store.py): full path, path without extension, file name, then title.
+ * the API's (backend/vik/kb/store.py): full path, path without extension, file name, then title.
  */
 
 import type { KbNote } from "./types";

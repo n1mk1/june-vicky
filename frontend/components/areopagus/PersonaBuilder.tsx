@@ -220,7 +220,7 @@ function PersonaForm({
 }
 
 /**
- * The Areopagus builder (FR-13), a sheet on the right. Create: describe an investor, Claude drafts
+ * The Areopagus builder (FR-13), a sheet on the right. Create: describe an investor, Gemini drafts
  * the persona (or a keyword draft when it's offline), then the form edits it. Edit: the form opens
  * on a saved custom investor. Persona text is character description; the panel's rules sit above it.
  */
@@ -357,7 +357,7 @@ export function PersonaBuilder({
         top={
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-[4px] border border-line px-3 py-2" data-testid="draft-source">
             <span className="text-[11.5px] text-ink-2">
-              {draft.source === "claude" ? "Drafted by Claude from your description." : "Drafted from keywords; Claude is offline. Check every field."}
+              {draft.source === "gemini" ? "Drafted by Gemini from your description." : "Drafted from keywords; Gemini is offline. Check every field."}
             </span>
             <button type="button" onClick={() => setDraft(null)} className="text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
               Start over
@@ -378,7 +378,7 @@ export function PersonaBuilder({
         <Field
           label="Describe the investor"
           htmlFor="pb-desc"
-          hint={`${len}/${MAX_DESC}. Who they are, what they care about, how they come across. Claude drafts the persona; you edit it before saving.`}
+          hint={`${len}/${MAX_DESC}. Who they are, what they care about, how they come across. Gemini drafts the persona; you edit it before saving.`}
         >
           <textarea
             id="pb-desc"

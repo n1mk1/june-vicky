@@ -96,7 +96,7 @@ export function ProfileForm({ engagement, onSaved }: { engagement: Engagement; o
           <span className="rounded-[3px] border border-dashed border-line-strong px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em]">
             Prefilled
           </span>
-          Vicky filled these in from your {Object.keys(sources).length > 0 ? "knowledge base" : "files"}. Check them before you
+          Vik filled these in from your {Object.keys(sources).length > 0 ? "knowledge base" : "files"}. Check them before you
           continue.
         </p>
       )}

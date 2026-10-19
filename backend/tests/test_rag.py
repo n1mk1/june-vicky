@@ -1,5 +1,5 @@
 """Retrieval over the knowledge base (docs/08-RAG.md): chunking, BM25, the cite-every-statement rule, index
-builds on Fill dashboard (full rebuild, swap, discard), hybrid retrieval with a fake Voyage, the Ask Vicky
+builds on Fill dashboard (full rebuild, swap, discard), hybrid retrieval with a fake Voyage, the Ask Vik
 ladder and the catch-all offer that never runs without the user's go-ahead."""
 
 import hashlib
@@ -10,13 +10,14 @@ import re
 import httpx
 import pytest
 
+from tests.helpers import start_court
 from tests.llm_fakes import json_reply
-from vicky import db, jobs, kv
-from vicky.audit import audit_text
-from vicky.kb import ask, index, rag, store, voyage
-from vicky.kb.bm25 import BM25, stem, tokens
-from vicky.kb.chunk import MAX_CHARS, chunk_note
-from vicky.model.context import sample_context
+from vik import db, jobs, kv
+from vik.audit import audit_text
+from vik.kb import ask, index, rag, store, voyage
+from vik.kb.bm25 import BM25, stem, tokens
+from vik.kb.chunk import MAX_CHARS, chunk_note
+from vik.model.context import sample_context
 
 DECK = """# Pitch deck
 
@@ -234,7 +235,7 @@ async def test_a_build_indexes_every_note_and_kb_search_uses_it(vault):
     assert int(await db.fetchval("select count(*) from kb_chunks where build_id = $1::uuid", bid)) >= 4
     r = await rag.retrieve("Who are we hiring before the next round?")
     assert r.chunks and r.chunks[0]["path"] == vault["hiring"]["path"]
-    from vicky.kb.tools import Vault
+    from vik.kb.tools import Vault
 
     v = Vault()
     out = await v.search("Zephyrine partnership pilot")
@@ -285,7 +286,7 @@ async def test_between_fills_edited_notes_old_chunks_are_skipped_and_new_notes_w
 @pytest.mark.db
 async def test_a_new_fill_cancels_a_running_build_and_a_failed_build_keeps_the_old_one(vault, monkeypatch):
     first = await _build()
-    from vicky.kb import index as idx_mod
+    from vik.kb import index as idx_mod
 
     def boom(*_a, **_k):
         raise RuntimeError("chunker exploded")
@@ -315,7 +316,7 @@ async def test_a_new_fill_cancels_a_running_build_and_a_failed_build_keeps_the_o
 async def test_fill_drafts_and_confirm_knowledge_base_builds_search(vault, api_client):
     """Fill dashboard only drafts the intake; confirming the knowledge base rebuilds search, with the confirmed
     profile and mappings written into the vault as a note (docs/08-RAG.md §Indexing)."""
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     table = await store.create_note(
         {
             "title": "KPIs",
@@ -374,25 +375,25 @@ async def test_vectors_rerank_and_reuse_with_pgvector(vault, fake_voyage):
     assert await db.fetchval("select reused from kb_index_builds where status = 'active'") == first
 
 
-# ---------------------------------------------------------------- Ask Vicky over the index
+# ---------------------------------------------------------------- Ask Vik over the index
 
 QUOTE = "The board approved the Zephyrine partnership pilot with 40 stores and a $250K minimum commitment."
 
 
 @pytest.mark.db
-async def test_ask_vicky_answers_from_passages_and_caches_it(vault, ctx, live_llm):
+async def test_ask_vik_answers_from_passages_and_caches_it(vault, ctx, live_llm):
     await _build()
     reply = f"Your board pack says “{QUOTE}” [kb:{vault['deck']['path']}]"
     rec = live_llm.install(
-        lambda call: json_reply({"answerable": True, "reply": reply}, model="claude-haiku-5-5")
+        lambda call: json_reply({"answerable": True, "reply": reply}, model="gemini-3.5-flash-lite")
     )
-    from vicky.qa import answer_any
+    from vik.qa import answer_any
 
     q = "What did the board approve for the Zephyrine partnership?"
     out = await answer_any(q, ctx)
     assert out["reply"] == reply and out["rag"]["path"] in ("chunks", "recover")
     assert any(c["kind"] == "note" for c in out["citations"])
-    assert rec.calls[0]["body"]["model"] == "claude-haiku-5-5"
+    assert rec.calls[0]["body"]["model"] == "gemini-3.5-flash-lite"
     n = len(rec.calls)
     again = await answer_any(q, ctx)
     assert again["reply"] == reply and again["rag"]["cache"] == "exact" and len(rec.calls) == n
@@ -404,13 +405,13 @@ async def test_an_uncited_sentence_is_regenerated_then_dropped(vault, ctx, live_
     good = f"“{QUOTE}” [kb:{vault['deck']['path']}]"
     replies = [
         json_reply(
-            {"answerable": True, "reply": good + " This will double revenue."}, model="claude-haiku-5-5"
+            {"answerable": True, "reply": good + " This will double revenue."}, model="gemini-3.5-flash-lite"
         ),
-        json_reply({"answerable": True, "reply": good}, model="claude-haiku-5-5"),
+        json_reply({"answerable": True, "reply": good}, model="gemini-3.5-flash-lite"),
     ]
     rec = live_llm.install(lambda call: replies.pop(0))
-    from vicky.kb.ask import from_chunks
-    from vicky.qa import answer
+    from vik.kb.ask import from_chunks
+    from vik.qa import answer
 
     q = "What did the board approve for the Zephyrine partnership?"
     r = await rag.retrieve(q)
@@ -434,12 +435,14 @@ async def test_the_catch_all_is_offered_and_runs_only_after_accept(vault, ctx, l
                     "reply": f"“We will hire two engineers and one account executive "
                     f"before the next round.” [kb:{vault['hiring']['path']}]",
                 },
-                model="claude-haiku-5-5",
+                model="gemini-3.5-flash-lite",
             )
-        return json_reply({"answerable": False, "reply": "Not in the passages."}, model="claude-haiku-5-5")
+        return json_reply(
+            {"answerable": False, "reply": "Not in the passages."}, model="gemini-3.5-flash-lite"
+        )
 
     live_llm.install(respond)
-    await api_client.post("/auth/access", json={"code": "vicky-demo"})
+    await api_client.post("/auth/access", json={"code": "vik-demo"})
     d = await api_client.get("/dashboards/active")
     if d.status_code == 404:
         from tests.helpers import load_and_confirm
@@ -495,14 +498,16 @@ async def test_the_catch_all_is_offered_and_runs_only_after_accept(vault, ctx, l
 @pytest.mark.db
 async def test_no_offer_without_a_key_or_over_budget(vault, ctx, live_llm, monkeypatch):
     await _build()
-    live_llm.install(lambda call: json_reply({"answerable": False, "reply": "no"}, model="claude-haiku-5-5"))
-    from vicky.llm import client
+    live_llm.install(
+        lambda call: json_reply({"answerable": False, "reply": "no"}, model="gemini-3.5-flash-lite")
+    )
+    from vik.llm import client
 
     async def over() -> bool:
         return True
 
     monkeypatch.setattr(client, "over_budget", over)
-    from vicky.qa import answer_any
+    from vik.qa import answer_any
 
     out = await answer_any(
         "What does the plan say about the purple elephant?",
@@ -515,7 +520,7 @@ async def test_no_offer_without_a_key_or_over_budget(vault, ctx, live_llm, monke
 @pytest.mark.db
 async def test_offline_with_an_index_quotes_the_best_passage(vault, ctx):
     await _build()
-    from vicky.qa import answer_any
+    from vik.qa import answer_any
 
     out = await answer_any("Who will we hire before the next round?", ctx)
     assert out["topic"] == "notes" and "account executive" in out["reply"]
@@ -532,7 +537,7 @@ async def test_the_court_reads_notes_each_turn_and_a_line_may_quote_one(
     vault, api_client, live_llm, monkeypatch
 ):
     from tests.test_llm_api import _login_and_confirm, scripted
-    from vicky.config import get_settings
+    from vik.config import get_settings
 
     monkeypatch.setattr(
         get_settings(), "rag_conf_min", 0.0
@@ -554,7 +559,7 @@ async def test_the_court_reads_notes_each_turn_and_a_line_may_quote_one(
                 "id": "m",
                 "type": "message",
                 "role": "assistant",
-                "model": "claude-sonnet-5-5",
+                "model": "gemini-3.8-flash",
                 "content": [
                     {
                         "type": "text",
@@ -571,7 +576,7 @@ async def test_the_court_reads_notes_each_turn_and_a_line_may_quote_one(
 
     live_llm.install(respond)
     await _login_and_confirm(api_client)
-    r = await api_client.post("/court/start", json={"panel": ["aristotle", "thales"], "question_cap": 4})
+    r = await start_court(["aristotle", "thales"], 4)
     assert r.status_code == 200, r.text
     sid = r.json()["id"]
     state = await db.fetchval("select state from sessions where id::text = $1", sid)
@@ -595,7 +600,7 @@ async def test_the_court_reads_notes_each_turn_and_a_line_may_quote_one(
 
 @pytest.mark.db
 async def test_a_court_line_quoting_a_note_it_wasnt_given_fails_the_audit(vault, ctx):
-    from vicky.audit import audit_text as audit
+    from vik.audit import audit_text as audit
 
     line = f"Your plan says “{HIRE_QUOTE}” [kb:{vault['hiring']['path']}] How will you fund that?"
     assert not audit(line, ctx.available(), notes={}).passed

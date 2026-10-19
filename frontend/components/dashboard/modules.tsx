@@ -92,7 +92,7 @@ export function Readiness({ reports, company }: { reports: ReportSummary[] | und
       title="Pitch readiness"
       marks
       aside={
-        <Link href="/preparation" className="shrink-0 text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
+        <Link href="/simulation" className="shrink-0 text-[11.5px] text-ink underline underline-offset-2 hover:text-ember">
           {latest ? "Practise again" : "Face the panel"}
         </Link>
       }

@@ -1,4 +1,4 @@
-"""Regression tests for the leftovers in section 0 of docs/qa/QA-REPORT-2026-10-18.md.
+"""Regression tests for the leftovers in section 0 of the 2026-10-18 QA report (in git history).
 
 - LLM-6: each live call reserves an estimate of its cost against the day's budget before it is sent and
   settles the difference after, so calls running in parallel can't each overshoot the cap.
@@ -11,16 +11,16 @@ import asyncio
 
 import pytest
 
-from tests.llm_fakes import json_reply, tool_use_reply
-from vicky import db
-from vicky.config import get_settings
-from vicky.llm import minds as agents
-from vicky.llm.client import BudgetExceeded, LLMUnavailable, get_llm
-from vicky.llm.schemas import ClaimList, Memo
+from tests.llm_fakes import api_error, json_reply, tool_use_reply
+from vik import db
+from vik.config import get_settings
+from vik.llm import minds as agents
+from vik.llm.client import BudgetExceeded, LLMUnavailable, get_llm
+from vik.llm.schemas import ClaimList, Memo
 
 # ---------------------------------------------------------------- LLM-6: cost reservation
 
-OPUS_CALL_USD = (1000 * 4.0 + 200 * 20.0) / 1e6  # one recorded Opus 5.5 call (USAGE in llm_fakes)
+ARGON_CALL_USD = (1000 * 4.0 + 200 * 20.0) / 1e6  # one recorded Gemini 4 Argon call (USAGE in llm_fakes)
 
 
 def _metric_tool():
@@ -38,12 +38,12 @@ def _metric_tool():
 
 
 async def test_llm6_parallel_tool_loops_share_one_overshoot_not_one_each(live_llm, monkeypatch):
-    monkeypatch.setenv("DAILY_USD_BUDGET", "0.005")  # less than one Opus call: the first may go, no other
+    monkeypatch.setenv("DAILY_USD_BUDGET", "0.005")  # less than one Argon call: the first may go, no other
     get_settings.cache_clear()
 
     async def slow(_call):
         await asyncio.sleep(0.05)  # every loop is in flight before the first answer comes back
-        return tool_use_reply("get_metric", {"id": "arr"}, model="claude-opus-5-5")
+        return tool_use_reply("get_metric", {"id": "arr"}, model="gemini-4-argon")
 
     rec = live_llm.install(slow)
     results = await asyncio.gather(
@@ -62,7 +62,7 @@ async def test_llm6_parallel_tool_loops_share_one_overshoot_not_one_each(live_ll
     assert all(isinstance(r, BudgetExceeded) for r in results)
     assert len(rec.calls) == 1, f"{len(rec.calls)} parallel loops each sent a call past the cap"
     # Reservations are settled: the day's spend is exactly what the one call cost.
-    assert live_llm.spend == pytest.approx(OPUS_CALL_USD)
+    assert live_llm.spend == pytest.approx(ARGON_CALL_USD)
 
 
 async def test_llm6_parallel_parse_calls_reserve_before_sending(live_llm, monkeypatch):
@@ -71,7 +71,7 @@ async def test_llm6_parallel_parse_calls_reserve_before_sending(live_llm, monkey
 
     async def slow(_call):
         await asyncio.sleep(0.05)
-        return json_reply({"claims": []}, model="claude-haiku-5-5")
+        return json_reply({"claims": []}, model="gemini-3.5-flash-lite")
 
     rec = live_llm.install(slow)
     results = await asyncio.gather(
@@ -83,11 +83,11 @@ async def test_llm6_parallel_parse_calls_reserve_before_sending(live_llm, monkey
     )
     assert len(rec.calls) == 1
     assert sum(isinstance(r, BudgetExceeded) for r in results) == 2
-    assert live_llm.spend == pytest.approx((1000 * 0.10 + 200 * 0.50) / 1e6)
+    assert live_llm.spend == pytest.approx((1000 * 0.30 + 200 * 2.50) / 1e6)
 
 
 async def test_llm6_a_failed_call_gives_its_reservation_back(live_llm):
-    live_llm.install(lambda _call: (500, {"type": "error", "error": {"type": "api_error", "message": "x"}}))
+    live_llm.install(lambda _call: api_error(500, "x"))
     with pytest.raises(LLMUnavailable):
         await get_llm().parse(
             "claims", ClaimList, system="claims", messages=[{"role": "user", "content": "x"}]
@@ -99,8 +99,8 @@ async def test_llm6_reservations_do_not_count_as_calls(api_client, monkeypatch):
     """The Postgres `spend.calls` counter counts API calls, not reservations or refunds."""
     from datetime import UTC, datetime
 
-    from vicky import kv
-    from vicky.llm.client import LLM
+    from vik import kv
+    from vik.llm.client import LLM
 
     today = datetime.now(UTC).date()
     saved = await db.fetchrow("select usd, calls from spend where date = $1", today)
@@ -128,8 +128,8 @@ async def test_llm6_reservations_do_not_count_as_calls(api_client, monkeypatch):
 @pytest.fixture
 async def report_jobs(api_client, monkeypatch):
     """Inline `report` jobs run a test handler; the rows are removed afterwards."""
-    import vicky.services.jobs_handlers  # noqa: F401  (registers the real handlers first)
-    from vicky import jobs
+    import vik.services.jobs_handlers  # noqa: F401  (registers the real handlers first)
+    from vik import jobs
 
     ids: list[str] = []
 
@@ -144,7 +144,7 @@ async def report_jobs(api_client, monkeypatch):
 
 
 async def test_inline_jobs_never_hold_more_connections_than_the_limit(report_jobs, monkeypatch):
-    from vicky import jobs
+    from vik import jobs
 
     assert jobs.INLINE_CONCURRENCY < db.pool().get_max_size(), "jobs must leave connections for requests"
     held = 0
@@ -171,7 +171,7 @@ async def test_inline_jobs_never_hold_more_connections_than_the_limit(report_job
 
 async def test_a_job_waiting_on_other_jobs_gives_its_slot_up(report_jobs, monkeypatch):
     """Every slot held by a parent that waits on a child it enqueued must not wedge the queue."""
-    from vicky import jobs
+    from vik import jobs
 
     async def handler(payload: dict) -> dict:
         if payload.get("child"):
@@ -193,7 +193,7 @@ async def test_a_job_waiting_on_other_jobs_gives_its_slot_up(report_jobs, monkey
 
 
 def _series(name: str, rows: list[dict], mapping: list[dict], granularity: str = "month"):
-    from vicky.model.financials import DatasetInput
+    from vik.model.financials import DatasetInput
 
     return DatasetInput(
         id=name,
@@ -207,8 +207,8 @@ def _series(name: str, rows: list[dict], mapping: list[dict], granularity: str =
 
 
 def test_met26_model_notes_say_what_was_left_out_in_plain_words():
-    from vicky.model.context import build_context
-    from vicky.model.financials import model_notes, model_summary
+    from vik.model.context import build_context
+    from vik.model.financials import model_notes, model_summary
 
     pl = _series(
         "pl",
@@ -235,8 +235,8 @@ def test_met26_model_notes_say_what_was_left_out_in_plain_words():
 
 
 def test_met26_fx_note_lists_a_few_periods_then_counts_the_rest():
-    from vicky.model.context import build_context
-    from vicky.model.financials import model_notes
+    from vik.model.context import build_context
+    from vik.model.financials import model_notes
 
     periods = [f"2025-{m:02d}" for m in range(1, 13)]
     usd = _series(

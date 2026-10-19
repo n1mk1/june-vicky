@@ -1,12 +1,12 @@
-# Vicky API + worker image (one image, two commands).
+# Vik API + worker image (one image, two commands).
 #
-#   docker build -t vicky-api ./backend
-#   docker run --rm -p 8000:8000 --env-file .env vicky-api                 # API (uvicorn on $PORT, default 8000)
-#   docker run --rm --env-file .env vicky-api arq vicky.jobs.WorkerSettings # worker
-#   docker run --rm --env-file .env vicky-api python -m vicky.migrate      # migrations
+#   docker build -t vik-api ./backend
+#   docker run --rm -p 8000:8000 --env-file .env vik-api                 # API (uvicorn on $PORT, default 8000)
+#   docker run --rm --env-file .env vik-api arq vik.jobs.WorkerSettings # worker
+#   docker run --rm --env-file .env vik-api python -m vik.migrate      # migrations
 #
 # The venv's bin/ is on PATH, so `arq`, `uvicorn` and `python` need no `uv run`. uv is still
-# shipped (UV_NO_SYNC=1) so the TRD's `uv run arq ...` / `uv run python -m vicky.migrate` also work.
+# shipped (UV_NO_SYNC=1) so the TRD's `uv run arq ...` / `uv run python -m vik.migrate` also work.
 # Secrets come from the runtime environment only; never pass them as build ARGs.
 
 ARG PYTHON_IMAGE=python:3.13-slim
@@ -26,21 +26,21 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Then the project itself. It stays an editable install so vicky.BACKEND_DIR resolves to /app
+# Then the project itself. It stays an editable install so vik.BACKEND_DIR resolves to /app
 # (migrations/ and data/ are read relative to the package).
-COPY vicky ./vicky
+COPY vik ./vik
 COPY migrations ./migrations
 COPY data ./data
 RUN uv sync --frozen --no-dev
 
 # ---- runtime ----
 FROM ${PYTHON_IMAGE} AS runtime
-# tesseract reads scanned PDF pages and images for the knowledge base (vicky/kb/ocr.py).
+# tesseract reads scanned PDF pages and images for the knowledge base (vik/kb/ocr.py).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
  && rm -rf /var/lib/apt/lists/*
-RUN groupadd --system --gid 10001 vicky \
- && useradd --system --uid 10001 --gid vicky --home-dir /app --no-create-home --shell /usr/sbin/nologin vicky
+RUN groupadd --system --gid 10001 vik \
+ && useradd --system --uid 10001 --gid vik --home-dir /app --no-create-home --shell /usr/sbin/nologin vik
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 # Owned by root and read-only to the app user: the service writes nothing to local disk.
@@ -57,6 +57,6 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     UV_PYTHON_DOWNLOADS=0 \
     UV_CACHE_DIR=/tmp/uv-cache
 
-USER vicky
+USER vik
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -1,4 +1,4 @@
--- Vicky initial schema. See docs/05-BACKEND-SCHEMA.md.
+-- Vik initial schema. See docs/05-BACKEND-SCHEMA.md.
 create extension if not exists pgcrypto;
 
 create or replace function set_updated_at() returns trigger as $$
@@ -16,8 +16,8 @@ do $$ begin
   create type upload_kind as enum ('csv', 'xlsx', 'pdf', 'docx', 'md', 'deck');
   create type upload_status as enum ('stored', 'parsed', 'extracted', 'failed');
   create type widget_status as enum ('ok', 'missing', 'error');
-  create type widget_author as enum ('system', 'vicky', 'founder');
-  create type message_role as enum ('founder', 'vicky', 'tool');
+  create type widget_author as enum ('system', 'vik', 'founder');
+  create type message_role as enum ('founder', 'vik', 'tool');
   create type session_mode as enum ('prepare', 'simulate');
   create type session_status as enum ('starting', 'live', 'paused', 'ended', 'failed');
   create type turn_kind as enum ('question', 'answer', 'interject', 'coach', 'debrief', 'segment', 'interrupt', 'intro');

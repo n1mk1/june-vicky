@@ -25,7 +25,7 @@ export default defineConfig({
     video: { mode: "on", size: { width: 1440, height: 900 } },
     actionTimeout: 30_000,
     launchOptions: {
-      // WebGL (the VICKY mark, the readiness orb) needs a software GL in headless runs.
+      // WebGL (the VIK mark, the readiness orb) needs a software GL in headless runs.
       args: ["--enable-unsafe-swiftshader", "--use-angle=swiftshader", "--ignore-gpu-blocklist", "--autoplay-policy=no-user-gesture-required"],
     },
   },

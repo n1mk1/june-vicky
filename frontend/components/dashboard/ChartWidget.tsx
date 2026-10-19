@@ -22,7 +22,7 @@ interface TipParam {
 }
 
 /**
- * The backend's option, minus Vicky's underscore metadata, plus display formatters for the units
+ * The backend's option, minus Vik's underscore metadata, plus display formatters for the units
  * it declares and the dashboard-wide time range on its dataZoom. No values are added or changed here.
  */
 function prepare(raw: EChartsOptionJson, range: TimeRange | null, compact = false): Record<string, unknown> {

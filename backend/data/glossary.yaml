@@ -114,7 +114,7 @@ terms:
     source_id: yc_safe_dilution_order
   - term: Post-money valuation
     aliases: [post-money, post]
-    definition: "The company's value including the new money raised. Vicky explains how it works but never suggests one."
+    definition: "The company's value including the new money raised. Vik explains how it works but never suggests one."
     formula: "pre-money valuation + new money raised"
     source_id: lighter_dilution_explainer
   - term: Pre-money valuation

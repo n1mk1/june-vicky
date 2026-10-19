@@ -1,5 +1,5 @@
 """Regression tests for the API, security, jobs and infrastructure findings of the 2026-10-18 QA sweep
-(docs/qa/QA-REPORT-2026-10-18.md §3.4, §3.7, MET-18 and MET-24). Each test reproduces the report's repro.
+(§3.4, §3.7, MET-18 and MET-24 of that report, in git history). Each test reproduces the report's repro.
 """
 
 import asyncio
@@ -16,8 +16,8 @@ import httpx
 import pytest
 import yaml
 
-from vicky import BACKEND_DIR
-from vicky.config import Settings, get_settings
+from vik import BACKEND_DIR
+from vik.config import Settings, get_settings
 
 REPO = BACKEND_DIR.parent
 
@@ -33,11 +33,11 @@ async def _login(api_client) -> None:
 
 
 async def _clear_rate_keys() -> None:
-    from vicky import kv
+    from vik import kv
 
     with contextlib.suppress(Exception):
         r = kv.client()
-        keys = [k async for k in r.scan_iter("vicky:rl:*")]
+        keys = [k async for k in r.scan_iter("vik:rl:*")]
         if keys:
             await r.delete(*keys)
 
@@ -63,7 +63,7 @@ def _env(**values: str | None):
 
 
 async def _job(kind: str, status: str, **cols) -> str:
-    from vicky import db
+    from vik import db
 
     sets = ", ".join(f"{k} = {v}" for k, v in cols.items())
     jid = await db.fetchval(
@@ -78,7 +78,7 @@ async def _job(kind: str, status: str, **cols) -> str:
 
 
 async def _status(jid: str) -> tuple[str, str | None]:
-    from vicky import db
+    from vik import db
 
     row = await db.fetchrow("select status::text, error from jobs where id::text = $1", jid)
     return row["status"], row["error"]
@@ -87,8 +87,8 @@ async def _status(jid: str) -> tuple[str, str | None]:
 @pytest.fixture
 async def handler(api_client, monkeypatch):
     """A controllable handler for the `kb_organize` job kind (no real organizer runs)."""
-    import vicky.services.jobs_handlers  # noqa: F401  (registers the real handlers first)
-    from vicky import db, jobs
+    import vik.services.jobs_handlers  # noqa: F401  (registers the real handlers first)
+    from vik import db, jobs
 
     state = SimpleNamespace(calls=0, started=asyncio.Event(), release=asyncio.Event(), ids=[])
 
@@ -110,7 +110,7 @@ async def handler(api_client, monkeypatch):
 
 @pytest.mark.db
 async def test_api1_a_cancelled_job_is_marked_failed_interrupted(handler):
-    from vicky import jobs
+    from vik import jobs
 
     jid = await _job("kb_organize", "queued")
     task = asyncio.create_task(jobs.run_job(jid))
@@ -124,7 +124,7 @@ async def test_api1_a_cancelled_job_is_marked_failed_interrupted(handler):
 
 @pytest.mark.db
 async def test_api1_the_sweeper_marks_long_running_jobs_stale(handler):
-    from vicky import jobs
+    from vik import jobs
 
     old = await _job(
         "kb_organize",
@@ -140,7 +140,7 @@ async def test_api1_the_sweeper_marks_long_running_jobs_stale(handler):
 
 @pytest.mark.db
 async def test_api1_shutdown_cancels_and_awaits_inline_jobs(handler):
-    from vicky import jobs
+    from vik import jobs
 
     before = set(jobs._inline_tasks)
     jid = await jobs.enqueue("kb_organize", {})
@@ -192,7 +192,7 @@ async def test_api2_retry_only_requeues_failed_or_stale_jobs(api_client, handler
 
 @pytest.mark.db
 async def test_api3_migrate_ensures_vectors_on_every_start(api_client, monkeypatch):
-    from vicky import migrate
+    from vik import migrate
 
     calls = []
     real = migrate.ensure_vectors
@@ -208,7 +208,7 @@ async def test_api3_migrate_ensures_vectors_on_every_start(api_client, monkeypat
 
 @pytest.mark.db
 async def test_api3_vector_columns_come_back_once_pgvector_is_available(api_client):
-    from vicky import db, migrate
+    from vik import db, migrate
 
     if not await db.fetchval("select exists (select 1 from pg_available_extensions where name = 'vector')"):
         pytest.skip("pgvector is not installed on this Postgres (use the pgvector/pgvector:pg17 image)")
@@ -236,7 +236,7 @@ async def test_api3_vector_columns_come_back_once_pgvector_is_available(api_clie
 
 
 def _uncommented_worker(text: str) -> str:
-    """render.yaml with the commented-out vicky-worker block switched on (the demo-day step)."""
+    """render.yaml with the commented-out vik-worker block switched on (the demo-day step)."""
     out, inside = [], False
     for line in text.splitlines():
         inside = line.startswith("  # - type: worker") or (inside and line.startswith("  # "))
@@ -249,7 +249,7 @@ def test_api4_render_blueprint_parses_and_the_worker_gets_the_voyage_key():
     yaml.safe_load(text)
     bp = yaml.safe_load(_uncommented_worker(text))
     services = {s["name"]: s for s in bp["services"]}
-    assert "vicky-worker" in services, "the commented worker block should uncomment cleanly"
+    assert "vik-worker" in services, "the commented worker block should uncomment cleanly"
     groups = {g["name"]: {e["key"] for e in g.get("envVars", [])} for g in bp.get("envVarGroups", [])}
 
     def keys(svc: dict) -> set[str]:
@@ -258,9 +258,10 @@ def test_api4_render_blueprint_parses_and_the_worker_gets_the_voyage_key():
             out |= groups.get(e["fromGroup"], set()) if "fromGroup" in e else {e["key"]}
         return out
 
-    api, worker = keys(services["vicky-api"]), keys(services["vicky-worker"])
+    api, worker = keys(services["vik-api"]), keys(services["vik-worker"])
     assert "VOYAGE_API_KEY" in worker and "VOYAGE_API_KEY" in api
-    assert {"DATABASE_URL", "REDIS_URL", "ANTHROPIC_API_KEY", "COOKIE_SECRET"} <= worker
+    assert {"DATABASE_URL", "REDIS_URL", "GEMINI_API_KEY", "COOKIE_SECRET"} <= worker
+    assert "GEMINI_API_KEY" in api and not any("ANTHROPIC" in k for k in api | worker)
     for g in bp.get("envVarGroups", []):
         for e in g["envVars"]:
             assert "sync" not in e, f"{e['key']}: sync: false is ignored inside an environment group"
@@ -271,7 +272,7 @@ def test_api4_render_blueprint_parses_and_the_worker_gets_the_voyage_key():
 
 @pytest.fixture
 async def draft(api_client):
-    from vicky import db
+    from vik import db
 
     await _login(api_client)
     r = await api_client.post("/engagements", json={"profile": {"name": "Fix API draft", "currency": "cad"}})
@@ -345,7 +346,7 @@ async def test_met18_fact_units_are_checked_and_money_takes_the_reporting_curren
 def test_api8_changing_access_code_revokes_issued_cookies():
     from itsdangerous import BadSignature
 
-    from vicky import auth, realtime
+    from vik import auth, realtime
 
     with _env(ACCESS_CODE="first-code", COOKIE_SECRET="s3cret"):
         token = auth.make_token()
@@ -369,7 +370,7 @@ def _req(peer: str, xff: str | None = None):
 
 
 def test_api9_forwarded_for_is_only_honoured_from_trusted_proxies():
-    from vicky.auth import client_ip
+    from vik.auth import client_ip
 
     assert client_ip(_req("203.0.113.9", "1.2.3.4")) == "203.0.113.9"  # a direct client can't pick its IP
     assert (
@@ -396,7 +397,7 @@ def test_api9_forwarded_for_is_only_honoured_from_trusted_proxies():
 
 @pytest.mark.db
 async def test_api9_rotating_forwarded_for_from_the_internet_still_hits_the_limit(api_client):
-    from vicky.api import app
+    from vik.api import app
 
     await _clear_rate_keys()
     transport = httpx.ASGITransport(app=app, client=("203.0.113.9", 40000))
@@ -451,7 +452,7 @@ def test_api10_interactive_docs_are_off_in_production(secure, expect):
         [
             sys.executable,
             "-c",
-            "from vicky.api import app; print(app.docs_url, app.redoc_url, app.openapi_url)",
+            "from vik.api import app; print(app.docs_url, app.redoc_url, app.openapi_url)",
         ],
         cwd=BACKEND_DIR,
         env=env,
@@ -468,7 +469,7 @@ def test_api10_interactive_docs_are_off_in_production(secure, expect):
 
 @pytest.mark.db
 async def test_api11_healthz_is_503_when_the_database_is_down(api_client, monkeypatch):
-    from vicky import db, kv
+    from vik import db, kv
 
     async def down(*_a, **_k):
         raise ConnectionError("db down")
@@ -519,9 +520,9 @@ def test_api14_the_default_cap_leaves_room_for_a_full_size_kb_file():
 
 @pytest.mark.db
 async def test_api15_a_rate_key_without_ttl_gets_one_back(api_client):
-    from vicky import auth, kv
+    from vik import auth, kv
 
-    key = "vicky:rl:access:fix-api-test"
+    key = "vik:rl:access:fix-api-test"
     r = kv.client()
     await r.delete(key)
     await r.set(key, 2)  # INCR landed, EXPIRE never did (crash, timeout)
@@ -536,7 +537,7 @@ async def test_api15_a_rate_key_without_ttl_gets_one_back(api_client):
 
 @pytest.fixture
 def fx_cache(monkeypatch):
-    from vicky.services import fx
+    from vik.services import fx
 
     store: dict = {}
 
@@ -562,7 +563,7 @@ def _valet(request: httpx.Request) -> httpx.Response:
 
 
 async def test_api16_years_are_fetched_together(fx_cache):
-    from vicky.services import fx
+    from vik.services import fx
 
     async def slow(request: httpx.Request) -> httpx.Response:
         await asyncio.sleep(0.3)
@@ -578,7 +579,7 @@ async def test_api16_years_are_fetched_together(fx_cache):
 async def test_api16_an_overall_deadline_bounds_a_hanging_api_and_failures_are_remembered(
     fx_cache, monkeypatch
 ):
-    from vicky.services import fx
+    from vik.services import fx
 
     calls = []
 
@@ -617,7 +618,7 @@ async def test_api16_an_overall_deadline_bounds_a_hanging_api_and_failures_are_r
 
 @pytest.mark.db
 async def test_met24_confirm_keeps_low_confidence_proposals_raw(api_client):
-    from vicky import db
+    from vik import db
 
     await _login(api_client)
     csv = b"Month,Revenue,Total costs\n2025-01,100,50\n2025-02,120,55\n2025-03,130,60\n"
@@ -666,7 +667,7 @@ async def test_met24_confirm_keeps_low_confidence_proposals_raw(api_client):
 
 
 def test_met24_a_reviewed_or_confident_mapping_needs_no_review():
-    from vicky.services.engagements import needs_review
+    from vik.services.engagements import needs_review
 
     low = {"source_column": "Total costs", "canonical_field": "opex.total", "confidence": 0.55}
     ok = {"source_column": "Revenue", "canonical_field": "revenue.total", "confidence": 0.9}

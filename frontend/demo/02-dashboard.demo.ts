@@ -47,8 +47,8 @@ test("02-dashboard", async ({ page, demo }) => {
   await demo.pause(2000);
 
   // Ask the data a question.
-  await demo.caption("Ask Vicky", "Answers are computed, footnoted, and can be pinned to the dashboard as a widget.");
-  const input = page.getByTestId("dashboard-chat").getByRole("textbox", { name: /ask vicky/i });
+  await demo.caption("Ask Vik", "Answers are computed, footnoted, and can be pinned to the dashboard as a widget.");
+  const input = page.getByTestId("dashboard-chat").getByRole("textbox", { name: /ask vik/i });
   await demo.type(input, "Which month had the highest burn, and how much runway is left?");
   await input.press("Enter");
   const reply = page.getByTestId("chat-reply");

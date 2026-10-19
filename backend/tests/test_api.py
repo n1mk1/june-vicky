@@ -1,4 +1,4 @@
-"""End to end over the REST API (offline agents): FR-5, FR-10, FR-13 (fork), FR-14 and the Prepare loop.
+"""End to end over the REST API (offline agents): FR-5, FR-10, FR-13 (fork), FR-14 and the court loop.
 
 Runs in definition order on one throwaway database; each test builds on the previous state.
 """
@@ -7,8 +7,8 @@ import re
 
 import pytest
 
-from tests.helpers import load_sample_engagement
-from vicky.samples import SAMPLES_DIR
+from tests.helpers import load_sample_engagement, start_court
+from vik.samples import SAMPLES_DIR
 
 pytestmark = pytest.mark.db
 
@@ -26,14 +26,13 @@ async def test_fr14_routes_need_the_access_cookie(api_client):
     assert (
         await api_client.post("/auth/access", json={"code": "é"})
     ).status_code == 401  # non-ASCII must not 500
-    r = await api_client.post("/auth/access", json={"code": "vicky-demo"})
-    assert r.status_code == 200 and "vicky_access" in r.headers.get("set-cookie", "")
+    r = await api_client.post("/auth/access", json={"code": "vik-demo"})
+    assert r.status_code == 200 and "vik_access" in r.headers.get("set-cookie", "")
     assert (await api_client.get("/auth/session")).json() == {"ok": True}
 
 
 async def test_fr10_gates_before_a_confirmed_truthpack(api_client):
     assert (await api_client.post("/pitch/start")).status_code == 409
-    assert (await api_client.post("/court/start", json={})).status_code == 409
     assert (await api_client.get("/dashboards/active")).status_code == 404
 
 
@@ -146,22 +145,15 @@ async def test_fr13_builder_generate_create_edit(api_client):
 
 async def test_session_survives_a_deleted_custom_investor(api_client):
     made = (await api_client.post("/areopagus", json={"name": "Temp"})).json()
-    s = (
-        await api_client.post("/court/start", json={"panel": ["aristotle", made["id"]], "question_cap": 4})
-    ).json()
+    s = (await start_court(["aristotle", made["id"]], 4)).json()
     assert (await api_client.delete(f"/areopagus/{made['id']}")).status_code == 200
     view = await api_client.get(f"/court/{s['id']}")
     assert view.status_code == 200 and [p["id"] for p in view.json()["panel"]] == ["aristotle"]
     assert (await api_client.post(f"/court/{s['id']}/end")).status_code == 200
 
 
-async def test_prepare_court_round_trip(api_client):
-    s = (
-        await api_client.post(
-            "/court/start",
-            json={"panel": ["aristotle", "thales", "socrates"], "question_cap": 5, "coaching": "coached"},
-        )
-    ).json()
+async def test_court_round_trip(api_client):
+    s = (await start_court(["aristotle", "thales", "socrates"], 5)).json()
     assert s["status"] == "live" and s["awaiting"] == "founder"
     assert [t["kind"] for t in s["turns"]] == ["intro", "question"]
     first_q = s["turns"][-1]
@@ -240,9 +232,9 @@ async def test_fr11_live_pitch_interrupts_on_a_contradiction(api_client):
     )
     assert r.status_code == 200, r.text
     p = r.json()["pitch"]
-    assert p["status"] == "presenting" and p["say"][0]["speaker"] == "vicky"
+    assert p["status"] == "presenting" and p["say"][0]["speaker"] == "vik"
     # Everyone in the room has a voice for this sitting, and nobody shares one.
-    assert set(p["voices"]) == {"vicky", "aristotle", "socrates"} and len(set(p["voices"].values())) == 3
+    assert set(p["voices"]) == {"vik", "aristotle", "socrates"} and len(set(p["voices"].values())) == 3
 
     seg = (
         await api_client.post(

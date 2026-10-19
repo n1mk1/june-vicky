@@ -2,16 +2,18 @@ node_modules/
 .next/
 .venv/
 __pycache__/
+.ruff_cache/
+.pytest_cache/
 .env*
 !.env.example
 __MACOSX/
 
-# Kept out of the repo (see docs/06-IMPLEMENTATION-PLAN.md §0.3)
+# Kept out of the repo: the challenge brief, the style-reference captures, local settings
 docs/challenge/
 frontend/docs/screenshots/reference/
 .claude/settings.local.json
 brand/_unsorted/
 
-# Demo recordings before encoding (npm run demo:record); the MP4s and GIFs are kept
+# Demo recordings before encoding (npm run demo:record)
 docs/demo/raw/
 frontend/demo/.out/

@@ -17,15 +17,13 @@ interface VcRosterProps {
   speaking?: string | null;
   /** Seats can't change during a live session. */
   locked?: boolean;
-  /** Questions asked per VC id in this session. */
-  counts?: Record<string, number>;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
 }
 
 /** Investor panel from the wireframe's left column: the chair, then who sits in (up to five). */
-export function VcRoster({ personas, selected, onToggle, speaking, locked, counts, loading, error, onRetry }: VcRosterProps) {
+export function VcRoster({ personas, selected, onToggle, speaking, locked, loading, error, onRetry }: VcRosterProps) {
   const [collapsed, setCollapsed] = useState(false);
   const full = selected.length >= MAX_PANEL;
   // During a session only the seated investors are shown; otherwise the whole Areopagus in its order.
@@ -59,15 +57,15 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
         {/* The chair is always seated. */}
         <li className="w-[200px] shrink-0 lg:w-auto">
           <div
-            title={collapsed ? "Vicky, chair: picks the speaker, reviews every question, scores every answer" : undefined}
+            title={collapsed ? "Vik, chair: picks the speaker, reviews every question, scores every answer" : undefined}
             className="flex w-full items-center gap-3 rounded-[4px] border border-dashed border-line-strong p-2.5"
           >
-            <VcGlyph glyph="vicky" className="text-ember" />
+            <VcGlyph glyph="vik" className="text-ember" />
             {!collapsed && (
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
-                  <span className="font-display text-[17px] tracking-[-0.04em]">Vicky</span>
-                  {speaking === "vicky" && (
+                  <span className="font-display text-[17px] tracking-[-0.04em]">Vik</span>
+                  {speaking === "vik" && (
                     <span className="size-1.5 rounded-full bg-ember animate-[pulse-dot_1.2s_ease-in-out_infinite]" aria-label="Speaking" />
                   )}
                 </span>
@@ -89,7 +87,6 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
         {people.map((p) => {
           const on = selected.includes(p.id);
           const blocked = locked || (!on && full);
-          const n = counts?.[p.id];
           return (
             <li key={p.id} className="w-[200px] shrink-0 lg:w-auto">
               <button
@@ -123,11 +120,6 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
                     <span className={cn("flex size-4 items-center justify-center rounded-[5px] border", on ? "border-ink bg-ink text-bg" : "border-line-strong")}>
                       {on && <Check className="size-3" strokeWidth={2.5} />}
                     </span>
-                    {n !== undefined && n > 0 && (
-                      <span className="font-mono text-[9.5px] tabular-nums text-dim" aria-label={`${n} questions asked`}>
-                        {n}Q
-                      </span>
-                    )}
                   </span>
                 )}
               </button>
@@ -138,9 +130,9 @@ export function VcRoster({ personas, selected, onToggle, speaking, locked, count
 
       {!collapsed && (
         <Link
-          // Seats can't change mid-session, so a live session's "+" only builds; otherwise the builder
-          // brings you back here with the new investor seated next to the current panel.
-          href={locked ? "/areopagus?build=1" : `/areopagus?build=1&return=preparation&panel=${encodeURIComponent(selected.join(","))}`}
+          // Seats can't change mid-pitch, so a running pitch's "+" only builds; otherwise the builder
+          // brings you back to the Simulation with the new investor seated next to the current panel.
+          href={locked ? "/areopagus?build=1" : `/areopagus?build=1&return=simulation&panel=${encodeURIComponent(selected.join(","))}`}
           data-testid="roster-add"
           className="mx-auto mt-3 hidden size-10 items-center justify-center rounded-full border border-line-strong text-ink-2 transition-colors hover:border-ink hover:text-ink lg:flex"
           aria-label="Add or build an investor in the Areopagus"

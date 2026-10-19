@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { AsciiV } from "@/components/fx/AsciiV";
 
 /**
- * Landing: black and white whatever the app theme. A small tag, the JUNE × VICKY logo as the
+ * Landing: black and white whatever the app theme. A small tag, the VIK wordmark as the
  * title, one line under it, a big flickering V drawn in digits, and one way in.
  */
 export function LandingHero() {
@@ -19,20 +19,20 @@ export function LandingHero() {
     <main data-theme="dark" className="relative isolate flex min-h-dvh flex-col items-center bg-black px-4 pt-6 pb-8 text-white md:pt-8">
       <p className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[-0.02em] animate-[rise_0.9s_var(--ease-soft)_both]">
         <span aria-hidden className="size-1.5 bg-ember" />
-        <span className="text-white">Vicky</span>
+        <span className="text-white">Vik</span>
         <span className="border border-white/25 bg-white/10 px-2 py-0.5 text-white/70">AI venture capitalist</span>
       </p>
 
       <h1 className="mt-5 animate-[rise_0.9s_var(--ease-soft)_both] [animation-delay:120ms]">
-        <span className="sr-only">JUNE × VICKY</span>
+        <span className="sr-only">VIK</span>
         <Image
-          src="/brand/June_x_Vicky_white.svg"
+          src="/brand/Vik_Logo_white.svg"
           alt=""
-          width={1454}
+          width={459}
           height={248}
           unoptimized
           priority
-          className="h-[clamp(34px,6vw,76px)] w-auto"
+          className="h-[clamp(44px,8vw,108px)] w-auto"
         />
       </h1>
       <p className="mt-4 text-center text-[clamp(14px,1.5vw,18px)] tracking-[-0.01em] text-white/70 animate-[rise_0.9s_var(--ease-soft)_both] [animation-delay:220ms]">
