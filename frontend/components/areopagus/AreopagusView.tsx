@@ -125,9 +125,11 @@ function PersonaCard({
           {lensLine}
         </p>
 
-        {/* Details: collapsed to zero height until the card is hovered or focused. */}
+        {/* Details: collapsed to zero height until the card is hovered or focused. They keep their size
+            while it opens and are uncovered top to bottom: if they shrank to fit, the bio would squash and
+            Edit would sit still, then slide down under the pointer. */}
         <div className="grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-300 ease-[var(--ease-soft)] group-focus-within/card:grid-rows-[1fr] group-focus-within/card:opacity-100 group-hover/card:grid-rows-[1fr] group-hover/card:opacity-100">
-          <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
+          <div className="flex min-h-0 flex-col gap-3 overflow-hidden [&>*]:shrink-0">
             <p className="mt-3 border-t border-line pt-3 line-clamp-5 text-[12.5px] leading-snug text-ink-2" title={p.bio}>{p.bio}</p>
 
             {lenses.length > 0 && (

@@ -64,16 +64,24 @@ test.describe("Areopagus builder", () => {
     await expect(card(page, "Builder Test")).toContainText("Custom");
   });
 
-  test("edit a custom investor", async ({ page }) => {
+  test("edit a custom investor", async ({ page, request }) => {
+    // Its own investor: a retry runs in a fresh worker, after afterAll has removed what earlier tests saved.
+    const name = `Edit ${Date.now().toString(36)}`;
+    const made = await request.post("/api/v1/areopagus", {
+      data: { name, signature_move: "Asks about the market first", priorities: { team: 0.6, market: 0.8 } },
+    });
+    expect(made.ok()).toBeTruthy();
     await page.goto("/areopagus");
-    const c = card(page, "Builder Test");
+    const c = card(page, name);
     await c.hover();
     await c.getByRole("button", { name: "Edit" }).click();
     const dialog = page.getByRole("dialog", { name: "Edit investor" });
+    // The form appears once the saved investor has loaded, filled with it.
+    await expect(dialog.getByLabel("Name")).toHaveValue(name);
     await dialog.getByLabel("Signature move").fill("Team before traction");
     await dialog.getByRole("button", { name: "Save investor" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(card(page, "Builder Test")).toContainText("Team before traction");
+    await expect(card(page, name)).toContainText("Team before traction");
   });
 
   test("the Simulation “+” builds an investor and seats them", async ({ page }) => {
