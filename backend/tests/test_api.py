@@ -189,6 +189,8 @@ async def test_court_round_trip(api_client):
     assert len({t["text"] for t in questions}) == len(questions)  # nobody repeats a question
 
     rep = (await api_client.get(f"/reports/{s['report_id']}")).json()
+    listed = next(r for r in (await api_client.get("/reports")).json() if r["id"] == s["report_id"])
+    assert listed["mode"] == "simulate"  # the Reports list badges a session by its real mode
     assert rep["verdict"]["questions"] >= 3 and 0 <= rep["verdict"]["overall"] <= 5
     assert rep["questions"][0]["strong_answer"] and rep["ledger"] and rep["sources"]
     assert "{" not in " ".join(q["strong_answer"] for q in rep["questions"])  # every placeholder filled

@@ -564,6 +564,8 @@ export interface ReportSummary {
   /** One phrase built by code: the session focus, or the lenses pressed hardest. */
   summary?: string;
   vcs?: { id: string; name: string | null }[];
+  /** "simulate" for the Q&A after a pitch; older sessions from before the Simulation-only court carry another mode. */
+  mode?: string | null;
 }
 
 export interface ReportDims {

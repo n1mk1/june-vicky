@@ -590,7 +590,7 @@ async def session_report(sid: str) -> dict:
 async def reports() -> list[dict]:
     rows = await db.fetch(
         """select r.id::text, r.session_id::text, r.created_at, r.overall::float, r.readiness, e.name as company,
-                  r.dims, r.delta_vs_previous::float as delta, s.settings->>'focus' as focus,
+                  r.dims, r.delta_vs_previous::float as delta, s.settings->>'focus' as focus, s.mode::text as mode,
                   coalesce((select jsonb_agg(jsonb_build_object('id', v->>'vc_id', 'name', v->>'name'))
                             from jsonb_array_elements(coalesce(r.report->'per_vc', '[]'::jsonb)) v), '[]'::jsonb) as vcs,
                   (select array_agg(q->>'lens')

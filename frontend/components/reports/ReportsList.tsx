@@ -87,7 +87,7 @@ export function ReportsList() {
                       className="group grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-3 transition-colors hover:bg-surface-solid/40 sm:grid-cols-[auto_1fr_auto_auto_auto]"
                     >
                       <span className="rounded-[3px] border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[-0.04em] justify-self-start text-ink-2">
-                        Simulation
+                        {r.mode === "simulate" ? "Simulation" : "Session"}
                       </span>
                       <span className="col-span-2 flex min-w-0 flex-col gap-1.5 sm:col-span-1">
                         <span className="text-[12.5px] text-ink-2">
