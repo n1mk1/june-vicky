@@ -36,7 +36,7 @@ const ROUND_TYPES = [
   ["none", "Not raising"],
   ["other", "Other"],
 ] as const;
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTHS = Array.from({ length: 12 }, (_, i) => new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" }).format(Date.UTC(2000, i, 1)));
 
 const EMPTY: Profile = {
   name: "",

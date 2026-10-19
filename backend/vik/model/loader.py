@@ -9,6 +9,7 @@ are in thousands or millions are scaled. Tables keyed by period + customer or si
 dimension tables; a table with no dates stays raw.
 """
 
+import calendar
 import csv
 import hashlib
 import io
@@ -22,27 +23,10 @@ from typing import Any
 
 from vik.model.currencies import STRIP_RE, currency_in
 
-MONTHS = {
-    m: i + 1
-    for i, m in enumerate(
-        ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
-    )
-}
-MONTHS.update({"sept": 9, "june": 6, "july": 7})
-FULL_MONTHS = [
-    "january",
-    "february",
-    "march",
-    "april",
-    "may",
-    "june",
-    "july",
-    "august",
-    "september",
-    "october",
-    "november",
-    "december",
-]
+# English month names from the stdlib (the C locale; nothing here calls setlocale): "january" … "december".
+FULL_MONTHS = [calendar.month_name[i].lower() for i in range(1, 13)]
+MONTHS = {m[:3]: i + 1 for i, m in enumerate(FULL_MONTHS)}
+MONTHS.update({"sept": 9, FULL_MONTHS[5]: 6, FULL_MONTHS[6]: 7})  # the 4-letter spellings headers use
 
 # A series row's source lines in the file ("row 6" in a figure's source); not a column.
 SRC_ROWS = "_src_rows"

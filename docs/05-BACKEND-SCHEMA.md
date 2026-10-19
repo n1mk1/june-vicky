@@ -9,11 +9,11 @@ Version 1.0 — 17 Oct 2026. Companion to [02-TRD](02-TRD.md). Postgres 17 is th
 | `0003_kb.sql` | Knowledge base: `kb_files`, `kb_notes` (§2.21–2.22) |
 | `0004_cad_default.sql`, `0005_column_currency.sql` | CAD as the default reporting currency; a mapping's money unit is the column's own currency |
 | `0006_rag.sql` | Search index (§2.23) |
-| `0007_court_chair.sql` | `knowledge_checks` (§2.24). Renamed from `0007_court_vicky.sql`; being idempotent, a database that applied it under the old name runs it again harmlessly |
+| `0007_court_chair.sql` | `knowledge_checks` (§2.24). Renamed in the Vik rebrand; being idempotent, a database that applied it under its old name runs it again harmlessly |
 | `0008_kb_fts.sql` | GIN index for the notes' full-text search |
 | `0010_dashboard_dismissed_roles.sql` | `dashboards.dismissed_roles` (default widgets the founder removed). There is no 0009 |
 | `0011_retire_founder_memory.sql` | Drops `founder_memory` and the `memory_kind` enum (§2.17), with the Preparation tab |
-| `0012_chair_is_vik.sql` | Renames the enum label `'vicky'` to `'vik'` in `widget_author` and `message_role` on databases made before the rename, and `turns.speaker` `'vicky'` → `'vik'` |
+| `0012_chair_is_vik.sql` | Renames the chair's pre-rebrand enum label to `'vik'` in `widget_author` and `message_role` on databases made before the rebrand, and the chair's older `turns.speaker` rows to `'vik'` |
 
 Conventions: `id uuid primary key default gen_random_uuid()`, `created_at timestamptz default now()`, `updated_at` maintained by trigger, soft state in enums, JSON documents validated by pydantic before insert. Everything company-specific carries `engagement_id`.
 
@@ -117,7 +117,7 @@ workspace (implicit, one)
 
 `dashboard_messages`: id, dashboard_id, role enum `message_role` (`founder | vik | tool`), content text, tool_calls jsonb, citations jsonb, created_at. Append-only.
 
-Both enums carried the label `vicky` before `0012_chair_is_vik.sql` renamed it in place.
+Both enums carried the chair's pre-rebrand label before `0012_chair_is_vik.sql` renamed it in place.
 
 ### 2.8 `vc_personas`
 | Column | Type | Notes |
@@ -153,7 +153,7 @@ session_id FK, vc_id text, persona_version int, truthpack_version int, memo json
 | id | uuid PK | |
 | session_id | uuid FK | |
 | seq | int | unique per session; append-only |
-| speaker | text | `founder`, `vik` (the chair; `0012_chair_is_vik.sql` renamed older `vicky` rows), or vc_id |
+| speaker | text | `founder`, `vik` (the chair; `0012_chair_is_vik.sql` renamed older chair rows), or vc_id |
 | kind | enum `question \| answer \| interject \| coach \| debrief \| segment \| interrupt \| intro` | |
 | intent | text | chair intent for VC turns (`follow_up`, `new_topic`, `jump_in`, `knowledge`) |
 | hypothesis_id | text | the hypothesis asked about; a probe id (`k:<vc>.<n>`) on a knowledge check |

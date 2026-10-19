@@ -38,7 +38,7 @@ CASES = [
     ("which quarter had the highest revenue", ["Q3 2026"]),
     ("how fast are we growing", ["9.0%", "5.0%"]),
     ("customer success spend last quarter", ["$51.0K"]),
-    ("how much cash did we have in June 2026", ["Jun 2026"]),
+    ("how much cash did we have in jun 2026", ["Jun 2026"]),
 ]
 
 

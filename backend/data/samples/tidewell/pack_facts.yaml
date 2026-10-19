@@ -176,7 +176,7 @@ facts:
   # ------------------------------------------------------------------ cash flow by quarter (rounded $000s)
   - {name: cash_from_operations, label: "Cash from operations", value: -179000, unit: cad, period: "2024-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
   - {name: cash_from_operations, label: "Cash from operations", value: -209000, unit: cad, period: "2025-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
-  - {name: cash_from_operations, label: "Cash from operations", value: -118000, unit: cad, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s. Includes the $96,400 SR&ED refund (June 2025)."}
+  - {name: cash_from_operations, label: "Cash from operations", value: -118000, unit: cad, period: "2025-Q2", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s. Includes the $96,400 SR&ED refund (Jun 2025)."}
   - {name: cash_from_operations, label: "Cash from operations", value: -237000, unit: cad, period: "2025-Q3", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
   - {name: cash_from_operations, label: "Cash from operations", value: -239000, unit: cad, period: "2025-Q4", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s."}
   - {name: cash_from_operations, label: "Cash from operations", value: -102000, unit: cad, period: "2026-Q1", kind: historical, source: {kind: pack_summary, ref: "Appendix B, p.8"}, target_metric: false, note: "Rounded to $000s. Flattered by +$129K change in deferred revenue, mostly the top customer's $124,800 annual prepayment (March 2026)."}
@@ -564,8 +564,8 @@ targets:
     unit: pct
     tolerance: 0.005
     period: "2026-06..2026-09"
-    stated: "Growth slowed to about 5% a month from July to September (D q2). MRR $92,813 in June to $107,189 in September (H p.31)."
-    definition: "Compound monthly growth over the last 3 monthly steps (July, August, September 2026): (MRR Sep 2026 / MRR Jun 2026)^(1/3) - 1. Start = June month-end MRR."
+    stated: "Growth slowed to about 5% a month from July to September (D q2). MRR $92,813 in Jun to $107,189 in Sep (H p.31)."
+    definition: "Compound monthly growth over the last 3 monthly steps (July, August, September 2026): (MRR Sep 2026 / MRR Jun 2026)^(1/3) - 1. Start = the Jun 2026 month-end MRR."
     csv_check: {value: 0.0492, arithmetic: "(107189 / 92813)^(1/3) - 1"}
     ref: "Appendix D q2, p.16; Appendix H, pp.31-32"
   - metric: gross_margin

@@ -498,7 +498,7 @@ sources:
     topic: [terms, information_rights, rofr]
     verified: true
     checked: "2026-10-17"
-    verification_note: "Document list confirmed (latest revisions dated up to June 2026). US forms."
+    verification_note: "Document list confirmed (latest revisions dated up to Jun 2026). US forms."
     pack_ref: "Appendix F, p.27"
   - id: carta_state_private_markets_q1_2026
     publisher: Carta
