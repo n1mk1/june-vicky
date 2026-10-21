@@ -1,6 +1,6 @@
 # VIK
 
-(Access code for the hosted demo: `vik-atlas-58d8cc`)
+(Access code for the hosted demo: `vicky-atlas-58d8cc`)
 
 **Vik is an AI venture capitalist that gets founders ready to raise.** A founder brings their own financials and documents. Vik computes every metric in code, builds a dashboard where every figure has a source, and lists what investors will ask about first. A panel of AI investors then hears the founder pitch in a spoken pitch room, questions them, scores every answer and writes it up as a report.
 
