@@ -107,7 +107,7 @@ job kb_index (inline on the free plan, arq worker later)
   4. insert kb_chunks under the new build id
   5. swap, in one transaction: the new build becomes active and the old one superseded, with its chunks and
      qa_cache rows deleted
-  6. drop the old build's Redis entries (rag:*:{old}:*); publish kb.index.ready on "kb"
+  6. drop the old build's Redis entries (rag:*:{old}:*); publish kb.index.ready on "kb" (a failed build: kb.index.failed)
      every process throws away its BM25 index and builds the new one on its next search
 ```
 
@@ -120,7 +120,7 @@ job kb_index (inline on the free plan, arq worker later)
 - **Warm start:** the process that ran the build loads its BM25 index right after the swap, so the first search after a rebuild doesn't wait for it.
 - **Status** (`SearchIndexStatus`, on the knowledge base and confirm pages) reads one of:
   - *Search builds when you confirm the knowledge base*
-  - *Building search…* (polls every 2 s)
+  - *Building search…* (changes on `kb.index.ready` / `kb.index.failed` over the socket, from any tab; polls every 10 s as a fallback, every 2 s while the socket is down)
   - *Search ready · 214 notes*
   - *Search failed · Retry* (`POST /kb/index`)
 - **Backfill:** `uv run python scripts/kb_reindex.py` runs the same build without a confirm, after a deploy or an `EMBED_MODEL` change.

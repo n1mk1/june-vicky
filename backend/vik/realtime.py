@@ -23,6 +23,9 @@ from vik.config import get_settings
 log = logging.getLogger(__name__)
 router = APIRouter()
 PREFIX = "vik:"
+# Every channel anything publishes on, as Redis patterns. `kb` is one channel for the whole vault: imports,
+# organize passes and index builds report there.
+CHANNELS = ("session:*", "dashboard:*", "engagement:*", "kb")
 
 
 class Hub:
@@ -45,7 +48,7 @@ class Hub:
         while True:
             try:
                 pubsub = kv.client().pubsub()
-                await pubsub.psubscribe(f"{PREFIX}session:*", f"{PREFIX}dashboard:*", f"{PREFIX}engagement:*")
+                await pubsub.psubscribe(*(PREFIX + c for c in CHANNELS))
                 async for msg in pubsub.listen():
                     if msg.get("type") != "pmessage":
                         continue
@@ -81,7 +84,8 @@ hub = Hub()
 
 
 async def publish(channel: str, type_: str, payload: dict[str, Any] | None = None) -> dict:
-    """Publish an event on a channel such as `session:<id>` or `dashboard:<id>`."""
+    """Publish an event on a channel such as `session:<id>`, `dashboard:<id>` or `kb`. The hub only relays
+    channels that match `CHANNELS`."""
     try:
         version = int(await kv.client().incr(f"{PREFIX}ver:{channel}"))
     except Exception:

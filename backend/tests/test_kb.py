@@ -3,11 +3,13 @@ organizer and profile heuristics, and the REST flow import → organize → grap
 re-import → autofill (offline agents, on the throwaway database)."""
 
 import io
+import uuid
 import zipfile
 
 import pytest
 
 from tests import llm_fakes
+from tests.helpers import received, tab_on
 from tests.llm_fakes import json_reply, queue
 from vik.kb import autofill, convert
 from vik.kb.autofill import Evidence, heuristic_profile, number_in, propose_profile, verify
@@ -466,3 +468,30 @@ async def test_kb_import_organize_graph_edit_export_autofill(api_client):
     assert {a["as"] for a in out["added"]} >= {"financials_quarterly.csv"}
     ds = eng["datasets"][0]
     assert ds["mapped"] >= 0.8 * ds["total"]
+
+
+@pytestmark_db
+async def test_an_import_reports_its_job_to_every_open_knowledge_base_tab(api_client):
+    """A job with no session or engagement reports on `kb`, and the hub carries it there through Redis, so a
+    Knowledge base tab hears about an import another tab started (docs/05-BACKEND-SCHEMA.md §7)."""
+    if not (await api_client.get("/auth/session")).json()["ok"]:
+        assert (await api_client.post("/auth/access", json={"code": "vik-demo"})).status_code == 200
+    tag = uuid.uuid4().hex[:8]
+    body = f"# Realtime {tag}\n\nA note imported while a tab listens.\n".encode()
+    with tab_on("kb") as tab:
+        r = await api_client.post(
+            "/kb/import", files=[("files", (f"realtime-{tag}.md", body, "text/markdown"))]
+        )
+        job_id = r.json()["job_id"]
+        await _wait(api_client, job_id)
+        mine = await received(
+            tab, lambda e: e["type"] == "job.status" and e["payload"]["job_id"] == job_id, n=2
+        )
+    try:
+        assert [e["payload"]["status"] for e in mine] == ["running", "done"]
+        assert all(e["channel"] == "kb" and e["payload"]["kind"] == "kb_ingest" for e in mine)
+        assert mine[0]["version"] < mine[1]["version"]  # the browser dedupes on this
+    finally:
+        for n in (await api_client.get("/kb/notes")).json():
+            if tag in n["title"]:
+                await api_client.delete(f"/kb/notes/{n['id']}")

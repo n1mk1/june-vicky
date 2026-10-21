@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { apiPost } from "@/lib/api";
+import { useChannel, useSocketStatus, type Envelope } from "@/lib/socket";
 import type { KbIndexStatus, KbStatus } from "@/lib/types";
 import { errorText, useAccessGuard, useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 2000;
+/** With the socket up, `kb` events say when a build starts and ends; this slower poll only catches a missed one. */
+const FALLBACK_POLL_MS = 10_000;
 
 /**
  * The knowledge-base search index that confirming the knowledge base builds (docs/08-RAG.md §Indexing):
@@ -19,12 +22,19 @@ export function SearchIndexStatus({ banner = false, className }: { banner?: bool
   const { reload } = status;
   const [error, setError] = useState<string | null>(null);
   const idx: KbIndexStatus | undefined = status.data?.index;
+  const live = useSocketStatus() === "open";
 
   useEffect(() => {
     if (idx?.status !== "building") return;
-    const t = window.setTimeout(reload, POLL_MS);
+    const t = window.setTimeout(reload, live ? FALLBACK_POLL_MS : POLL_MS);
     return () => window.clearTimeout(t);
-  }, [idx, reload]);
+  }, [idx, live, reload]);
+  // A build reports on `kb` (docs/05-BACKEND-SCHEMA.md §7): its job starting, then `kb.index.ready` or
+  // `kb.index.failed`, whichever page or tab started it.
+  const onKbEvent = (e: Envelope) => {
+    if (e.type.startsWith("kb.index.") || (e.payload as { kind?: string }).kind === "kb_index") reload();
+  };
+  useChannel("kb", onKbEvent, reload);
 
   if (!idx) return null;
   const retry = async () => {

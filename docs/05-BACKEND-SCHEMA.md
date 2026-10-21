@@ -283,6 +283,9 @@ One row per knowledge question answered: id, session_id (cascade), turn_id (the 
 | `arq:queue` (default) | list/zset | — | arq job queue (`noeviction`) |
 | `vik:session:{id}` | pub/sub | — | turn deltas, chair decisions, memo snippets, ledger, interrupts |
 | `vik:dashboard:{id}` | pub/sub | — | widget/layout diffs with version |
+| `vik:engagement:{id}` | pub/sub | — | `job.status` for the engagement's extract jobs |
+| `vik:kb` | pub/sub | — | the vault's jobs (`job.status` for imports, organize passes, index builds) and `kb.index.ready` / `kb.index.failed` |
+| `vik:ver:{channel}` | counter | — | the envelope `version` for each channel |
 | `vik:pitch:{id}` | hash | 6 h | current slide, last interrupt time, per-slide interrupt count, live transcript tail |
 | `vik:series:{spec_hash}:{truthpack_version}` | string (json) | 24 h | evaluated series cache |
 | `vik:memo:{vc_id}:{persona_version}:{truthpack_version}` | string | 7 d | memo cache pointer (memos also in Postgres) |
@@ -319,6 +322,15 @@ WebSocket and pub/sub share one envelope:
 {"type":"vc.turn.delta","session_id":"…","version":812,"ts":"…","payload":{"turn_seq":12,"speaker":"socrates","text":"…"}}
 ```
 
-Types: `memo.snippet`, `chair.decision`, `vc.turn.delta`, `vc.turn.done`, `coach.timeout`, `score.ready` (coached only), `knowledge.checked`, `ledger.update`, `interrupt`, `widget.diff`, `layout.diff`, `job.status`, `session.ended`, `budget.exceeded`. `version` is monotonically increasing per session or dashboard and is what clients use to dedupe and to resume (`since_version`).
+Types: `memo.snippet`, `chair.decision`, `vc.turn.delta`, `vc.turn.done`, `coach.timeout`, `score.ready` (coached only), `knowledge.checked`, `ledger.update`, `interrupt`, `widget.diff`, `layout.diff`, `time_range.diff`, `job.status`, `session.ended`, `budget.exceeded`, `kb.index.ready`, `kb.index.failed`. `version` is monotonically increasing per channel (`vik:ver:{channel}`) and is what clients use to dedupe and to resume (`since_version`).
+
+Each channel is `vik:{channel}` in Redis. The API's hub relays exactly these patterns (`CHANNELS` in `vik/realtime.py`); an event on any other channel never reaches a browser.
+
+| Channel | Carries |
+|---|---|
+| `session:{id}` | the court's events, and `job.status` for jobs of that session |
+| `dashboard:{id}` | `widget.diff`, `layout.diff`, `time_range.diff` (each with the dashboard `version`) |
+| `engagement:{id}` | `job.status` for the engagement's jobs (extracting an upload) |
+| `kb` | one channel for the whole vault: `job.status` (`{job_id, kind, status, error?}`) for `kb_ingest`, `kb_organize` and `kb_index`, then `kb.index.ready` (`{build_id, chunks}`) or `kb.index.failed` (`{build_id, error}`). The Knowledge base view and the search status line reload on these, including for jobs another tab started; they poll only as a fallback (every 10 s while the socket is open) |
 
 AG-UI runs emit the standard event set; VC messages carry `metadata.speaker = vc_id`; chair decisions and widget diffs are `STATE_DELTA` patches against `{agenda, speaking, widgets, time_range}`.

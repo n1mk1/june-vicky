@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route, type WebSocketRoute } from "@playwright/test";
 import { ask, openDashboard } from "./helpers";
 
 // The catch-all offer (docs/08-RAG.md §Asking permission): when retrieval can't find the answer in the
@@ -97,8 +97,14 @@ test.describe("Catch-all offer under stress", () => {
 });
 
 test.describe("Search index status", () => {
+  const STATUS = /\/api\/v1\/kb\/status(\?.*)?$/;
+  const WS = /\/api\/v1\/ws\?/;
+
+  // A status read still in flight when the test ends must not fail it.
+  test.afterEach(async ({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
+
   async function stubStatus(page: Page, index: Record<string, unknown>) {
-    await page.route(/\/api\/v1\/kb\/status(\?.*)?$/, async (route) => {
+    await page.route(STATUS, async (route) => {
       const real = await route.fetch();
       const body = (await real.json()) as Record<string, unknown>;
       await route.fulfill({ json: { ...body, index: { build_id: "b", built_at: null, notes: 3, chunks: 9, vectors: false,
@@ -106,13 +112,49 @@ test.describe("Search index status", () => {
     });
   }
 
-  test("building, then ready with the changed-notes banner", async ({ page }) => {
+  /** Stands in for the API's realtime hub: says hello on the channels the page asks for, then pushes `kb` events. */
+  async function stubHub(page: Page) {
+    const sockets: WebSocketRoute[] = [];
+    let version = 0;
+    await page.routeWebSocket(WS, (ws) => {
+      sockets.push(ws);
+      const channels = new URL(ws.url()).searchParams.get("channels")?.split(",") ?? [];
+      ws.send(JSON.stringify({ type: "hello", channels, versions: {} }));
+    });
+    return {
+      connected: () => expect.poll(() => sockets.length).toBeGreaterThan(0),
+      push: (type: string, payload: Record<string, unknown>) => {
+        for (const ws of sockets) ws.send(JSON.stringify({ type, channel: "kb", version: ++version, ts: new Date().toISOString(), payload }));
+      },
+    };
+  }
+
+  test("building, then ready as soon as the hub says so, with the changed-notes banner", async ({ page }) => {
+    // The page's clock is paused once the socket is up, so no poll can fire: only the event brings "ready".
+    await page.clock.install();
+    const hub = await stubHub(page);
     await stubStatus(page, { status: "building" });
     await page.goto("/knowledge");
-    await expect(page.getByTestId("search-index-status").first()).toContainText("Building search");
-    await page.unroute(/\/api\/v1\/kb\/status(\?.*)?$/);
+    const status = page.getByTestId("search-index-status").first();
+    await expect(status).toContainText("Building search");
+    await hub.connected();
+    await page.clock.pauseAt(Date.now() + 1000);
+    await page.unroute(STATUS);
     await stubStatus(page, { status: "ready", changed_since: 2 });
-    await expect(page.getByTestId("search-index-status").first()).toContainText("Search ready · 3 notes", { timeout: 6_000 });
+    hub.push("kb.index.ready", { build_id: "b", chunks: 9 });
+    await expect(status).toContainText("Search ready · 3 notes");
+    await expect(page.getByTestId("search-index-stale")).toContainText("2 notes changed since the last Fill");
+  });
+
+  test("with the socket down, a build is still polled until it is ready", async ({ page }) => {
+    await page.routeWebSocket(WS, (ws) => ws.close());
+    await stubStatus(page, { status: "building" });
+    await page.goto("/knowledge");
+    const status = page.getByTestId("search-index-status").first();
+    await expect(status).toContainText("Building search");
+    await page.unroute(STATUS);
+    await stubStatus(page, { status: "ready", changed_since: 2 });
+    await expect(status).toContainText("Search ready · 3 notes", { timeout: 6_000 });
     await expect(page.getByTestId("search-index-stale")).toContainText("2 notes changed since the last Fill");
   });
 

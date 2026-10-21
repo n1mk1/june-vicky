@@ -1,11 +1,8 @@
 """Live dashboards over the API (FR-12, FR-16): versioning, layout, time range, chat and realtime fan-out."""
 
-import asyncio
-import json
-
 import pytest
 
-from tests.helpers import load_and_confirm
+from tests.helpers import FakeSocket, load_and_confirm, received
 from vik import realtime
 
 pytestmark = pytest.mark.db
@@ -19,24 +16,6 @@ async def _active(api_client) -> dict:
         r = await api_client.get("/dashboards/active")
     assert r.status_code == 200, r.text
     return r.json()
-
-
-class _FakeSocket:
-    """Stands in for a browser tab's WebSocket on the hub."""
-
-    def __init__(self) -> None:
-        self.got: list[dict] = []
-
-    async def send_text(self, data: str) -> None:
-        self.got.append(json.loads(data))
-
-
-async def _wait_for(sock: _FakeSocket, n: int, seconds: float = 3.0) -> list[dict]:
-    for _ in range(int(seconds / 0.05)):
-        if len(sock.got) >= n:
-            break
-        await asyncio.sleep(0.05)
-    return sock.got
 
 
 async def test_layout_versioning_rejects_stale_writes(api_client):
@@ -153,7 +132,7 @@ async def test_remove_bumps_the_version(api_client):
 async def test_fr16_changes_fan_out_to_every_tab_in_version_order(api_client):
     d = await _active(api_client)
     channel = f"dashboard:{d['id']}"
-    tab_a, tab_b = _FakeSocket(), _FakeSocket()
+    tab_a, tab_b = FakeSocket(), FakeSocket()
     realtime.hub.add(channel, tab_a)  # type: ignore[arg-type]
     realtime.hub.add(channel, tab_b)  # type: ignore[arg-type]
     try:
@@ -171,7 +150,7 @@ async def test_fr16_changes_fan_out_to_every_tab_in_version_order(api_client):
             f"/dashboards/{d['id']}/layout", json={"layout": moved, "version": dash["version"]}
         )
         for tab in (tab_a, tab_b):
-            got = await _wait_for(tab, 2)
+            got = await received(tab, n=2, seconds=3.0)
             assert [e["type"] for e in got[:2]] == ["widget.diff", "layout.diff"]
             assert got[0]["payload"]["op"] == "add" and got[0]["payload"]["by"] == "vik"
             assert got[0]["channel"] == channel and got[0]["version"] < got[1]["version"]  # dedupe key
